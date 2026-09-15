@@ -155,7 +155,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-14.7";
+var VERSION="2026-09-14.8";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -366,9 +366,13 @@ function seedDemo(){
   co.forEach(function(c){ putRow("companies",c); });
 
   var ps=[{id:"demo-wps-1",no:"WPS-01",rev:"0",basis:"Prequalified",process:"FCAW-G",base:"A36 / A572 Gr. 50",
+           title:"CJP butt, single V, steel backing",weldType:"CJP groove",jointType:"Butt",groove:"Single V",angle:"45°",rootOpening:'1/4"',rootFace:"0",
+           backing:"With backing",backingMat:"Steel",interpass:"550 °F",progression:"Uphill",travel:"8–12",bead:"Stringer",passes:"Multiple pass",cleaning:"Wire brush",wfs:"250–300",fillerSpec:"A5.20",
            filler:"E71T-1C",fillerDia:'.045"',gas:"75% Ar / 25% CO2",flow:"35",amps:"180–220",volts:"24–27",polarity:"DCEP",preheat:"50 °F min",
            thickRange:'1/8" to 3/4"',positions:"All",notes:"CJP groove, 45° single V, 1/4\" root opening, steel backing.",_demo:true},
           {id:"demo-wps-2",no:"WPS-07",rev:"1",basis:"Qualified by PQR",pqr:"PQR-03",process:"GTAW",base:"304/304L",
+           title:"Open-root pipe, single V, purged",weldType:"CJP groove",jointType:"Butt",groove:"Single V",angle:"37.5°",rootOpening:'1/8"',rootFace:'1/16"',
+           backing:"No backing",diaRange:'2" and up',progression:"Uphill",travel:"3–5",bead:"Stringer",passes:"Multiple pass",cleaning:"Wire brush",fillerSpec:"A5.9",
            filler:"ER308L",fillerDia:'3/32"',gas:"100% Argon",flow:"25",amps:"85–110",volts:"11–13",polarity:"DCEN",
            thickRange:'1/16" to 1/2"',positions:"All",notes:"Open root, argon purge 15 CFH.",_demo:true}];
   ps.forEach(function(w){ putRow("wps",w); });
@@ -585,18 +589,24 @@ VIEWS.newticket = function(){
    inspector on the ticket screen so there are no surprises. */
 function wpsCard(p, title){
   if(!p) return "";
+  var groove=(p.weldType||"CJP groove")!="Fillet";
+  var joint=groove ? [p.groove, p.angle, p.rootOpening?"root "+p.rootOpening:"", p.backing].filter(Boolean).join(", ")
+                   : ["Fillet", p.filletSize].filter(Boolean).join(" ");
   var rows = [
-    ["Process", p.process],
+    ["Joint", joint],
+    ["Process", p.process ? p.process+(p.transfer?" — "+p.transfer:"") : ""],
     ["Filler", (p.filler||"")+(p.fillerDia?" × "+p.fillerDia:"")],
     ["Gas", p.gas ? p.gas+(p.flow?" @ "+p.flow+" CFH":"") : ""],
     ["Base metal", p.base],
     ["Thickness", p.thickRange],
-    ["Positions", p.positions],
-    ["Amps", p.amps], ["Volts", p.volts], ["Polarity", p.polarity], ["Preheat", p.preheat]
+    ["Positions", [p.positions, p.progression].filter(Boolean).join(" · ")],
+    ["Amps / volts", [p.amps, p.volts].filter(Boolean).join(" / ")],
+    ["Polarity", p.polarity], ["Preheat", p.preheat], ["Travel", p.travel?p.travel+" ipm":""]
   ].filter(function(r){return r[1]});
-  var h='<div class="card wps-card"><h3>'+esc(title||"Weld to this procedure")+' <small>'+esc(wpsLabel(p))+(p.basis?" · "+esc(p.basis):"")+'</small></h3><dl class="kv">';
+  var h='<div class="card wps-card"><h3>'+esc(title||"Weld to this procedure")+' <small>'+esc(wpsLabel(p))+(p.basis?" · "+esc(p.basis):"")+'</small></h3>'
+    +(p.title?'<p style="margin:-6px 0 12px;font-size:.9rem;color:#C6D2DB">'+esc(p.title)+'</p>':'')+'<dl class="kv">';
   rows.forEach(function(r){ h+='<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; });
-  h+='</dl>'+(p.notes?'<p style="margin:12px 0 0;font-size:.88rem;color:#C6D2DB">'+esc(p.notes)+'</p>':'')+'</div>';
+  h+='</dl><p style="margin:12px 0 0"><button class="mini" data-act="viewwps" data-wps-id="'+esc(p.id||"")+'">See the whole WPS</button></p></div>';
   return h;
 }
 
@@ -703,35 +713,130 @@ VIEWS.wpslist = function(){
   return { body:h, bar:'<button class="primary" data-act="newwps">Add a WPS</button>' };
 };
 
+/* WPS option lists. Tiles for what's usually one of a few values; a
+   type-your-own box under the ones that vary by shop. */
+var WPS_WELD=[{v:"CJP groove",d:"Complete joint"},{v:"PJP groove",d:"Partial joint"},{v:"Fillet"}];
+var WPS_JOINT=[{v:"Butt"},{v:"T"},{v:"Corner"},{v:"Lap"},{v:"Edge"}];
+var WPS_GROOVE=[{v:"Single V"},{v:"Double V"},{v:"Single bevel"},{v:"Double bevel"},{v:"Square"},{v:"U"},{v:"J"}];
+var WPS_ANGLE=[{v:"30°"},{v:"37.5°"},{v:"45°"},{v:"60°"}];
+var WPS_ROOT=[{v:"0"},{v:'1/16"'},{v:'1/8"'},{v:'3/16"'},{v:'1/4"'}];
+var WPS_FACE=[{v:"0"},{v:'1/32"'},{v:'1/16"'},{v:'1/8"'}];
+var WPS_BACKING=[{v:"With backing"},{v:"No backing"},{v:"Back-gouge"}];
+var WPS_BACKMAT=[{v:"Steel"},{v:"Ceramic"},{v:"Copper"},{v:"None"}];
+var WPS_PROG=[{v:"Uphill"},{v:"Downhill"}];
+var WPS_PASS=[{v:"Stringer"},{v:"Weave"},{v:"Either"}];
+var WPS_MULTI=[{v:"Single pass"},{v:"Multiple pass"}];
+var WPS_CLEAN=[{v:"Wire brush"},{v:"Grind"},{v:"Chip"},{v:"Needle scale"}];
+var WPS_POS=[{v:"All"},{v:"F"},{v:"F, H"},{v:"F, H, V"},{v:"F, V, OH"},{v:"F, H, V, OH"}];
+
+function dtiles(key,list){ return tiles(list, S.draft[key]||"", false, "d:"+key); }
+function dtext(key,ph,label){
+  return '<input type="text" data-d="'+key+'" value="'+esc(S.draft[key]||"")+'" placeholder="'+esc(ph||"")+'" style="margin-top:8px;font-size:15px;padding:10px 12px"'+(label?' aria-label="'+esc(label)+'"':'')+'>';
+}
+function dfield(label,key,type,ph){
+  return '<div class="field"><label>'+esc(label)+'</label><input type="'+(type||"text")+'" data-d="'+key+'" value="'+esc(S.draft[key]||"")+'" placeholder="'+esc(ph||"")+'"></div>';
+}
+function wireProc(p){ return p=="GMAW"||p=="FCAW-G"||p=="FCAW-S"; }
+
 VIEWS.wpsedit = function(){
-  var d=S.draft;
-  var h = nav(d.id?"Edit WPS":"New WPS");
+  var d=S.draft, groove=(d.weldType||"CJP groove")!="Fillet";
+  var h = nav(d.id?"Edit WPS":"New WPS", d.id?'<button data-act="viewwps" data-wps-id="'+esc(d.id)+'">Preview</button>':'');
   h += '<div class="row"><div class="field"><label>WPS number <span class="req">*</span></label><input type="text" data-d="no" value="'+esc(d.no||"")+'" placeholder="WPS-01"></div>'
     + '<div class="field"><label>Rev</label><input type="text" data-d="rev" value="'+esc(d.rev||"")+'" placeholder="0"></div></div>';
   h += '<div class="field"><label>Prequalified or qualified by PQR</label><select data-d="basis">'
     + ["Prequalified","Qualified by PQR"].map(function(o){return '<option '+(d.basis==o?"selected":"")+'>'+o+'</option>';}).join("")+'</select></div>';
-  if(d.basis=="Qualified by PQR") h += '<div class="field"><label>Supporting PQR</label><input type="text" data-d="pqr" value="'+esc(d.pqr||"")+'"></div>';
-  h += '<div class="field"><label>Process</label>'+tiles(PROCESSES, d.process||"", false, "wproc")+'</div>';
-  h += '<div class="row"><div class="field"><label>Base metal</label><input type="text" data-d="base" value="'+esc(d.base||"")+'" placeholder="A36 / A572-50"></div>'
-    + '<div class="field"><label>Filler</label><input type="text" data-d="filler" value="'+esc(d.filler||"")+'" placeholder="E71T-1C"></div></div>';
-  h += '<div class="row"><div class="field"><label>Thickness range</label><input type="text" data-d="thickRange" value="'+esc(d.thickRange||"")+'" placeholder="1/8&quot; to 3/4&quot;"></div>'
-    + '<div class="field"><label>Positions</label><input type="text" data-d="positions" value="'+esc(d.positions||"")+'" placeholder="All"></div></div>';
-  h += '<div class="card"><h3>What the welder is told</h3>'
-    + '<p style="margin:0 0 12px;font-size:.86rem;color:var(--muted)">Shown on their ticket and pre-selected on their form. Leave blank what the WPS doesn\'t fix.</p>'
-    + '<div class="row"><div class="field"><label>'+esc(DIAM_LABEL[d.process]||"Filler diameter")+'</label><input type="text" data-d="fillerDia" value="'+esc(d.fillerDia||"")+'" placeholder=\'.045"\'></div>'
-    + '<div class="field"><label>Gas</label><input type="text" data-d="gas" value="'+esc(d.gas||"")+'" placeholder="75% Ar / 25% CO2"></div></div>'
-    + '<div class="row"><div class="field"><label>Flow (CFH)</label><input type="text" data-d="flow" value="'+esc(d.flow||"")+'" placeholder="35"></div>'
-    + '<div class="field"><label>Polarity</label><select data-d="polarity"><option value="">—</option>'
-    + ["DCEP","DCEN","AC"].map(function(p){return '<option '+(d.polarity==p?"selected":"")+'>'+p+'</option>'}).join("")+'</select></div></div>'
-    + '<div class="row"><div class="field" style="margin:0"><label>Amps</label><input type="text" data-d="amps" value="'+esc(d.amps||"")+'" placeholder="180–220"></div>'
-    + '<div class="field" style="margin:0"><label>Volts</label><input type="text" data-d="volts" value="'+esc(d.volts||"")+'" placeholder="24–27"></div>'
-    + '<div class="field" style="margin:0"><label>Preheat</label><input type="text" data-d="preheat" value="'+esc(d.preheat||"")+'" placeholder="50 °F min"></div></div></div>';
-  h += '<div class="field"><label>Joint / notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
+  if(d.basis=="Qualified by PQR") h += dfield("Supporting PQR","pqr","text","PQR-03");
+  h += dfield("Title / description","title","text","CJP butt, 45° single V, backed");
+
+  h += '<div class="card"><h3>Joint design</h3>'
+    + '<div class="field"><label>Weld type</label>'+dtiles("weldType",WPS_WELD)+'</div>'
+    + '<div class="field"><label>Joint type</label>'+dtiles("jointType",WPS_JOINT)+'</div>';
+  if(groove) h += '<div class="field"><label>Groove</label>'+dtiles("groove",WPS_GROOVE)+'</div>'
+    + '<div class="field"><label>Groove angle</label>'+dtiles("angle",WPS_ANGLE)+dtext("angle","or type it, e.g. 50°")+'</div>'
+    + '<div class="field"><label>Root opening</label>'+dtiles("rootOpening",WPS_ROOT)+dtext("rootOpening","or type it")+'</div>'
+    + '<div class="field"><label>Root face</label>'+dtiles("rootFace",WPS_FACE)+dtext("rootFace","or type it")+'</div>'
+    + '<div class="field"><label>Backing</label>'+dtiles("backing",WPS_BACKING)+'</div>'
+    + (d.backing=="With backing" ? '<div class="field"><label>Backing material</label>'+dtiles("backingMat",WPS_BACKMAT)+dtext("backingMat","or type it")+'</div>' : '');
+  else h += '<div class="field"><label>Fillet size</label>'+dtext("filletSize",'e.g. 1/4" min')+'</div>';
+  h += '</div>';
+
+  h += '<div class="card"><h3>Base metal</h3>'
+    + dfield("Specification","base","text","A36 / A572 Gr. 50")
+    + '<div class="row"><div class="field" style="margin:0"><label>Thickness range</label><input type="text" data-d="thickRange" value="'+esc(d.thickRange||"")+'" placeholder="1/8&quot; to 3/4&quot;"></div>'
+    + '<div class="field" style="margin:0"><label>Diameter range</label><input type="text" data-d="diaRange" value="'+esc(d.diaRange||"")+'" placeholder="Plate, or 2&quot; and up"></div></div></div>';
+
+  h += '<div class="card"><h3>Process and filler</h3>'
+    + '<div class="field"><label>Process</label>'+tiles(PROCESSES, d.process||"", false, "wproc")+'</div>';
+  if(d.process=="GMAW") h += '<div class="field"><label>Transfer mode</label>'+dtiles("transfer",[{v:"Spray"},{v:"Globular"},{v:"Short circuit"},{v:"Pulsed"}])+'</div>';
+  h += '<div class="field"><label>Filler classification</label>'+dtiles("filler",(FILLERS[d.process]||[]).filter(function(f){return f!="Other"}).map(function(f){return {v:f}}))+dtext("filler","or type the AWS classification")+'</div>'
+    + dfield("AWS filler spec","fillerSpec","text","A5.20")
+    + '<div class="field" style="margin:0"><label>'+esc(DIAM_LABEL[d.process]||"Filler diameter")+'</label>'+dtiles("fillerDia",DIAMS[d.process]||[])+dtext("fillerDia","or type it")+'</div>';
+  h += '</div>';
+
+  if(d.process!="SMAW"&&d.process!="FCAW-S"){
+    h += '<div class="card"><h3>Shielding</h3>'
+      + '<div class="field"><label>Gas</label>'+dtiles("gas",(GASES[d.process]||[]).filter(function(g){return g!="Other"&&g!="None"}).map(function(g){return {v:g}}))+dtext("gas","or type it")+'</div>'
+      + '<div class="field" style="margin:0"><label>Flow rate</label>'+dtiles("flow",FLOWS)+'</div></div>';
+  }
+
+  h += '<div class="card"><h3>Electrical</h3>'
+    + '<div class="row"><div class="field"><label>Amps</label><input type="text" data-d="amps" value="'+esc(d.amps||"")+'" placeholder="180–220"></div>'
+    + '<div class="field"><label>Volts</label><input type="text" data-d="volts" value="'+esc(d.volts||"")+'" placeholder="24–27"></div></div>'
+    + '<div class="row"><div class="field" style="margin:0"><label>Polarity</label><select data-d="polarity"><option value="">—</option>'
+    + ["DCEP","DCEN","AC"].map(function(p){return '<option '+(d.polarity==p?"selected":"")+'>'+p+'</option>'}).join("")+'</select></div>'
+    + (wireProc(d.process) ? '<div class="field" style="margin:0"><label>Wire feed (ipm)</label><input type="text" data-d="wfs" value="'+esc(d.wfs||"")+'" placeholder="250–300"></div>' : '<div></div>')
+    + '</div></div>';
+
+  h += '<div class="card"><h3>Preheat and interpass</h3>'
+    + '<div class="row"><div class="field" style="margin:0"><label>Preheat, min</label><input type="text" data-d="preheat" value="'+esc(d.preheat||"")+'" placeholder="50 °F"></div>'
+    + '<div class="field" style="margin:0"><label>Interpass, max</label><input type="text" data-d="interpass" value="'+esc(d.interpass||"")+'" placeholder="550 °F"></div></div></div>';
+
+  h += '<div class="card"><h3>Technique</h3>'
+    + '<div class="field"><label>Positions</label>'+dtiles("positions",WPS_POS)+dtext("positions","or type it")+'</div>'
+    + '<div class="field"><label>Vertical progression</label>'+dtiles("progression",WPS_PROG)+'</div>'
+    + '<div class="field"><label>Travel speed (ipm)</label>'+dtext("travel","e.g. 8–12")+'</div>'
+    + '<div class="field"><label>Bead</label>'+dtiles("bead",WPS_PASS)+'</div>'
+    + '<div class="field"><label>Passes</label>'+dtiles("passes",WPS_MULTI)+'</div>'
+    + '<div class="field" style="margin:0"><label>Interpass cleaning</label>'+dtiles("cleaning",WPS_CLEAN)+dtext("cleaning","or type it")+'</div></div>';
+
+  h += '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
     + '<button class="primary" data-act="savewps" style="width:100%">Save WPS</button>'
     + '<p id="saveerr" class="err" style="display:none">Give the WPS a number first.</p>';
   var b = '<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="savewps">Save WPS</button>';
   if(d.id) b = '<button class="ghost" data-act="delwps">Delete</button><button class="primary" data-act="savewps">Save WPS</button>';
   return { body:h, bar:b };
+};
+
+/* The whole WPS, read-only. Welders open it from the card on their
+   ticket; the inspector opens it from the library to see what they get. */
+function wpsSections(p){
+  var groove=(p.weldType||"CJP groove")!="Fillet";
+  function sec(title,rows){ rows=rows.filter(function(r){return r[1]}); return rows.length?{title:title,rows:rows}:null; }
+  return [
+    sec("Joint design",[["Weld type",p.weldType],["Joint",p.jointType],["Groove",groove?p.groove:""],["Groove angle",groove?p.angle:""],
+      ["Root opening",groove?p.rootOpening:""],["Root face",groove?p.rootFace:""],["Backing",groove?p.backing:""],
+      ["Backing material",p.backing=="With backing"?p.backingMat:""],["Fillet size",groove?"":p.filletSize]]),
+    sec("Base metal",[["Specification",p.base],["Thickness",p.thickRange],["Diameter",p.diaRange]]),
+    sec("Process and filler",[["Process",p.process+(p.transfer?" — "+p.transfer:"")],["Filler",p.filler],["AWS spec",p.fillerSpec],["Diameter",p.fillerDia]]),
+    sec("Shielding",[["Gas",p.gas],["Flow",p.flow?p.flow+" CFH":""]]),
+    sec("Electrical",[["Amps",p.amps],["Volts",p.volts],["Polarity",p.polarity],["Wire feed",p.wfs?p.wfs+" ipm":""]]),
+    sec("Preheat and interpass",[["Preheat, min",p.preheat],["Interpass, max",p.interpass]]),
+    sec("Technique",[["Positions",p.positions],["Progression",p.progression],["Travel speed",p.travel?p.travel+" ipm":""],["Bead",p.bead],["Passes",p.passes],["Cleaning",p.cleaning]])
+  ].filter(Boolean);
+}
+VIEWS.wpsview = function(){
+  var p=S.viewWps; if(!p) return { body:nav("WPS")+'<div class="empty">Not found.</div>', bar:"" };
+  var h=nav("WPS");
+  h+='<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+(p.basis?' &nbsp;·&nbsp; '+esc(p.basis):'')+'</div>'
+    +'<h1>'+esc(wpsLabel(p))+(p.title?'<span>'+esc(p.title)+'</span>':'')+'</h1></div><div class="code-chip">AWS<br>D1.1<br>2025</div></div>'
+    +(p.pqr?'<div class="perf"></div><div class="ticket-bottom">Supported by '+esc(p.pqr)+'</div>':'')+'</div>';
+  wpsSections(p).forEach(function(sc){
+    h+='<div class="card"><h3>'+esc(sc.title)+'</h3><dl class="kv">';
+    sc.rows.forEach(function(r){ h+='<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; });
+    h+='</dl></div>';
+  });
+  if(p.notes) h+='<div class="card"><h3>Notes</h3><p style="margin:0;font-size:.92rem;white-space:pre-wrap">'+esc(p.notes)+'</p></div>';
+  return { body:h, bar:'<button class="primary" data-act="back">Back</button>' };
 };
 
 /* ---------- welder intake ---------- */
@@ -828,6 +933,7 @@ function stepReview(){
     +kv("Filler",(w.filler=="Other"?w.fillerOther:w.filler)+(w.fillerDia?" × "+w.fillerDia:""))
     +kv("Gas",(w.gas=="Other"?(w.gasOther||"Other"):w.gas)+(w.flow?" @ "+w.flow+" CFH":""))
     +kv("WPS",w.wps)+'</dl></div>';
+  if(S.wps) h+=wpsCard(S.wps, "Your procedure");
   var m=missing();
   if(m.length) h+='<div class="flag"><b>Still needed</b> — '+esc(m.join(", "))+'</div>';
   h+='<p id="senderr" class="err" style="display:none"></p>';
@@ -1072,6 +1178,11 @@ document.addEventListener("click", function(e){
     putRow("wps", d); back();
   }
   else if(a=="delwps"){ if(confirm("Delete this WPS?")){ delRow("wps",S.draft.id); back(); } }
+  else if(a=="viewwps"){
+    var id=el.dataset.wpsId, p=(S.wps&&S.wps.id==id)?S.wps:(S.screen=="wpsedit"?Object.assign({},S.draft):wpsById(id));
+    if(S.ticket&&S.ticket.wps&&S.ticket.wps.id==id) p=S.ticket.wps;
+    go("wpsview",{viewWps:p});
+  }
   else if(a=="mklink"){ createTicket(el); }
   else if(a=="preview-intake"){ var t=S.ticket||{}; startIntake(t.data||S.draft, true, t.wps||wpsById(S.draft.wpsId)); }
   else if(a=="previewwelder"){ startIntake({},true); }
@@ -1253,6 +1364,7 @@ function afterSignIn(){
 function pick(v,group){
   if(group=="tpos"){ S.draft.position=v; render({keepScroll:true}); return; }
   if(group=="tproc"||group=="wproc"){ S.draft.process=v; render({keepScroll:true}); return; }
+  if(group&&group.slice(0,2)=="d:"){ var k=group.slice(2); S.draft[k]=(S.draft[k]===v?"":v); render({keepScroll:true}); return; }
   var w=S.w;
   if(S.step==1){
     if(["groove","fillet"].indexOf(v)>-1){ w.weldType=v; w.position=""; }
