@@ -1,6 +1,20 @@
 -- Weld Test Console — database schema
 -- Paste the whole file into Supabase → SQL Editor → New query → Run.
--- Safe to run once on a fresh project.
+--
+-- Re-runnable: it drops and recreates everything below. That WIPES all
+-- records, companies, WPSs and tickets. Fine on a fresh project; on a
+-- live one, back up first (Settings → Export in the app) or don't run it.
+
+drop function if exists submit_ticket(text, jsonb);
+drop function if exists get_ticket(text);
+drop function if exists create_org(text, text, text, text, text);
+drop table if exists tickets   cascade;
+drop table if exists records   cascade;
+drop table if exists wps       cascade;
+drop table if exists companies cascade;
+drop table if exists profiles  cascade;
+drop table if exists orgs      cascade;
+drop function if exists my_org();
 
 -- ---------------------------------------------------------------
 -- Tenancy. An org is one inspection company (Yeti Welding, the
