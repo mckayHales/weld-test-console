@@ -1,41 +1,49 @@
 # Weld Test Console — handoff
 
-A welder qualification test system for a steel fab shop. One CWI (McKay, Yeti Welding,
-Springville UT) sells weld coupons to outside companies, witnesses the tests, and issues
-signed WQTRs. Today that paperwork is done by hand. This app collects the welder's data
-from their own phone and drafts the record so he only has to verify, stamp, and print.
+A welder qualification test system for CWIs. An inspector sells weld coupons to outside
+companies, witnesses the tests, and issues signed WQTRs. This app collects the welder's
+data from their own phone, files it under the inspector's account, and drafts the record
+so the inspector only has to verify, stamp, and print.
 
-**Current state:** working prototype, single HTML file, ~1000 lines. Not yet hosted.
-All the flows below are implemented and tested.
+Built for more than one inspector from the start: each inspection company is its own
+tenant, and the plan is to offer it to other CWIs.
+
+**Current state:** working app, hosted on GitHub Pages, data in Supabase. Multi-tenant
+with sign-in. Welder submissions land automatically.
 
 ---
 
 ## 1. Run it
 
+Live: `https://mckayhales.github.io/weld-test-console/`
+
+Locally, any static server in the repo folder works:
+
 ```
-open weld-test-console.html
+python -m http.server 8765
 ```
 
-No build step, no dependencies, no server. Everything is inline in one file — CSS, JS,
-and two base64 PNG app icons. Open it in a browser and it works.
+No build step. `index.html` is the whole app; `manifest.webmanifest` and the two PNGs
+make it installable ("Add to Home Screen"). The only dependency is `supabase-js`, loaded
+from jsDelivr at the top of the script.
 
-To actually use it, it has to live at a real URL (Netlify Drop, Cloudflare Pages, GitHub
-Pages, or the Yeti Welding site). Link generation is disabled when it isn't hosted —
-see §5.
+The Supabase project URL and publishable key sit at the top of the script. They are
+public by design (they ship to every browser); the row-level security in the database is
+what protects the data, not the key.
 
 ---
 
 ## 2. Who uses which half
 
-| | Inspector (McKay) | Welder |
+| | Inspector | Welder |
 |---|---|---|
-| Entry point | opens the app | taps a link McKay texted |
-| Sees | console: records, companies, WPS library, settings | a 5-step intake form, nothing else |
-| Produces | the printed WQTR | a link containing their answers |
+| Entry point | opens the app, signs in | taps a link the inspector texted (`?t=<ticket>`) |
+| Sees | console: records, companies, WPS library, settings | a 5-step intake form with the WPS card on top, nothing else |
+| Produces | the printed WQTR | a record in the inspector's Test records |
 
-The welder never installs anything and never sees the console. The console is the default
-screen; the intake only renders when the URL carries a `#new=` fragment (or when McKay
-opens "Welder's view" to preview it).
+The welder never installs anything, never sees the console, never makes an account. The
+ticket id in the link is the only credential they have, and it's a 12-character random
+token.
 
 ---
 
@@ -46,107 +54,84 @@ object, a map of view functions that return HTML strings, and one delegated even
 
 ```
 S = {
-  screen,          // which VIEWS key is rendering
-  stack: [],       // nav history for back()
-  step,            // 0-4, welder intake only
-  w: {...},        // the weld test data (blankW())
-  r: {...},        // the inspection results (blankR())
-  recId, coId, wpsId,
-  draft: {},       // scratch object for forms (ticket, company, WPS)
-  preview          // true when McKay is previewing the welder's side
+  screen, stack, step, w, r, recId, coId, wpsId, draft, preview,
+  wps,        // WPS snapshot shown on the welder's intake
+  ticket,     // the ticket row just created (inspector side)
+  ticketId    // the ticket being filled out (welder side)
 }
+AUTH = { user, org, profile }    // set after sign-in; CFG is built from org + profile
 ```
 
 ### Views
 
-`VIEWS[name]()` returns `{ body, bar }` — body goes into `#app`, bar into the fixed
-bottom action bar. 15 of them:
+`VIEWS[name]()` returns `{ body, bar }`. Console screens:
 
 ```
 home  newticket  ticketlink  records  companies  company  editco
-wpslist  wpsedit  intake  sent  inspect  settings  exported  importer
+wpslist  wpsedit  inspect  settings  exported  importer
 ```
 
-### Navigation
+Auth and welder screens:
 
-`go(screen, opts)` pushes onto `S.stack`; `back()` pops. Both call `render()`.
+```
+login  onboard  loading  intake  sent  closed
+```
 
-### Rendering
+### Data flow
 
-`render(opts)` rebuilds the whole screen from the state object. Pass
-`{keepScroll: true}` for in-place updates (tapping a tile, flipping a bend to Pass) — it
-restores scroll position and refocuses the field you were typing in. Without it the
-render scrolls to top, which is right for navigation and wrong for everything else.
-**This was a real bug once. Don't regress it.**
+Views read synchronously from a localStorage cache (`db.get`), namespaced by org id.
+Writes go through `putRow(table, obj)` / `delRow(table, id)`: cache first (so the screen
+updates immediately), then an upsert/delete to Supabase. `loadAll()` refetches all three
+tables and is called on sign-in, on the Refresh button, and whenever the app comes back
+to the foreground on a console screen — that's how new welder submissions appear.
+
+Last write wins. There's no conflict resolution; with one inspector per org that's fine.
 
 ### Events
 
-One delegated `click` listener on `document`, dispatching on data attributes:
-
-- `data-go` — navigate to a screen
-- `data-act` — an action (35 of them; `grep 'a=="'` for the list)
-- `data-pick` + `data-group` — tile selection
-- `data-rec` / `data-co` / `data-wps` — open a record, company, or WPS
-- `data-res` + `data-val` — Pass/Fail on a test result row
-- `data-result` — overall Qualified / Not qualified
-
-Field input is handled by `onField(e)`, wired to **both** `input` and `change` — see §7.
-
-- `data-k` → writes to `S.w`
-- `data-r` → writes to `S.r`
-- `data-d` → writes to `S.draft`
-- `data-c` → writes to `CFG`
+One delegated `click` listener on `document`, dispatching on data attributes
+(`data-go`, `data-act`, `data-pick`+`data-group`, `data-rec`/`data-co`/`data-wps`,
+`data-res`+`data-val`, `data-result`). Field input via `onField`, wired to **both**
+`input` and `change` — see §7.
 
 ---
 
-## 4. Data model
+## 4. Database
 
-`localStorage`, four keys, all prefixed `wq.`:
+Schema is in `supabase/schema.sql`. Six tables:
 
 ```
-wq.cfg        { shop, city, inspector, cert, code }
-wq.companies  [ { id, name, contact, phone, notes, _demo? } ]
-wq.wps        [ { id, no, rev, basis, pqr, process, base, filler,
-                  thickRange, positions, notes, _demo? } ]
-wq.records    [ { id, w, r, updated, status, _demo? } ]
+orgs        the tenant — one inspection company (name, city, code edition)
+profiles    user → org, plus the inspector's name and cert line
+companies   (org_id, id) → data jsonb       the client companies
+wps         (org_id, id) → data jsonb       the WPS library
+records     (org_id, id) → data jsonb       { w, r, status, updated }
+tickets     id → org_id, data, wps, org_info, status, submission
 ```
 
-`raw.get/set` wraps localStorage in try/catch and falls back to an in-memory object, so
-the app still runs in sandboxed iframes where localStorage throws. Data doesn't survive
-reload there — expected, not a bug.
+The three data tables store the front-end object as jsonb, keyed by the short id the app
+already generates. Adding a field to a form is a front-end-only change.
 
-`_demo: true` marks seeded sample data. `seedDemo()` loads three welders (one awaiting
-test, one qualified, one failed on a root bend), two companies, two WPSs.
-`clearDemo()` removes only tagged items and leaves real data alone.
+Row-level security: every signed-in query is filtered by `my_org()`. The `anon` role has
+no table access at all. Welders go through two `security definer` functions:
 
-**No backend.** Records live in one browser. Settings → Export dumps everything to a
-base64 blob for backup; Import replaces from one.
+- `get_ticket(tid)` — returns the prefill, the WPS snapshot, and the shop header
+- `submit_ticket(tid, payload)` — inserts a record with status `Awaiting test`, marks the
+  ticket submitted, and refuses a second submission
+
+`create_org(...)` runs once on first sign-in and makes the org + profile together.
 
 ---
 
-## 5. The link protocol
+## 5. Sign-in
 
-Data moves between phones inside URL fragments. Two directions:
+Email OTP. The inspector types their email, gets a 6-digit code, types it. No password.
+The code path (rather than only a magic link) matters because a link opens in the phone's
+browser, not in the home-screen app — the session would land in the wrong place. The
+magic link still works as a fallback for desktop.
 
-```
-#new=<base64>   inspector → welder   ticket prefill
-                { companyId, company, name, wpsId, wps, position, process }
-
-#t=<base64>     welder → inspector   the filled-out intake
-                the whole S.w object
-```
-
-`enc()` / `dec()` are unicode-safe base64 with URL-safe substitutions (`+/=` → `-_` and
-stripped padding). A full submission is ~500-700 chars, fine for SMS.
-
-`hosted()` returns false when `location.origin` isn't http(s) — a sandboxed iframe, or a
-`file://` open. In that case the UI stops offering links it can't build and shows the
-bare fragment as a copyable code instead, with an explanation. The paste box accepts a
-full link, a bare `#t=...` fragment, or a raw base64 string, so the round trip can be
-tested without hosting.
-
-Boot order in the IIFE at the bottom: `#new=` → welder intake; `#t=` → load and save a
-record, open the inspect screen; neither → console home.
+For the code to appear in the email, the Supabase Magic Link template must include
+`{{ .Token }}`. The Site URL and redirect list must include the hosted URL.
 
 ---
 
@@ -170,118 +155,89 @@ bend type  T >= 3/8" → four side bends
 **This is the important part of the whole project.** These are drafts, never authority.
 Every computed range renders as an editable field, and the Print button stays disabled
 until the inspector ticks a checkbox confirming he verified them against his code book.
-McKay's stamp is on the output and his certification is on the line — a lookup table in
-a web app must never be what that rests on.
+The inspector's stamp is on the output and his certification is on the line — a lookup
+table in a web app must never be what that rests on.
 
 If you extend this (ASME IX, D1.5, D1.6, F-number groupings, diameter ranges), keep that
 property. Add code logic as *suggestions with an explicit verify gate*, not as answers.
-Anything uncertain should render as a blank field with a "verify" note rather than a
-confident wrong value. Diameter ranges are already handled this way and should stay
-that way until someone confirms the table.
+
+### The WPS card
+
+A WPS in the library carries the procedure variables (filler, diameter, gas, flow, amps,
+volts, polarity, preheat) alongside the qualification ones. When a ticket names a WPS,
+the welder's intake shows the card at the top of the "What are you welding?" step, and
+`prefillFromWps` pre-picks the tiles that exactly match — process, filler, diameter, gas,
+flow, base metal. Anything without an exact tile match stays blank for the welder to
+pick; the card still shows it. The ticket stores a snapshot of the WPS at creation, so a
+later edit to the library doesn't change what a welder already saw.
 
 ### Who enters what
 
-Deliberate split. The welder is only asked things the inspector can't already know:
-position, thickness, base metal, filler classification, filler diameter, gas, flow rate.
-Amps, volts, polarity and preheat are **procedure** variables, not welder qualification
-variables — they live on the WPS and get read off the machine by the inspector while he
-witnesses. They're on the record screen, not the intake. Travel speed was removed
-entirely; nobody measures ipm on a test coupon.
+The welder is only asked things the inspector can't already know: position, thickness,
+base metal, filler, diameter, gas, flow. Amps, volts, polarity and preheat are procedure
+variables — read off the machine by the inspector while witnessing, on the record screen.
 
-Everything on the welder's side after the name field is tap-only. Diameter lists swap by
-process (rod sizes for SMAW, wire sizes for GMAW/FCAW, filler rod for GTAW) and the label
-changes with them. Getting a welder to type on a phone in a shop is how these forms die.
+Everything on the welder's side after the name field is tap-only.
 
 ---
 
 ## 7. Gotchas, all learned the hard way
 
-**iOS fires only `change` on `<select>`, never `input`.** This killed every dropdown in
-the app on a real phone while working fine on desktop. Handled by wiring `onField` to
-both events and de-duplicating: the `input` listener skips selects and checkboxes, the
-`change` listener handles only those. Don't collapse them back into one.
+**iOS fires only `change` on `<select>`, never `input`.** Handled by wiring `onField` to
+both events and de-duplicating. Don't collapse them back into one.
 
-**Sandboxed previews have no origin.** `location.origin` comes back `"null"`, so
-naive link building produces `null/#new=...` which phones don't linkify. Guard with
-`hosted()`.
+**`render()` scrolls to top unless you pass `{keepScroll:true}`.** Right for navigation,
+wrong for tapping a tile. This was a real bug once.
 
-**Tile groups.** Two tile rows on the ticket screen each have a blank "Welder picks"
-option. Without `data-group` they're indistinguishable and taps land on the wrong field.
-Every tile row that could collide passes a group id (`tpos`, `tproc`, `wproc`).
+**Tile groups.** Tile rows that could collide pass a group id (`tpos`, `tproc`, `wproc`).
 
-**`esc()` turns `"` into `&quot;`.** Fine in rendered HTML, but it means string matching
-against `innerHTML` in tests needs `.replace(/&quot;/g,'"')` first. Diameter values are
-strings like `.045"` and `3/32"`, so this comes up constantly.
+**`esc()` turns `"` into `&quot;`.** Diameter values are strings like `.045"`, so string
+matching against `innerHTML` needs `.replace(/&quot;/g,'"')` first.
 
-**Sticky bottom bar vs. the iOS keyboard.** The keyboard covers it. Forms that end in a
-text field have an inline submit button in the body as well. Do this for any new form.
+**Sticky bottom bar vs. the iOS keyboard.** Forms that end in a text field have an inline
+submit button in the body as well.
 
-**Silent returns.** Early versions did `if(!d.name) return;` on save, which looks exactly
-like a dead button. Failed validation now shows a message.
+**Silent returns.** Failed validation must show a message, never just return.
+
+**The sign-in check races your own test code.** If you drive the app from the console
+during development, `getSession()` resolving will render the login screen over whatever
+you set up. Set `S.screen` and call `render()` again.
 
 ---
 
-## 8. Testing
+## 8. Known limits
 
-There's no test framework, but the app is drivable headlessly. The harness stubs enough
-DOM to capture the real delegated listeners, parse buttons out of rendered HTML, and fire
-synthetic clicks and field events — including iOS-style `change`-only selects.
-
-Pattern that works:
-
-```js
-// extract the <script> body, eval it with stubs for
-// document / window / location / btoa / atob / URL / Blob,
-// then fire events through the captured listeners
-```
-
-Worth covering when you change things: the full ticket → intake → encode → paste →
-results → print round trip, the bend-row switch at 3/8", the pipe path (5G/6G auto-
-selecting pipe mode), `keepScroll` behaviour, and both hosted and sandboxed link modes.
-
----
-
-## 9. Known limits
-
-- **One browser.** No sync, no multi-device, no server. Clearing site data loses
-  everything not exported. The printed WQTR is the real record; this is a drafting tool.
-- **No auth.** Anyone with the URL can open the console. Fine for one person on their
-  own phone, not fine the day a second person uses it.
-- **Submissions are hand-carried.** The welder has to actually send the link back. If
-  they don't, nothing arrives.
+- **One inspector per org.** The schema supports more (profiles → org), but there's no
+  invite flow yet. Adding a coworker to the *same* company means inserting their profile
+  row by hand. Separate companies just sign up separately.
 - **No welder continuity or expiration tracking** (D1.1 six-month continuity, requal).
-  This was the most obvious next feature and is not started.
-- **WPS records store data but don't print.** No WPS output document yet.
-- **No photos.** No coupon or macro photos attached to a record.
-- **Print is browser print-to-PDF.** Works, but no PDF generation, no archiving of the
-  rendered output.
+- **WPS records don't print.**
+- **No photos.**
+- **Print is browser print-to-PDF.** No archiving of the rendered output.
+- **Offline is read-only-ish.** The cache lets the console open without signal, and
+  writes go to the cache, but a write made offline is not queued for later — it's lost
+  on reload. Fine for now; a retry queue is the fix if it bites.
 
 ---
 
-## 10. Where it was going next
+## 9. Where it was going next
 
-Roughly in the order it came up:
-
-1. **Backend so submissions land automatically.** Google Apps Script against a Sheet is
-   the cheap version — the welder's form POSTs, the console polls or fetches on open.
-   Keeps the "no accounts" property. Also gives an offsite copy of the records, which
-   fixes the single-browser problem.
-2. **Continuity and expiration tracking** per welder, with a flag when someone's
-   qualification is going stale.
+1. **Continuity and expiration tracking** per welder — the feature another CWI would pay for.
+2. **Invite a coworker** to the same org.
 3. **Printable WPS** from the library.
-4. **Trim the option lists to what the shop actually stocks** — the filler
-   classifications, diameters and base metals are reasonable guesses for a Utah
-   structural shop, not confirmed against the rack.
+4. **Trim the option lists** to what the shops actually stock.
 5. **Multi-process tickets** for combo qualifications.
+6. **Custom domain** for the hosted app.
 
 ---
 
-## 11. Design
+## 10. Design
 
 Shop-floor instrument, not SaaS. Dark steel panels, arc blue for selection, safety yellow
 for attention and verification gates, oxide red for fails. Large tap targets sized for
-gloved hands. The intake is framed as a torn job ticket (perforated divider) because that
-matches what a welder is handed when they buy a coupon.
+gloved hands. The intake is framed as a torn job ticket because that matches what a
+welder is handed when they buy a coupon. The WPS card is a deeper blue panel so it reads
+as "given to you," not "pick from this."
 
 The printed record deliberately looks nothing like the app: black on white, hairline
 boxed grid, section bars, signature block, dashed stamp box. It should read as a
@@ -292,6 +248,3 @@ certificate, because that's what gets handed to a client.
 --line   #3A4C5C    --paper  #E9ECEE    --muted   #93A5B3
 --arc    #7FB8FF    --gold   #D8A527    --slag    #C0533A    --ok #57A773
 ```
-
-Keep it one file if you can. It's the reason this thing can be emailed, hosted anywhere,
-and opened from a phone in a shop with no network.

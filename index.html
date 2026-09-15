@@ -58,7 +58,7 @@ p.hint{margin:0 0 18px;color:var(--muted);font-size:.9rem}
 .field{margin:0 0 18px}
 .field>label{display:block;font-size:.9rem;margin-bottom:7px;color:#C6D2DB}
 .req{color:var(--gold)}
-input[type=text],input[type=number],input[type=tel],input[type=date],select,textarea{
+input[type=text],input[type=email],input[type=number],input[type=tel],input[type=date],select,textarea{
   width:100%;background:var(--panel);border:1px solid var(--line);color:var(--paper);
   border-radius:8px;padding:13px 12px;font-size:17px;font-family:inherit}
 textarea{min-height:76px;resize:vertical}
@@ -112,6 +112,13 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .rail{display:flex;gap:5px;margin:0 0 22px}
 .rail i{flex:1;height:4px;background:var(--line);border-radius:2px}
 .rail i.on{background:var(--arc)}.rail i.done{background:#4a6f93}
+#toast{display:none;position:fixed;left:16px;right:16px;top:calc(12px + env(safe-area-inset-top));max-width:44rem;margin:0 auto;background:var(--slag);color:#fff;padding:12px 16px;border-radius:8px;font-size:.9rem;z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.wps-card{border-color:#3C6789;background:linear-gradient(180deg,#22405A,#1E3448)}
+.wps-card h3{display:flex;align-items:center;gap:8px}
+.wps-card h3 small{font-weight:400;color:var(--muted);font-size:.8rem}
+.wps-card .kv dd{color:#EAF2FA}
+.code-in{letter-spacing:.35em;text-align:center;font-size:26px!important;font-variant-numeric:tabular-nums}
+.signin{margin-top:8vh}
 
 /* printed record */
 #record{display:none}
@@ -137,28 +144,93 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 <body>
 <div class="wrap" id="app"></div>
 <div class="bar noprint" id="bar"></div>
+<div id="toast" class="noprint"></div>
 <div id="record"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
 <script>
 /* =========================================================
    Weld Test Console — inspector side + welder ticket links
-   Single file, no server. Data lives in this browser.
+   One page. Inspectors sign in; their data lives in Supabase,
+   scoped to their inspection company. Welders never sign in —
+   a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-/* ---------- storage ---------- */
+var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
+var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
+var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+
+/* ---------- local cache ----------
+   The views read synchronously from here. The server is the record;
+   this is a mirror so the console opens instantly and survives a
+   dropped signal. Namespaced by org so two accounts on one phone
+   never see each other's rows. */
 var mem={};
 var raw={ get:function(k){try{return localStorage.getItem(k)}catch(e){return mem[k]||null}},
-          set:function(k,v){try{localStorage.setItem(k,v)}catch(e){mem[k]=v}} };
+          set:function(k,v){try{localStorage.setItem(k,v)}catch(e){mem[k]=v}},
+          del:function(k){try{localStorage.removeItem(k)}catch(e){delete mem[k]}} };
+var AUTH={ user:null, org:null, profile:null };
+function ns(k){ return "wq."+(AUTH.org?AUTH.org.id:"anon")+"."+k; }
 var db={
-  get:function(k,d){ try{ var v=JSON.parse(raw.get("wq."+k)||"null"); return v===null?d:v; }catch(e){ return d; } },
-  set:function(k,v){ raw.set("wq."+k, JSON.stringify(v)); }
+  get:function(k,d){ try{ var v=JSON.parse(raw.get(ns(k))||"null"); return v===null?d:v; }catch(e){ return d; } },
+  set:function(k,v){ raw.set(ns(k), JSON.stringify(v)); }
 };
 function hosted(){ return /^https?:/.test(location.origin||""); }
 function linkBase(){ return hosted() ? location.origin+location.pathname : ""; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
+function token(){ var a=new Uint8Array(12); (window.crypto||window.msCrypto).getRandomValues(a);
+  var s=""; for(var i=0;i<a.length;i++) s+=(a[i]%36).toString(36); return s; }
 
-/* ---------- settings ---------- */
-var CFG = db.get("cfg", { shop:"Yeti Welding", city:"Springville, Utah", inspector:"McKay", cert:"AWS CWI #______", code:"AWS D1.1:2025" });
-function saveCfg(){ db.set("cfg", CFG); }
+/* ---------- settings ----------
+   Assembled from the org row and the profile row once signed in. */
+var CFG = { shop:"", city:"", inspector:"", cert:"", code:"AWS D1.1:2025" };
+function cfgFromAuth(){
+  if(!AUTH.org) return;
+  CFG={ shop:AUTH.org.name||"", city:AUTH.org.city||"", code:AUTH.org.code||"AWS D1.1:2025",
+        inspector:AUTH.profile.name||"", cert:AUTH.profile.cert||"" };
+}
+function saveCfg(){
+  if(!sb||!AUTH.org) return;
+  AUTH.org.name=CFG.shop; AUTH.org.city=CFG.city; AUTH.org.code=CFG.code;
+  AUTH.profile.name=CFG.inspector; AUTH.profile.cert=CFG.cert;
+  sb.from("orgs").update({name:CFG.shop,city:CFG.city,code:CFG.code}).eq("id",AUTH.org.id).then(chk);
+  sb.from("profiles").update({name:CFG.inspector,cert:CFG.cert}).eq("user_id",AUTH.user.id).then(chk);
+}
+
+/* ---------- sync ----------
+   Reads come from the cache. Writes go to the cache first (so the
+   screen updates now) and then to the server. */
+var TABLES=["companies","wps","records"];
+function rowToObj(row){ return Object.assign({id:row.id}, row.data); }
+function objToRow(o){ var d=Object.assign({},o); delete d.id; return { org_id:AUTH.org.id, id:o.id, data:d, updated_at:new Date().toISOString() }; }
+function loadAll(){
+  if(!sb||!AUTH.org) return Promise.resolve();
+  return Promise.all(TABLES.map(function(t){
+    return sb.from(t).select("id,data").order("updated_at",{ascending:false}).then(function(res){
+      if(res.error){ toast("Couldn't load "+t+" — "+res.error.message); return; }
+      var list=res.data.map(rowToObj);
+      if(t=="companies") list.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
+      db.set(t,list);
+    });
+  }));
+}
+function putRow(table,obj){
+  var all=db.get(table,[]), i=-1;
+  for(var k=0;k<all.length;k++) if(all[k].id==obj.id) i=k;
+  if(i>-1) all[i]=obj; else all.unshift(obj);
+  if(table=="companies") all.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
+  db.set(table,all);
+  if(sb&&AUTH.org) sb.from(table).upsert(objToRow(obj)).then(chk);
+}
+function delRow(table,id){
+  db.set(table, db.get(table,[]).filter(function(x){return x.id!=id}));
+  if(sb&&AUTH.org) sb.from(table).delete().eq("org_id",AUTH.org.id).eq("id",id).then(chk);
+}
+function chk(res){ if(res&&res.error) toast("Didn't save — "+res.error.message); }
+var toastT;
+function toast(msg){
+  var t=document.getElementById("toast"); t.textContent=msg; t.style.display="block";
+  clearTimeout(toastT); toastT=setTimeout(function(){ t.style.display="none"; },4200);
+}
 
 /* ---------- option data ---------- */
 var PROCESSES=[{v:"SMAW",d:"Stick"},{v:"GMAW",d:"MIG"},{v:"FCAW-G",d:"Dual shield"},{v:"FCAW-S",d:"Innershield"},{v:"GTAW",d:"TIG"}];
@@ -252,24 +324,23 @@ function blankW(){ return { name:"",company:"",companyId:"",phone:"",stamp:"",da
 function blankR(){ return { method:"bend",visual:"",bendRootFace1:"",bendRootFace2:"",bendSide1:"",bendSide2:"",
   bendSide3:"",bendSide4:"",macro:"",rt:"",remarks:"",testNo:"",verified:false,result:"" }; }
 
-var S = { screen:"home", stack:[], step:0, w:blankW(), r:blankR(), recId:null, coId:null, wpsId:null, draft:{}, preview:false };
+var S = { screen:"home", stack:[], step:0, w:blankW(), r:blankR(), recId:null, coId:null, wpsId:null, draft:{}, preview:false,
+          wps:null, ticket:null, ticketId:null };
 
 /* ---------- data accessors ---------- */
 function companies(){ return db.get("companies",[]); }
-function saveCompanies(a){ db.set("companies",a); }
 function wpsAll(){ return db.get("wps",[]); }
-function saveWps(a){ db.set("wps",a); }
 function records(){ return db.get("records",[]); }
-function saveRecords(a){ db.set("records",a); }
 function coName(id){ var c=companies().filter(function(x){return x.id==id})[0]; return c?c.name:""; }
+function wpsById(id){ return wpsAll().filter(function(p){return p.id==id})[0]; }
+function wpsLabel(p){ return p ? p.no+(p.rev?" Rev "+p.rev:"") : ""; }
 function recsFor(id){ return records().filter(function(r){return r.w.companyId==id}); }
 function upsertRecord(){
-  var all=records();
+  var old=records().filter(function(x){return x.id==S.recId})[0]||{};
   var rec={ id:S.recId||uid(), w:S.w, r:S.r, updated:Date.now(),
             status: S.r.result ? S.r.result : "Awaiting test" };
-  var i=-1; for(var k=0;k<all.length;k++) if(all[k].id==rec.id) i=k;
-  if(i>-1) all[i]=rec; else all.unshift(rec);
-  S.recId=rec.id; saveRecords(all); return rec;
+  if(old._demo) rec._demo=true;
+  S.recId=rec.id; putRow("records",rec); return rec;
 }
 
 
@@ -277,14 +348,15 @@ function upsertRecord(){
 function seedDemo(){
   var co=[{id:"demo-co-1",name:"Wasatch Steel Fabrication",contact:"Ray Alder",phone:"801-555-0142",_demo:true},
           {id:"demo-co-2",name:"Canyon Mechanical",contact:"Dee Parker",phone:"801-555-0188",_demo:true}];
-  var cs=companies().filter(function(c){return !c._demo}).concat(co);
-  cs.sort(function(x,y){return x.name.localeCompare(y.name)}); saveCompanies(cs);
+  co.forEach(function(c){ putRow("companies",c); });
 
   var ps=[{id:"demo-wps-1",no:"WPS-01",rev:"0",basis:"Prequalified",process:"FCAW-G",base:"A36 / A572 Gr. 50",
-           filler:"E71T-1C",thickRange:'1/8" to 3/4"',positions:"All",notes:"CJP groove, 45° single V, 1/4\" root opening, steel backing.",_demo:true},
+           filler:"E71T-1C",fillerDia:'.045"',gas:"75% Ar / 25% CO2",flow:"35",amps:"180–220",volts:"24–27",polarity:"DCEP",preheat:"50 °F min",
+           thickRange:'1/8" to 3/4"',positions:"All",notes:"CJP groove, 45° single V, 1/4\" root opening, steel backing.",_demo:true},
           {id:"demo-wps-2",no:"WPS-07",rev:"1",basis:"Qualified by PQR",pqr:"PQR-03",process:"GTAW",base:"304/304L",
-           filler:"ER308L",thickRange:'1/16" to 1/2"',positions:"All",notes:"Open root, argon purge 15 CFH.",_demo:true}];
-  saveWps(wpsAll().filter(function(p){return !p._demo}).concat(ps));
+           filler:"ER308L",fillerDia:'3/32"',gas:"100% Argon",flow:"25",amps:"85–110",volts:"11–13",polarity:"DCEN",
+           thickRange:'1/16" to 1/2"',positions:"All",notes:"Open root, argon purge 15 CFH.",_demo:true}];
+  ps.forEach(function(w){ putRow("wps",w); });
 
   function mk(id,w,r,status){
     return { id:id, _demo:true, updated:Date.now(), status:status,
@@ -322,12 +394,12 @@ function seedDemo(){
       "Not qualified")
   ];
   recs[2].w.thickness="custom"; recs[2].w.thicknessCustom="0.28";
-  saveRecords(recs.concat(records().filter(function(r){return !r._demo})));
+  recs.forEach(function(r){ putRow("records",r); });
 }
 function clearDemo(){
-  saveCompanies(companies().filter(function(c){return !c._demo}));
-  saveWps(wpsAll().filter(function(p){return !p._demo}));
-  saveRecords(records().filter(function(r){return !r._demo}));
+  TABLES.forEach(function(t){
+    db.get(t,[]).filter(function(x){return x._demo}).forEach(function(x){ delRow(t,x.id); });
+  });
 }
 function hasDemo(){ return records().some(function(r){return r._demo}) || companies().some(function(c){return c._demo}); }
 
@@ -408,8 +480,45 @@ VIEWS.home = function(){
     h += '</div>';
   }
   h += '<p class="foot"><button class="mini" data-act="settings">Shop and stamp settings</button><br>'
-     + 'Everything is stored in this browser only.</p>';
+     + (AUTH.user ? 'Signed in as '+esc(AUTH.user.email) : 'Not signed in')+'</p>';
   return { body:h, bar:"" };
+};
+
+/* ---------- sign in / first run ---------- */
+VIEWS.login = function(){
+  var d=S.draft;
+  var h='<div class="ticket signin"><div class="ticket-top"><div>'
+    +'<div class="shop">Weld test console</div>'
+    +'<h1>Sign in<span>For inspectors. Welders don\'t sign in — they open the link you text them.</span></h1>'
+    +'</div><div class="code-chip">AWS<br>D1.1<br>2025</div></div><div class="perf"></div><div class="ticket-bottom">'
+    +(d.sent ? 'Code sent to '+esc(d.email) : 'A 6-digit code will be emailed to you. No password.')+'</div></div>';
+  if(!d.sent){
+    h+='<div class="field"><label>Email</label><input type="email" data-d="email" value="'+esc(d.email||"")+'" placeholder="you@example.com" autocomplete="email" inputmode="email"></div>'
+      +'<button class="primary" data-act="sendcode" style="width:100%">Email me a code</button>';
+  } else {
+    h+='<div class="field"><label>Code from the email</label><input type="text" class="code-in" data-d="code" value="'+esc(d.code||"")+'" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456"></div>'
+      +'<button class="primary" data-act="verifycode" style="width:100%">Sign in</button>'
+      +'<p class="foot">Tapping the link in the email works too, if you\'re in a browser.<br><button class="mini" data-act="resend">Different email</button></p>';
+  }
+  h+='<p id="autherr" class="err" style="display:none"></p>';
+  return { body:h, bar:"" };
+};
+VIEWS.onboard = function(){
+  var d=S.draft;
+  var h='<div class="ticket"><div class="ticket-top"><div><div class="shop">First time here</div>'
+    +'<h1>Your shop and stamp<span>This is the header on every certificate you print. You can change it later in Settings.</span></h1>'
+    +'</div></div></div>';
+  h+='<div class="field"><label>Inspection company <span class="req">*</span></label><input type="text" data-d="shop" value="'+esc(d.shop||"")+'" placeholder="Yeti Welding"></div>'
+    +'<div class="field"><label>City</label><input type="text" data-d="city" value="'+esc(d.city||"")+'" placeholder="Springville, Utah"></div>'
+    +'<div class="field"><label>Your name, as it goes on the signature line <span class="req">*</span></label><input type="text" data-d="inspector" value="'+esc(d.inspector||"")+'"></div>'
+    +'<div class="field"><label>Certification line</label><input type="text" data-d="cert" value="'+esc(d.cert||"")+'" placeholder="AWS CWI #12345678"></div>'
+    +'<div class="field"><label>Code edition</label><input type="text" data-d="code" value="'+esc(d.code||"AWS D1.1:2025")+'"></div>'
+    +'<button class="primary" data-act="finishonboard" style="width:100%">Open the console</button>'
+    +'<p id="autherr" class="err" style="display:none"></p>';
+  return { body:h, bar:"" };
+};
+VIEWS.loading = function(){
+  return { body:'<div class="empty" style="padding-top:30vh">'+esc(S.draft.msg||"Loading…")+'</div>', bar:"" };
 };
 function mi(ic,title,sub,screen,hero){
   return '<button class="mi'+(hero?" hero":"")+'" data-go="'+screen+'"><span class="ic">'+mIcon(ic)+'</span>'
@@ -433,8 +542,12 @@ VIEWS.newticket = function(){
   }
   h += '<div class="field"><label>Welder name, if you know it</label><input type="text" data-d="name" value="'+esc(d.name||"")+'" placeholder="Leave blank and they type it"></div>';
   h += '<div class="field"><label>WPS they weld to</label><select data-d="wpsId"><option value="">— None / welder\'s own —</option>'
-    + wpsAll().map(function(p){return '<option value="'+p.id+'" '+(d.wpsId==p.id?"selected":"")+'>'+esc(p.no+(p.rev?" Rev "+p.rev:""))+'</option>';}).join("")
-    + '</select></div>';
+    + wpsAll().map(function(p){return '<option value="'+p.id+'" '+(d.wpsId==p.id?"selected":"")+'>'+esc(wpsLabel(p))+'</option>';}).join("")
+    + '</select>'
+    + (d.wpsId ? '' : '<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">Pick one and the welder sees its requirements on their ticket, with the filler and gas already selected.</p>')
+    + '</div>';
+  var wp=wpsById(d.wpsId);
+  if(wp) h += wpsCard(wp, "What the welder will see");
   h += '<div class="card"><h3>Lock the test, or let them pick</h3>'
     + '<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">If you already sold them a specific coupon, set it here and those screens are pre-filled.</p>'
     + '<div class="field"><label>Position</label>'
@@ -444,26 +557,36 @@ VIEWS.newticket = function(){
   return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="mklink">Create link</button>' };
 };
 
+/* The card a welder sees: what the WPS calls for. Also shown to the
+   inspector on the ticket screen so there are no surprises. */
+function wpsCard(p, title){
+  if(!p) return "";
+  var rows = [
+    ["Process", p.process],
+    ["Filler", (p.filler||"")+(p.fillerDia?" × "+p.fillerDia:"")],
+    ["Gas", p.gas ? p.gas+(p.flow?" @ "+p.flow+" CFH":"") : ""],
+    ["Base metal", p.base],
+    ["Thickness", p.thickRange],
+    ["Positions", p.positions],
+    ["Amps", p.amps], ["Volts", p.volts], ["Polarity", p.polarity], ["Preheat", p.preheat]
+  ].filter(function(r){return r[1]});
+  var h='<div class="card wps-card"><h3>'+esc(title||"Weld to this procedure")+' <small>'+esc(wpsLabel(p))+(p.basis?" · "+esc(p.basis):"")+'</small></h3><dl class="kv">';
+  rows.forEach(function(r){ h+='<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; });
+  h+='</dl>'+(p.notes?'<p style="margin:12px 0 0;font-size:.88rem;color:#C6D2DB">'+esc(p.notes)+'</p>':'')+'</div>';
+  return h;
+}
+
 VIEWS.ticketlink = function(){
-  var d=S.draft;
-  var pre={ companyId:d.companyId||"", company:d.companyLabel||"", name:d.name||"",
-            wpsId:d.wpsId||"", wps:d.wpsLabel||"", position:d.position||"", process:d.process||"" };
-  var frag="#new="+enc(pre);
-  var link=linkBase()+frag;
+  var d=S.draft, t=S.ticket||{};
+  var pre=t.data||{};
+  var link=linkBase()+"?t="+t.id;
   window._link=link;
   window._msg="Weld test intake — "+CFG.shop+"\nFill this out before your test:\n"+link;
   var h=nav("Send to welder");
-  if(hosted()){
-    h+='<div class="card"><h3>Ticket ready</h3>'
-      +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Text this to the welder. They fill it out, then send you a link back that you paste into Test records.</p>'
-      +'<div class="linkbox">'+esc(link)+'</div>'
-      +'<button class="mini" data-act="copy">Copy link</button> &nbsp; <button class="mini" data-act="sms">Text it</button> &nbsp; <button class="mini" data-act="share">Share</button></div>';
-  } else {
-    h+='<div class="flag"><b>No link yet</b> — this preview has no web address of its own, so there is nothing to text. Links start working the moment the app is hosted somewhere. Use Welder\'s view to walk their side in the meantime.</div>'
-      +'<div class="card"><h3>Ticket contents</h3><div class="linkbox">'+esc(frag)+'</div>'
-      +'<button class="mini" data-act="copy">Copy</button></div>';
-    window._link=frag;
-  }
+  h+='<div class="card"><h3>Ticket ready</h3>'
+    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Text this to the welder. When they tap Send, their answers land in your Test records on their own.</p>'
+    +'<div class="linkbox">'+esc(link)+'</div>'
+    +'<button class="mini" data-act="copy">Copy link</button> &nbsp; <button class="mini" data-act="sms">Text it</button> &nbsp; <button class="mini" data-act="share">Share</button></div>';
   h+='<div class="card"><h3>On the ticket</h3><dl class="kv">'
     +(pre.company?'<dt>Company</dt><dd>'+esc(pre.company)+'</dd>':'')
     +(pre.name?'<dt>Welder</dt><dd>'+esc(pre.name)+'</dd>':'')
@@ -488,10 +611,7 @@ VIEWS.records = function(){
       + '<span>'+esc([fmtDate(r.w.date),r.w.position,r.w.process,coName(r.w.companyId)].filter(Boolean).join(" · "))+'</span></span>'
       + pill(r.status)+'</button>';
   });
-  h += '<div class="card" style="margin-top:14px"><h3>Paste a welder\'s link</h3>'
-    + '<textarea id="pastebox" placeholder="Paste the link they sent you" style="font-size:14px"></textarea>'
-    + '<div style="margin-top:10px"><button class="primary" data-act="paste" style="width:100%">Load welder</button></div>'
-    + '<p id="pasteerr" class="err" style="display:none">No test data in that link. Copy the whole thing, including everything after the #.</p></div>';
+  h += '<p class="foot">Welders\' tickets show up here on their own when they tap Send.<br><button class="mini" data-act="refresh">Refresh</button></p>';
   return { body:h, bar:'<button class="primary" data-act="startblank">Start a record myself</button>' };
 };
 
@@ -565,6 +685,16 @@ VIEWS.wpsedit = function(){
     + '<div class="field"><label>Filler</label><input type="text" data-d="filler" value="'+esc(d.filler||"")+'" placeholder="E71T-1C"></div></div>';
   h += '<div class="row"><div class="field"><label>Thickness range</label><input type="text" data-d="thickRange" value="'+esc(d.thickRange||"")+'" placeholder="1/8&quot; to 3/4&quot;"></div>'
     + '<div class="field"><label>Positions</label><input type="text" data-d="positions" value="'+esc(d.positions||"")+'" placeholder="All"></div></div>';
+  h += '<div class="card"><h3>What the welder is told</h3>'
+    + '<p style="margin:0 0 12px;font-size:.86rem;color:var(--muted)">Shown on their ticket and pre-selected on their form. Leave blank what the WPS doesn\'t fix.</p>'
+    + '<div class="row"><div class="field"><label>'+esc(DIAM_LABEL[d.process]||"Filler diameter")+'</label><input type="text" data-d="fillerDia" value="'+esc(d.fillerDia||"")+'" placeholder=\'.045"\'></div>'
+    + '<div class="field"><label>Gas</label><input type="text" data-d="gas" value="'+esc(d.gas||"")+'" placeholder="75% Ar / 25% CO2"></div></div>'
+    + '<div class="row"><div class="field"><label>Flow (CFH)</label><input type="text" data-d="flow" value="'+esc(d.flow||"")+'" placeholder="35"></div>'
+    + '<div class="field"><label>Polarity</label><select data-d="polarity"><option value="">—</option>'
+    + ["DCEP","DCEN","AC"].map(function(p){return '<option '+(d.polarity==p?"selected":"")+'>'+p+'</option>'}).join("")+'</select></div></div>'
+    + '<div class="row"><div class="field" style="margin:0"><label>Amps</label><input type="text" data-d="amps" value="'+esc(d.amps||"")+'" placeholder="180–220"></div>'
+    + '<div class="field" style="margin:0"><label>Volts</label><input type="text" data-d="volts" value="'+esc(d.volts||"")+'" placeholder="24–27"></div>'
+    + '<div class="field" style="margin:0"><label>Preheat</label><input type="text" data-d="preheat" value="'+esc(d.preheat||"")+'" placeholder="50 °F min"></div></div></div>';
   h += '<div class="field"><label>Joint / notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
     + '<button class="primary" data-act="savewps" style="width:100%">Save WPS</button>'
     + '<p id="saveerr" class="err" style="display:none">Give the WPS a number first.</p>';
@@ -610,7 +740,8 @@ function stepWelder(){
 }
 function stepTest(){
   var w=S.w;
-  var h='<h2 class="step">What are you welding?</h2><p class="hint">Pick what the coupon actually is.</p>';
+  var h='<h2 class="step">What are you welding?</h2><p class="hint">'+(S.wps?'Your inspector set the procedure. The matching choices are already picked — check them against your coupon.':'Pick what the coupon actually is.')+'</p>';
+  h+=wpsCard(S.wps, "Weld to this procedure");
   h+='<div class="field"><label>Weld type <span class="req">*</span></label>'+tiles([{v:"groove",d:"Groove / CJP"},{v:"fillet",d:"Fillet"}],w.weldType)+'</div>';
   h+='<div class="field"><label>Plate or pipe <span class="req">*</span></label>'+tiles([{v:"plate",d:""},{v:"pipe",d:"or tube"}],w.product)+'</div>';
   h+='<div class="field"><label>Process <span class="req">*</span></label>'+tiles(PROCESSES,w.process)+'</div>';
@@ -668,6 +799,7 @@ function stepReview(){
     +kv("WPS",w.wps)+'</dl></div>';
   var m=missing();
   if(m.length) h+='<div class="flag"><b>Still needed</b> — '+esc(m.join(", "))+'</div>';
+  h+='<p id="senderr" class="err" style="display:none"></p>';
   return h;
 }
 function kv(k,v){ return v?'<dt>'+esc(k)+'</dt><dd>'+esc(v)+'</dd>':""; }
@@ -684,20 +816,17 @@ function missing(){
   return m;
 }
 VIEWS.sent = function(){
-  var frag="#t="+enc(S.w);
-  var link=linkBase()+frag;
-  window._link=hosted()?link:frag;
-  window._msg="Weld test intake — "+(S.w.name||"welder")+" — "+S.w.position+" "+S.w.process+"\n"+link;
   var h=previewBar()+'<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+'</div>'
-    +'<h1>Ready for the inspector<span>Send this link to '+esc(CFG.inspector)+'.</span></h1></div></div><div class="perf"></div>'
+    +'<h1>Sent to '+esc(CFG.inspector||"the inspector")+'<span>'+(S.preview?'In the real thing, this is already in your Test records.':'Your test record is drafted. Nothing else to send.')+'</span></h1></div></div><div class="perf"></div>'
     +'<div class="ticket-bottom">'+esc(S.w.name)+' · '+esc(S.w.position)+' · '+esc(S.w.process)+'</div></div>';
-  h+= hosted()
-    ? '<div class="card"><div class="linkbox">'+esc(link)+'</div>'
-      +'<button class="mini" data-act="copy">Copy link</button> &nbsp; <button class="mini" data-act="sms">Text it</button> &nbsp; <button class="mini" data-act="share">Share</button></div>'
-    : '<div class="flag"><b>Testing</b> — no web address in this preview, so copy the code below and paste it into Test records to see what lands on your side.</div>'
-      +'<div class="card"><div class="linkbox">'+esc(frag)+'</div><button class="mini" data-act="copy">Copy code</button></div>';
   h+='<div class="card"><h3>Before you weld</h3><p style="margin:0;font-size:.9rem;color:var(--muted)">Bring your coupon to the booth. The inspector confirms the position and thickness ranges against the code book, then witnesses the test.</p></div>';
-  h+='<p class="foot"><button class="mini" data-act="iedit">Change something</button></p>';
+  if(S.wps) h+=wpsCard(S.wps, "Your procedure");
+  return { body:h, bar:"" };
+};
+VIEWS.closed = function(){
+  var d=S.draft;
+  var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop||"Weld test")+'</div>'
+    +'<h1>'+esc(d.title||"Already sent")+'<span>'+esc(d.msg||"")+'</span></h1></div></div></div>';
   return { body:h, bar:"" };
 };
 
@@ -716,6 +845,8 @@ VIEWS.inspect = function(){
     +[["bend","Bend test"],["rt","Radiographic"],["macro","Macroetch / break"]].map(function(o){return '<option value="'+o[0]+'" '+(r.method==o[0]?"selected":"")+'>'+o[1]+'</option>'}).join("")
     +'</select></div></div></div>';
 
+  var wp=wpsById(w.wpsId);
+  if(wp) h+=wpsCard(wp, "Tested to");
   h+='<div class="card"><h3>Welding variables</h3>'
     +'<p style="margin:0 0 12px;font-size:.86rem;color:var(--muted)">What you read off the machine, or what the WPS calls for. The welder is not asked these.</p>'
     +'<div class="row"><div class="field"><label>Amps</label><input type="number" data-k="amps" value="'+esc(w.amps)+'" placeholder="210"></div>'
@@ -774,8 +905,10 @@ VIEWS.settings = function(){
     +(hasDemo()
       ? '<button class="mini" data-act="unseed">Remove sample data</button>'
       : '<button class="mini" data-act="seed">Load sample data</button>')+'</div>';
-  h+='<div class="card"><h3>Your data</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Records live in this browser. Export a backup before you clear anything or switch phones.</p>'
+  h+='<div class="card"><h3>Your data</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Everything is saved to your account and shows up on any phone you sign in on. Export is a spare copy; Import adds records from an older backup.</p>'
     +'<button class="mini" data-act="export">Export everything</button> &nbsp; <button class="mini" data-act="import">Import a backup</button></div>';
+  h+='<div class="card"><h3>Account</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">'+esc(AUTH.user?AUTH.user.email:"")+'</p>'
+    +'<button class="mini" data-act="signout">Sign out</button></div>';
   return { body:h, bar:'<button class="primary" data-act="savecfg">Save settings</button>' };
 };
 VIEWS.exported = function(){
@@ -868,7 +1001,12 @@ document.addEventListener("click", function(e){
   else if(a=="doimport"){
     var box=document.getElementById("impbox"), er=document.getElementById("imperr");
     var d=dec((box.value||"").trim());
-    if(d&&d.records){ CFG=Object.assign(CFG,d.cfg||{}); saveCfg(); saveCompanies(d.companies||[]); saveWps(d.wps||[]); saveRecords(d.records||[]); S.stack=[]; S.screen="home"; render(); }
+    if(d&&d.records){
+      (d.companies||[]).forEach(function(x){ putRow("companies",x); });
+      (d.wps||[]).forEach(function(x){ putRow("wps",x); });
+      (d.records||[]).forEach(function(x){ putRow("records",x); });
+      S.stack=[]; S.screen="home"; render();
+    }
     else er.style.display="block";
   }
   else if(a=="seed"){ seedDemo(); S.stack=[]; S.screen="records"; render(); }
@@ -879,49 +1017,38 @@ document.addEventListener("click", function(e){
   else if(a=="saveco"){
     var d=S.draft;
     if(!d.name){ var se=document.getElementById("saveerr"); if(se) se.style.display="block"; return; }
-    var all=companies(), i=-1; for(var k=0;k<all.length;k++) if(all[k].id==d.id) i=k;
-    if(i>-1) all[i]=Object.assign(all[i],d); else { d.id=uid(); all.push(d); }
-    all.sort(function(x,y){return x.name.localeCompare(y.name)});
-    saveCompanies(all); back();
+    if(!d.id) d.id=uid();
+    putRow("companies", d); back();
   }
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
   else if(a=="savewps"){
     var d=S.draft;
     if(!d.no){ var se2=document.getElementById("saveerr"); if(se2) se2.style.display="block"; return; }
-    var all=wpsAll(), i=-1; for(var k2=0;k2<all.length;k2++) if(all[k2].id==d.id) i=k2;
-    if(i>-1) all[i]=Object.assign(all[i],d); else { d.id=uid(); all.push(d); }
-    saveWps(all); back();
+    if(!d.id) d.id=uid();
+    putRow("wps", d); back();
   }
-  else if(a=="delwps"){ if(confirm("Delete this WPS?")){ saveWps(wpsAll().filter(function(x){return x.id!=S.draft.id})); back(); } }
-  else if(a=="mklink"){
-    var d=S.draft;
-    d.companyLabel = coName(d.companyId);
-    var p=wpsAll().filter(function(x){return x.id==d.wpsId})[0];
-    d.wpsLabel = p ? p.no+(p.rev?" Rev "+p.rev:"") : "";
-    go("ticketlink");
-  }
-  else if(a=="preview-intake"){ startIntake(S.draft,true); }
+  else if(a=="delwps"){ if(confirm("Delete this WPS?")){ delRow("wps",S.draft.id); back(); } }
+  else if(a=="mklink"){ createTicket(el); }
+  else if(a=="preview-intake"){ var t=S.ticket||{}; startIntake(t.data||S.draft, true, t.wps||wpsById(S.draft.wpsId)); }
   else if(a=="previewwelder"){ startIntake({},true); }
-  else if(a=="exitpreview"){ S.preview=false; S.stack=[]; S.screen="home"; S.w=blankW(); S.r=blankR(); render(); }
+  else if(a=="exitpreview"){ S.preview=false; S.wps=null; S.stack=[]; S.screen="home"; S.w=blankW(); S.r=blankR(); render(); }
   else if(a=="homeclear"){ S.stack=[]; S.screen="home"; S.draft={}; render(); }
   else if(a=="startblank"){ S.w=blankW(); S.r=blankR(); S.recId=null; go("inspect"); }
-  else if(a=="paste"){
-    var pb=document.getElementById("pastebox"), pe=document.getElementById("pasteerr");
-    var txt=(pb.value||"").trim();
-    var mm=txt.match(/[#&]t=([A-Za-z0-9\-_]+)/);
-    var dd=mm?dec(mm[1]):(/^[A-Za-z0-9\-_]{20,}$/.test(txt)?dec(txt):null);
-    if(dd&&dd.name!==undefined){ S.w=Object.assign(blankW(),dd); S.r=blankR(); S.recId=null; upsertRecord(); go("inspect"); }
-    else pe.style.display="block";
-  }
+  else if(a=="refresh"){ el.textContent="Refreshing…"; loadAll().then(function(){ render({keepScroll:true}); }); }
   else if(a=="saverec"){ upsertRecord(); el.textContent="Saved"; }
-  else if(a=="delrec"){ if(confirm("Delete this record?")){ saveRecords(records().filter(function(x){return x.id!=S.recId})); S.stack=[]; S.screen="records"; render(); } }
+  else if(a=="delrec"){ if(confirm("Delete this record?")){ delRow("records",S.recId); S.stack=[]; S.screen="records"; render(); } }
   else if(a=="preview"){ var rec=document.getElementById("record"); rec.innerHTML=buildRecord(); rec.classList.toggle("preview"); if(rec.classList.contains("preview")) rec.scrollIntoView({behavior:"smooth"}); }
   else if(a=="print"){ upsertRecord(); document.getElementById("record").innerHTML=buildRecord(); window.print(); }
   else if(a=="istep-next"){ S.step=Math.min(STEPS.length-1,S.step+1); render(); }
   else if(a=="istep-back"){ S.step=Math.max(0,S.step-1); render(); }
-  else if(a=="isend"){ S.screen="sent"; render(); }
+  else if(a=="isend"){ sendIntake(el); }
   else if(a=="iedit"){ S.screen="intake"; S.step=0; render(); }
+  else if(a=="sendcode") sendCode();
+  else if(a=="verifycode") verifyCode();
+  else if(a=="resend"){ S.draft={email:S.draft.email}; render(); }
+  else if(a=="finishonboard") finishOnboard();
+  else if(a=="signout"){ sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
   else if(a=="copy"){ copy(window._link); el.textContent="Copied"; }
   else if(a=="sms"){ location.href="sms:?&body="+encodeURIComponent(window._msg); }
   else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}); else { copy(window._link); el.textContent="Copied"; } }
@@ -932,13 +1059,109 @@ function openRecord(id){
   var r=records().filter(function(x){return x.id==id})[0]; if(!r) return;
   S.w=Object.assign(blankW(),r.w); S.r=Object.assign(blankR(),r.r); S.recId=r.id; go("inspect");
 }
-function startIntake(pre,preview){
-  S.w=blankW(); S.r=blankR(); S.step=0; S.preview=!!preview;
+function startIntake(pre,preview,wps){
+  S.w=blankW(); S.r=blankR(); S.step=0; S.preview=!!preview; S.wps=wps||null;
   if(pre){ if(pre.companyId){S.w.companyId=pre.companyId;} if(pre.company||pre.companyLabel){S.w.company=pre.company||pre.companyLabel;}
     if(pre.name)S.w.name=pre.name; if(pre.wpsId)S.w.wpsId=pre.wpsId; if(pre.wps||pre.wpsLabel)S.w.wps=pre.wps||pre.wpsLabel;
     if(pre.position){ S.w.position=pre.position; if(/F$/.test(pre.position))S.w.weldType="fillet"; if(["5G","6G","2G+5G"].indexOf(pre.position)>-1)S.w.product="pipe"; }
     if(pre.process)S.w.process=pre.process; }
+  if(wps) prefillFromWps(wps);
   S.stack=[]; S.screen="intake"; render();
+}
+/* Only pre-pick what the form has a tile for; anything else stays a
+   blank the welder fills. The card still shows the full WPS. */
+function prefillFromWps(p){
+  var w=S.w;
+  if(!w.process && PROCESSES.some(function(x){return x.v==p.process})) w.process=p.process;
+  if(w.process!=p.process) return;
+  var fl=FILLERS[w.process]||[], gs=GASES[w.process]||[], dm=(DIAMS[w.process]||[]).map(function(x){return x.v});
+  if(p.filler && fl.indexOf(p.filler)>-1) w.filler=p.filler;
+  if(p.fillerDia && dm.indexOf(p.fillerDia)>-1) w.fillerDia=p.fillerDia;
+  if(p.gas && gs.indexOf(p.gas)>-1) w.gas=p.gas;
+  if(p.flow && FLOWS.some(function(x){return x.v==String(p.flow)})) w.flow=String(p.flow);
+  if(p.base && BASE_METALS.indexOf(p.base)>-1) w.base=p.base;
+  if(!w.wps) w.wps=wpsLabel(p);
+}
+
+/* ---------- server round trips ---------- */
+function createTicket(btn){
+  var d=S.draft;
+  if(!sb||!AUTH.org){ toast("Not signed in."); return; }
+  var p=wpsById(d.wpsId);
+  var t={ id:token(), org_id:AUTH.org.id,
+    data:{ companyId:d.companyId||"", company:coName(d.companyId), name:d.name||"",
+           wpsId:d.wpsId||"", wps:wpsLabel(p), position:d.position||"", process:d.process||"" },
+    wps: p ? Object.assign({},p) : null,
+    org_info:{ shop:CFG.shop, city:CFG.city, inspector:CFG.inspector, code:CFG.code } };
+  if(t.wps) delete t.wps._demo;
+  btn.disabled=true; btn.textContent="Creating…";
+  sb.from("tickets").insert(t).then(function(res){
+    if(res.error){ btn.disabled=false; btn.textContent="Create link"; toast("Couldn't create the ticket — "+res.error.message); return; }
+    S.ticket=t; go("ticketlink");
+  });
+}
+function sendIntake(btn){
+  if(S.preview||!S.ticketId){ S.screen="sent"; render(); return; }
+  btn.disabled=true; btn.textContent="Sending…";
+  sb.rpc("submit_ticket",{ tid:S.ticketId, payload:S.w }).then(function(res){
+    var er=document.getElementById("senderr");
+    if(res.error){ btn.disabled=false; btn.textContent="Send to inspector"; if(er){ er.textContent="Didn't go through — "+res.error.message+". Check your signal and try again."; er.style.display="block"; } return; }
+    if(res.data=="closed"){ S.screen="closed"; S.draft={title:"Already sent",msg:"This ticket was already submitted. If something is wrong on it, tell the inspector."}; render(); return; }
+    if(res.data!="ok"){ S.screen="closed"; S.draft={title:"Ticket not found",msg:"Ask the inspector to send a new link."}; render(); return; }
+    S.screen="sent"; render();
+  });
+}
+function welderBoot(tid){
+  S.screen="loading"; S.draft={msg:"Opening your ticket…"}; render();
+  if(!sb){ S.screen="closed"; S.draft={title:"Can't reach the server",msg:"Check your signal and reopen the link."}; render(); return; }
+  sb.rpc("get_ticket",{tid:tid}).then(function(res){
+    var t=res.data;
+    if(res.error||!t){ S.screen="closed"; S.draft={title:"Ticket not found",msg:"This link doesn't match a ticket. Ask the inspector to send it again."}; render(); return; }
+    CFG=Object.assign({},CFG,t.org||{});
+    if(t.status!="open"){ S.screen="closed"; S.draft={title:"Already sent",msg:"This ticket was already submitted. Bring your coupon to the booth."}; render(); return; }
+    S.ticketId=t.id; startIntake(t.data||{}, false, t.wps||null);
+  });
+}
+
+/* ---------- inspector sign-in ---------- */
+function authErr(msg){ var e=document.getElementById("autherr"); if(e){ e.textContent=msg; e.style.display="block"; } }
+function sendCode(){
+  var email=(S.draft.email||"").trim();
+  if(!/^\S+@\S+\.\S+$/.test(email)){ authErr("That doesn't look like an email address."); return; }
+  sb.auth.signInWithOtp({ email:email, options:{ emailRedirectTo:linkBase() } }).then(function(res){
+    if(res.error){ authErr(res.error.message); return; }
+    S.draft={email:email,sent:true}; render();
+  });
+}
+function verifyCode(){
+  var code=(S.draft.code||"").replace(/\D/g,"");
+  if(code.length<6){ authErr("Type the whole code from the email."); return; }
+  sb.auth.verifyOtp({ email:S.draft.email, token:code, type:"email" }).then(function(res){
+    if(res.error){ authErr(res.error.message); return; }
+    afterSignIn();
+  });
+}
+function finishOnboard(){
+  var d=S.draft;
+  if(!d.shop||!d.inspector){ authErr("The company name and your name are needed for the certificate header."); return; }
+  sb.rpc("create_org",{ p_name:d.shop, p_city:d.city||"", p_code:d.code||"AWS D1.1:2025", p_inspector:d.inspector, p_cert:d.cert||"" }).then(function(res){
+    if(res.error){ authErr(res.error.message); return; }
+    afterSignIn();
+  });
+}
+function afterSignIn(){
+  S.screen="loading"; S.draft={msg:"Loading your records…"}; render();
+  sb.auth.getUser().then(function(u){
+    AUTH.user=u.data&&u.data.user;
+    if(!AUTH.user){ S.screen="login"; S.draft={}; render(); return; }
+    return sb.from("profiles").select("*, orgs(*)").eq("user_id",AUTH.user.id).maybeSingle().then(function(res){
+      if(res.error){ S.screen="login"; S.draft={}; render(); toast(res.error.message); return; }
+      if(!res.data){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
+      AUTH.profile=res.data; AUTH.org=res.data.orgs; cfgFromAuth();
+      S.stack=[]; S.screen="home"; S.draft={}; render();
+      return loadAll().then(function(){ if(!S.preview) render({keepScroll:true}); });
+    });
+  });
 }
 
 function pick(v,group){
@@ -985,13 +1208,29 @@ function refreshBar(){
   var n=bar.querySelector('[data-act=isend]'); if(n) n.disabled=missing().length>0;
 }
 
-/* ---------- boot ---------- */
+/* ---------- boot ----------
+   ?t=<ticket>  → a welder opened their link. No sign-in, no console.
+   otherwise    → inspector. Session in hand → console; none → sign in.
+   Supabase puts its own tokens in the hash after a magic link; the
+   client library consumes them on load. */
 (function(){
-  var hn=location.hash.match(/[#&]new=([A-Za-z0-9\-_]+)/);
-  var ht=location.hash.match(/[#&]t=([A-Za-z0-9\-_]+)/);
-  if(hn){ var p=dec(hn[1]); startIntake(p||{}); return; }
-  if(ht){ var d=dec(ht[1]); if(d){ S.w=Object.assign(blankW(),d); S.r=blankR(); upsertRecord(); S.screen="inspect"; render(); return; } }
-  render();
+  var tid=new URLSearchParams(location.search).get("t");
+  if(tid){ welderBoot(tid); return; }
+  if(!sb){ S.screen="closed"; S.draft={title:"Can't reach the server",msg:"Check your connection and reload."}; render(); return; }
+  S.screen="loading"; S.draft={msg:"Signing in…"}; render();
+  sb.auth.getSession().then(function(res){
+    if(res.data&&res.data.session) afterSignIn();
+    else { S.screen="login"; S.draft={}; render(); }
+  });
+  sb.auth.onAuthStateChange(function(ev){
+    if(ev=="SIGNED_IN" && S.screen=="login") afterSignIn();
+  });
+  // Coming back to the app is when a welder's ticket is most likely to
+  // have landed. Refetch quietly on the console screens.
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState!="visible" || !AUTH.org) return;
+    if(["home","records","company","companies"].indexOf(S.screen)>-1) loadAll().then(function(){ render({keepScroll:true}); });
+  });
 })();
 </script>
 </body>
