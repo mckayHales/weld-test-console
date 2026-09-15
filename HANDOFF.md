@@ -125,13 +125,15 @@ no table access at all. Welders go through two `security definer` functions:
 
 ## 5. Sign-in
 
-Email OTP. The inspector types their email, gets a 6-digit code, types it. No password.
-The code path (rather than only a magic link) matters because a link opens in the phone's
-browser, not in the home-screen app — the session would land in the wrong place. The
-magic link still works as a fallback for desktop.
+Email and password, through Supabase Auth. Create account, sign in, forgot-password
+reset link, and a "new password" screen that appears when the reset link lands
+(`PASSWORD_RECOVERY` event). No custom email templates or SMTP needed; the defaults work.
 
-For the code to appear in the email, the Supabase Magic Link template must include
-`{{ .Token }}`. The Site URL and redirect list must include the hosted URL.
+If "Confirm email" is on in the Supabase project, a new account gets a confirmation link
+first and then signs in. If it's off, sign-up drops straight into onboarding.
+
+The Site URL / redirect list in Supabase must include the hosted URL, or the reset link
+won't come back to the app.
 
 ---
 

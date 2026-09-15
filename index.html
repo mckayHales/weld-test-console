@@ -58,7 +58,7 @@ p.hint{margin:0 0 18px;color:var(--muted);font-size:.9rem}
 .field{margin:0 0 18px}
 .field>label{display:block;font-size:.9rem;margin-bottom:7px;color:#C6D2DB}
 .req{color:var(--gold)}
-input[type=text],input[type=email],input[type=number],input[type=tel],input[type=date],select,textarea{
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=tel],input[type=date],select,textarea{
   width:100%;background:var(--panel);border:1px solid var(--line);color:var(--paper);
   border-radius:8px;padding:13px 12px;font-size:17px;font-family:inherit}
 textarea{min-height:76px;resize:vertical}
@@ -486,21 +486,30 @@ VIEWS.home = function(){
 
 /* ---------- sign in / first run ---------- */
 VIEWS.login = function(){
-  var d=S.draft;
+  var d=S.draft, mode=d.mode||"in";
   var h='<div class="ticket signin"><div class="ticket-top"><div>'
     +'<div class="shop">Weld test console</div>'
-    +'<h1>Sign in<span>For inspectors. Welders don\'t sign in — they open the link you text them.</span></h1>'
-    +'</div><div class="code-chip">AWS<br>D1.1<br>2025</div></div><div class="perf"></div><div class="ticket-bottom">'
-    +(d.sent ? 'Code sent to '+esc(d.email) : 'A 6-digit code will be emailed to you. No password.')+'</div></div>';
-  if(!d.sent){
-    h+='<div class="field"><label>Email</label><input type="email" data-d="email" value="'+esc(d.email||"")+'" placeholder="you@example.com" autocomplete="email" inputmode="email"></div>'
-      +'<button class="primary" data-act="sendcode" style="width:100%">Email me a code</button>';
-  } else {
-    h+='<div class="field"><label>Code from the email</label><input type="text" class="code-in" data-d="code" value="'+esc(d.code||"")+'" inputmode="numeric" autocomplete="one-time-code" maxlength="8" placeholder="123456"></div>'
-      +'<button class="primary" data-act="verifycode" style="width:100%">Sign in</button>'
-      +'<p class="foot">Tapping the link in the email works too, if you\'re in a browser.<br><button class="mini" data-act="resend">Different email</button></p>';
-  }
+    +'<h1>'+(mode=="up"?"Create your account":mode=="reset"?"Reset password":"Sign in")+'<span>For inspectors. Welders don\'t sign in — they open the link you text them.</span></h1>'
+    +'</div><div class="code-chip">AWS<br>D1.1<br>2025</div></div></div>';
+  if(d.note) h+='<div class="flag"><b>'+esc(d.note)+'</b></div>';
+  h+='<div class="field"><label>Email</label><input type="email" data-d="email" value="'+esc(d.email||"")+'" placeholder="you@example.com" autocomplete="email" inputmode="email"></div>';
+  if(mode!="reset") h+='<div class="field"><label>Password'+(mode=="up"?' <span style="color:var(--muted);font-weight:400">— 8 characters or more</span>':'')+'</label><input type="password" data-d="password" value="'+esc(d.password||"")+'" autocomplete="'+(mode=="up"?"new-password":"current-password")+'"></div>';
+  if(mode=="in") h+='<button class="primary" data-act="signin" style="width:100%">Sign in</button>'
+    +'<p class="foot"><button class="mini" data-act="mode-up">Create an account</button> &nbsp;·&nbsp; <button class="mini" data-act="mode-reset">Forgot password</button></p>';
+  if(mode=="up") h+='<button class="primary" data-act="signup" style="width:100%">Create account</button>'
+    +'<p class="foot"><button class="mini" data-act="mode-in">I already have one</button></p>';
+  if(mode=="reset") h+='<button class="primary" data-act="sendreset" style="width:100%">Email me a reset link</button>'
+    +'<p class="foot"><button class="mini" data-act="mode-in">Back to sign in</button></p>';
   h+='<p id="autherr" class="err" style="display:none"></p>';
+  return { body:h, bar:"" };
+};
+VIEWS.newpass = function(){
+  var d=S.draft;
+  var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">Weld test console</div>'
+    +'<h1>New password<span>Pick one and you\'re back in.</span></h1></div></div></div>';
+  h+='<div class="field"><label>New password — 8 characters or more</label><input type="password" data-d="password" value="'+esc(d.password||"")+'" autocomplete="new-password"></div>'
+    +'<button class="primary" data-act="setpass" style="width:100%">Save password</button>'
+    +'<p id="autherr" class="err" style="display:none"></p>';
   return { body:h, bar:"" };
 };
 VIEWS.onboard = function(){
@@ -1044,9 +1053,11 @@ document.addEventListener("click", function(e){
   else if(a=="istep-back"){ S.step=Math.max(0,S.step-1); render(); }
   else if(a=="isend"){ sendIntake(el); }
   else if(a=="iedit"){ S.screen="intake"; S.step=0; render(); }
-  else if(a=="sendcode") sendCode();
-  else if(a=="verifycode") verifyCode();
-  else if(a=="resend"){ S.draft={email:S.draft.email}; render(); }
+  else if(a=="signin") signIn();
+  else if(a=="signup") signUp();
+  else if(a=="sendreset") sendReset();
+  else if(a=="setpass") setPassword();
+  else if(a=="mode-in"||a=="mode-up"||a=="mode-reset"){ S.draft={email:S.draft.email,mode:a.slice(5)}; render(); }
   else if(a=="finishonboard") finishOnboard();
   else if(a=="signout"){ sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
   else if(a=="copy"){ copy(window._link); el.textContent="Copied"; }
@@ -1125,18 +1136,39 @@ function welderBoot(tid){
 
 /* ---------- inspector sign-in ---------- */
 function authErr(msg){ var e=document.getElementById("autherr"); if(e){ e.textContent=msg; e.style.display="block"; } }
-function sendCode(){
-  var email=(S.draft.email||"").trim();
-  if(!/^\S+@\S+\.\S+$/.test(email)){ authErr("That doesn't look like an email address."); return; }
-  sb.auth.signInWithOtp({ email:email, options:{ emailRedirectTo:linkBase() } }).then(function(res){
-    if(res.error){ authErr(res.error.message); return; }
-    S.draft={email:email,sent:true}; render();
+function authFields(needPass){
+  var email=(S.draft.email||"").trim(), pw=S.draft.password||"";
+  if(!/^\S+@\S+\.\S+$/.test(email)){ authErr("That doesn't look like an email address."); return null; }
+  if(needPass && pw.length<8){ authErr("Password needs to be at least 8 characters."); return null; }
+  return { email:email, password:pw };
+}
+function signIn(){
+  var f=authFields(true); if(!f) return;
+  sb.auth.signInWithPassword(f).then(function(res){
+    if(res.error){ authErr(/invalid/i.test(res.error.message)?"Wrong email or password.":res.error.message); return; }
+    afterSignIn();
   });
 }
-function verifyCode(){
-  var code=(S.draft.code||"").replace(/\D/g,"");
-  if(code.length<6){ authErr("Type the whole code from the email."); return; }
-  sb.auth.verifyOtp({ email:S.draft.email, token:code, type:"email" }).then(function(res){
+function signUp(){
+  var f=authFields(true); if(!f) return;
+  sb.auth.signUp({ email:f.email, password:f.password, options:{ emailRedirectTo:linkBase() } }).then(function(res){
+    if(res.error){ authErr(res.error.message); return; }
+    if(res.data&&res.data.session){ afterSignIn(); return; }
+    // Email confirmation is on for this project: they confirm, then sign in.
+    S.draft={email:f.email,mode:"in",note:"Check your email for a confirmation link, then sign in here."}; render();
+  });
+}
+function sendReset(){
+  var f=authFields(false); if(!f) return;
+  sb.auth.resetPasswordForEmail(f.email,{ redirectTo:linkBase() }).then(function(res){
+    if(res.error){ authErr(res.error.message); return; }
+    S.draft={email:f.email,mode:"in",note:"Reset link sent. Open it on this device and you'll be asked for a new password."}; render();
+  });
+}
+function setPassword(){
+  var pw=S.draft.password||"";
+  if(pw.length<8){ authErr("Password needs to be at least 8 characters."); return; }
+  sb.auth.updateUser({ password:pw }).then(function(res){
     if(res.error){ authErr(res.error.message); return; }
     afterSignIn();
   });
@@ -1203,6 +1235,11 @@ document.addEventListener("input", function(e){
 document.addEventListener("change", function(e){
   var t=e.target; if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
 });
+/* Enter in a sign-in field presses the button under it */
+document.addEventListener("keydown", function(e){
+  if(e.key!="Enter" || ["login","newpass","onboard"].indexOf(S.screen)<0 || e.target.tagName!="INPUT") return;
+  var b=app.querySelector("button.primary"); if(b){ e.preventDefault(); b.click(); }
+});
 function refreshBar(){
   var p=bar.querySelector('[data-act=print]'); if(p) p.disabled=!(S.r.verified&&S.r.result);
   var n=bar.querySelector('[data-act=isend]'); if(n) n.disabled=missing().length>0;
@@ -1223,6 +1260,7 @@ function refreshBar(){
     else { S.screen="login"; S.draft={}; render(); }
   });
   sb.auth.onAuthStateChange(function(ev){
+    if(ev=="PASSWORD_RECOVERY"){ S.screen="newpass"; S.draft={}; render(); return; }
     if(ev=="SIGNED_IN" && S.screen=="login") afterSignIn();
   });
   // Coming back to the app is when a welder's ticket is most likely to
