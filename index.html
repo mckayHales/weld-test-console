@@ -160,7 +160,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-14.9";
+var VERSION="2026-09-14.10";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -845,7 +845,14 @@ VIEWS.wpsview = function(){
 };
 
 /* ---------- welder intake ---------- */
-var STEPS=["Welder","Test","Position","Machine","Review"];
+/* With a WPS on the ticket the welder isn't asked what the WPS already
+   fixes; the middle three steps collapse to one. */
+function stepList(){
+  return S.wps
+    ? [["Welder",stepWelder],["Coupon",stepCoupon],["Review",stepReview]]
+    : [["Welder",stepWelder],["Test",stepTest],["Position",stepPosition],["Machine",stepMachine],["Review",stepReview]];
+}
+function lastStep(){ return S.step==stepList().length-1; }
 function previewBar(){
   return S.preview ? '<div class="nav"><button data-act="exitpreview">'+"\u2039"+' Console</button>'
     + '<div class="title">Welder\'s view — preview</div><div class="spacer"></div></div>' : "";
@@ -857,11 +864,12 @@ VIEWS.intake = function(){
     + '<h1>Weld test ticket<span>Fill this out before you strike an arc. It writes your test record for you.</span></h1>'
     + '</div><div class="code-chip">AWS<br>D1.1<br>2025</div></div><div class="perf"></div>'
     + '<div class="ticket-bottom">'+(w.company?esc(w.company)+' · ':'')+fmtDate(w.date)+'</div></div>';
+  var steps=stepList();
   h += '<div class="rail">';
-  for(var i=0;i<STEPS.length;i++) h+='<i class="'+(i==S.step?"on":(i<S.step?"done":""))+'"></i>';
+  for(var i=0;i<steps.length;i++) h+='<i class="'+(i==S.step?"on":(i<S.step?"done":""))+'"></i>';
   h += '</div>';
-  h += [stepWelder,stepTest,stepPosition,stepMachine,stepReview][S.step]();
-  var last = S.step==STEPS.length-1;
+  h += steps[S.step][1]();
+  var last = lastStep();
   var bb = (S.step>0?'<button class="ghost" data-act="istep-back">Back</button>':'')
     + '<button class="primary" data-act="'+(last?"isend":"istep-next")+'" '+(last&&missing().length?"disabled":"")+'>'+(last?"Send to inspector":"Continue")+'</button>';
   return { body:h, bar:bb };
@@ -883,41 +891,75 @@ function stepTest(){
   var w=S.w;
   var h='<h2 class="step">What are you welding?</h2><p class="hint">'+(S.wps?'Your inspector set the procedure. The matching choices are already picked — check them against your coupon.':'Pick what the coupon actually is.')+'</p>';
   h+=wpsCard(S.wps, "Weld to this procedure");
-  h+='<div class="field"><label>Weld type <span class="req">*</span></label>'+tiles([{v:"groove",d:"Groove / CJP"},{v:"fillet",d:"Fillet"}],w.weldType)+'</div>';
-  h+='<div class="field"><label>Plate or pipe <span class="req">*</span></label>'+tiles([{v:"plate",d:""},{v:"pipe",d:"or tube"}],w.product)+'</div>';
-  h+='<div class="field"><label>Process <span class="req">*</span></label>'+tiles(PROCESSES,w.process)+'</div>';
-  if(w.process=="GMAW"){
-    h+='<div class="field"><label>Transfer mode <span class="req">*</span></label>'
-      +tiles([{v:"Spray"},{v:"Globular"},{v:"Short circuit",d:"GMAW-S"},{v:"Pulsed"}],w.transfer)
-      +(w.transfer=="Short circuit"?'<p class="err">Short circuit needs a qualified WPS — check with the inspector.</p>':'')+'</div>';
-  }
-  h+='<div class="field"><label>Base metal</label>'+tiles(BASE_METALS,w.base)+'</div>';
-  h+='<div class="field"><label>Material thickness <span class="req">*</span></label>'+tiles(THICKNESSES,w.thickness);
-  if(w.thickness=="custom") h+='<div style="margin-top:8px"><input type="number" step="0.001" data-k="thicknessCustom" value="'+esc(w.thicknessCustom)+'" placeholder="Decimal inches, e.g. 0.625"></div>';
-  h+='</div>';
-  if(w.product=="pipe") h+='<div class="row"><div class="field"><label>Pipe OD (in)</label><input type="number" step="0.01" data-k="pipeOD" value="'+esc(w.pipeOD)+'"></div>'
-    +'<div class="field"><label>Wall (in)</label><input type="number" step="0.001" data-k="pipeWall" value="'+esc(w.pipeWall)+'"></div></div>';
-  if(w.weldType=="groove") h+='<div class="field"><label>Backing</label>'+tiles([{v:"with",d:"With backing"},{v:"without",d:"No backing"}],w.backing)+'</div>';
+  h+='<div class="field"><label>Weld type <span class="req">*</span></label>'+tiles([{v:"groove",d:"Groove / CJP"},{v:"fillet",d:"Fillet"}],w.weldType,false,"w:weldType")+'</div>';
+  h+=productField();
+  h+='<div class="field"><label>Process <span class="req">*</span></label>'+tiles(PROCESSES,w.process,false,"w:process")+'</div>';
+  if(w.process=="GMAW") h+=transferField();
+  h+='<div class="field"><label>Base metal</label>'+tiles(BASE_METALS,w.base,false,"w:base")+'</div>';
+  h+=thicknessField()+pipeFields();
+  if(w.weldType=="groove") h+='<div class="field"><label>Backing</label>'+tiles([{v:"with",d:"With backing"},{v:"without",d:"No backing"}],w.backing,false,"w:backing")+'</div>';
   return h;
 }
-function stepPosition(){
+function productField(){ return '<div class="field"><label>Plate or pipe <span class="req">*</span></label>'+tiles([{v:"plate",d:""},{v:"pipe",d:"or tube"}],S.w.product,false,"w:product")+'</div>'; }
+function transferField(){
+  return '<div class="field"><label>Transfer mode <span class="req">*</span></label>'
+    +tiles([{v:"Spray"},{v:"Globular"},{v:"Short circuit",d:"GMAW-S"},{v:"Pulsed"}],S.w.transfer,false,"w:transfer")
+    +(S.w.transfer=="Short circuit"?'<p class="err">Short circuit needs a qualified WPS — check with the inspector.</p>':'')+'</div>';
+}
+function thicknessField(){
+  var w=S.w, h='<div class="field"><label>Material thickness <span class="req">*</span></label>'+tiles(THICKNESSES,w.thickness,false,"w:thickness");
+  if(w.thickness=="custom") h+='<div style="margin-top:8px"><input type="number" step="0.001" data-k="thicknessCustom" value="'+esc(w.thicknessCustom)+'" placeholder="Decimal inches, e.g. 0.625"></div>';
+  return h+'</div>';
+}
+function pipeFields(){
+  var w=S.w; if(w.product!="pipe") return "";
+  return '<div class="row"><div class="field"><label>Pipe OD (in)</label><input type="number" step="0.01" data-k="pipeOD" value="'+esc(w.pipeOD)+'"></div>'
+    +'<div class="field"><label>Wall (in)</label><input type="number" step="0.001" data-k="pipeWall" value="'+esc(w.pipeWall)+'"></div></div>';
+}
+function positionField(withHeading){
   var w=S.w;
   var list = w.weldType=="fillet"?FILLET_POS:(w.product=="pipe"?GROOVE_PIPE:GROOVE_PLATE);
-  var h='<h2 class="step">Test position</h2><p class="hint">This decides more of what you get qualified for than anything else on this form.</p>';
-  h+=tiles(list,w.position,true);
+  var h = withHeading ? '' : '<div class="field"><label>Test position <span class="req">*</span></label>';
+  h+=tiles(list,w.position,true,"w:position");
   if(w.position) h+='<div class="flag" style="margin-top:18px"><b>Draft range</b> — if you pass, this position typically qualifies you for '+esc(suggest(w).positions)+'. The inspector confirms it against the code book before signing.</div>';
+  return h + (withHeading ? '' : '</div>');
+}
+function stepPosition(){
+  return '<h2 class="step">Test position</h2><p class="hint">This decides more of what you get qualified for than anything else on this form.</p>'+positionField(true);
+}
+/* The one middle step when a WPS is attached. Everything the WPS fixes
+   is already on the record; this asks only about the coupon itself. */
+function stepCoupon(){
+  var w=S.w, p=S.wps, locked=S.lockedPos;
+  var h='<h2 class="step">Your coupon</h2><p class="hint">The procedure below is set by your inspector. If what\'s on the rack doesn\'t match it, tell them — don\'t guess.</p>';
+  h+=wpsCard(p, "Weld to this procedure");
+  if(locked) h+='<div class="card"><h3>Test position</h3><dl class="kv"><dt>Position</dt><dd>'+esc(w.position)+' · '+esc(w.product)+'</dd></dl>'
+    +'<div class="flag" style="margin:12px 0 0"><b>Draft range</b> — if you pass, this position typically qualifies you for '+esc(suggest(w).positions)+'. The inspector confirms it against the code book before signing.</div></div>';
+  else h+=productField()+positionField(false);
+  if(w.process=="GMAW"&&!(p&&p.transfer)) h+=transferField();
+  h+=thicknessField()+pipeFields();
+  // Anything the WPS left blank that the record still needs.
+  var fl=FILLERS[w.process]||["Other"], gs=GASES[w.process]||["Other"], dia=DIAMS[w.process]||[];
+  var gaps='';
+  if(!w.process) gaps+='<div class="field"><label>Process <span class="req">*</span></label>'+tiles(PROCESSES,w.process,false,"w:process")+'</div>';
+  if(w.process&&!w.filler) gaps+='<div class="field"><label>'+(w.process=="SMAW"?"Electrode":"Filler")+' classification <span class="req">*</span></label>'+tiles(fl,w.filler,false,"w:filler")+'</div>';
+  if(w.filler=="Other"&&!w.fillerOther) gaps+='<div class="field"><input type="text" data-k="fillerOther" value="'+esc(w.fillerOther)+'" placeholder="Type the AWS classification"></div>';
+  if(dia.length&&!w.fillerDia) gaps+='<div class="field"><label>'+esc(DIAM_LABEL[w.process]||"Filler diameter")+' <span class="req">*</span></label>'+tiles(dia,w.fillerDia,false,"w:fillerDia")+'</div>';
+  if(gs[0]!="None"&&!w.gas) gaps+='<div class="field"><label>Shielding gas <span class="req">*</span></label>'+tiles(gs,w.gas,false,"w:gas")+'</div>';
+  if(gaps) h+='<div class="card"><h3>Not on the WPS — what did you pull?</h3>'+gaps+'</div>';
+  h+='<div class="field"><label>Anything the inspector should know</label><textarea data-k="notes" placeholder="Optional">'+esc(w.notes)+'</textarea></div>';
   return h;
 }
 function stepMachine(){
   var w=S.w, fl=FILLERS[w.process]||["Other"], gs=GASES[w.process]||["Other"];
   var dia=DIAMS[w.process]||[], dlabel=DIAM_LABEL[w.process]||"Filler diameter";
   var h='<h2 class="step">Filler and gas</h2><p class="hint">What you actually pulled off the rack. Tap, don\'t type.</p>';
-  h+='<div class="field"><label>'+(w.process=="SMAW"?"Electrode":"Filler")+' classification <span class="req">*</span></label>'+tiles(fl,w.filler)+'</div>';
+  h+='<div class="field"><label>'+(w.process=="SMAW"?"Electrode":"Filler")+' classification <span class="req">*</span></label>'+tiles(fl,w.filler,false,"w:filler")+'</div>';
   if(w.filler=="Other") h+='<div class="field"><input type="text" data-k="fillerOther" value="'+esc(w.fillerOther)+'" placeholder="Type the AWS classification"></div>';
-  if(dia.length) h+='<div class="field"><label>'+esc(dlabel)+' <span class="req">*</span></label>'+tiles(dia,w.fillerDia)+'</div>';
+  if(dia.length) h+='<div class="field"><label>'+esc(dlabel)+' <span class="req">*</span></label>'+tiles(dia,w.fillerDia,false,"w:fillerDia")+'</div>';
   if(gs[0]!="None"||gs.length>1){
-    h+='<div class="field"><label>Shielding gas <span class="req">*</span></label>'+tiles(gs,w.gas)+'</div>';
-    if(w.gas&&w.gas!="None"&&w.gas!="Other") h+='<div class="field"><label>Flow rate</label>'+tiles(FLOWS,w.flow)+'</div>';
+    h+='<div class="field"><label>Shielding gas <span class="req">*</span></label>'+tiles(gs,w.gas,false,"w:gas")+'</div>';
+    if(w.gas&&w.gas!="None"&&w.gas!="Other") h+='<div class="field"><label>Flow rate</label>'+tiles(FLOWS,w.flow,false,"w:flow")+'</div>';
     if(w.gas=="Other") h+='<div class="field"><input type="text" data-k="gasOther" value="'+esc(w.gasOther||"")+'" placeholder="What is on the bottle"></div>';
   }
   if(!w.wpsId) h+='<div class="field"><label>WPS number, if you were given one</label><input type="text" data-k="wps" value="'+esc(w.wps)+'" placeholder="e.g. WPS-01"></div>';
@@ -1251,7 +1293,7 @@ document.addEventListener("click", function(e){
   }
   else if(a=="preview"){ var rec=document.getElementById("record"); rec.innerHTML=buildRecord(); rec.classList.toggle("preview"); if(rec.classList.contains("preview")) rec.scrollIntoView({behavior:"smooth"}); }
   else if(a=="print"){ upsertRecord(); document.getElementById("record").innerHTML=buildRecord(); window.print(); }
-  else if(a=="istep-next"){ S.step=Math.min(STEPS.length-1,S.step+1); render(); }
+  else if(a=="istep-next"){ S.step=Math.min(stepList().length-1,S.step+1); render(); }
   else if(a=="istep-back"){ S.step=Math.max(0,S.step-1); render(); }
   else if(a=="isend"){ sendIntake(el); }
   else if(a=="iedit"){ S.screen="intake"; S.step=0; render(); }
@@ -1285,21 +1327,26 @@ function startIntake(pre,preview,wps){
     if(pre.name)S.w.name=pre.name; if(pre.wpsId)S.w.wpsId=pre.wpsId; if(pre.wps||pre.wpsLabel)S.w.wps=pre.wps||pre.wpsLabel;
     if(pre.position){ S.w.position=pre.position; if(/F$/.test(pre.position))S.w.weldType="fillet"; if(["5G","6G","2G+5G"].indexOf(pre.position)>-1)S.w.product="pipe"; }
     if(pre.process)S.w.process=pre.process; }
+  S.lockedPos=!!(pre&&pre.position);
   if(wps) prefillFromWps(wps);
+  if(pre&&pre.position){ S.w.position=pre.position; if(/F$/.test(pre.position))S.w.weldType="fillet"; }
   S.stack=[]; S.screen="intake"; render();
 }
 /* Only pre-pick what the form has a tile for; anything else stays a
    blank the welder fills. The card still shows the full WPS. */
 function prefillFromWps(p){
   var w=S.w;
-  if(!w.process && PROCESSES.some(function(x){return x.v==p.process})) w.process=p.process;
-  if(w.process!=p.process) return;
-  var fl=FILLERS[w.process]||[], gs=GASES[w.process]||[], dm=(DIAMS[w.process]||[]).map(function(x){return x.v});
-  if(p.filler && fl.indexOf(p.filler)>-1) w.filler=p.filler;
-  if(p.fillerDia && dm.indexOf(p.fillerDia)>-1) w.fillerDia=p.fillerDia;
-  if(p.gas && gs.indexOf(p.gas)>-1) w.gas=p.gas;
-  if(p.flow && FLOWS.some(function(x){return x.v==String(p.flow)})) w.flow=String(p.flow);
-  if(p.base && BASE_METALS.indexOf(p.base)>-1) w.base=p.base;
+  if(p.process) w.process=p.process;
+  if(p.transfer) w.transfer=p.transfer;
+  var fl=FILLERS[w.process]||[], gs=GASES[w.process]||[];
+  if(p.filler){ if(fl.indexOf(p.filler)>-1) w.filler=p.filler; else { w.filler="Other"; w.fillerOther=p.filler; } }
+  if(p.fillerDia) w.fillerDia=p.fillerDia;
+  if(gs[0]=="None") w.gas="None";
+  else if(p.gas){ if(gs.indexOf(p.gas)>-1) w.gas=p.gas; else { w.gas="Other"; w.gasOther=p.gas; } }
+  if(p.flow) w.flow=String(p.flow);
+  if(p.base) w.base=p.base;
+  if(p.weldType) w.weldType = p.weldType=="Fillet" ? "fillet" : "groove";
+  if(p.backing) w.backing = p.backing=="No backing" ? "without" : "with";
   if(!w.wps) w.wps=wpsLabel(p);
 }
 
@@ -1423,29 +1470,18 @@ function pick(v,group){
   if(group=="tproc"||group=="wproc"){ S.draft.process=v; render({keepScroll:true}); return; }
   if(group&&group.slice(0,2)=="d:"){ var k=group.slice(2); S.draft[k]=(S.draft[k]===v?"":v); render({keepScroll:true}); return; }
   var w=S.w;
-  if(S.step==1){
-    if(["groove","fillet"].indexOf(v)>-1){ w.weldType=v; w.position=""; }
-    else if(["plate","pipe"].indexOf(v)>-1){ w.product=v; w.position=""; }
-    else if(PROCESSES.some(function(p){return p.v==v})){ w.process=v; w.filler=""; w.gas=""; w.transfer=""; }
-    else if(["Spray","Globular","Short circuit","Pulsed"].indexOf(v)>-1) w.transfer=v;
-    else if(BASE_METALS.indexOf(v)>-1) w.base=v;
-    else if(THICKNESSES.some(function(t){return t.v==v})) w.thickness=v;
-    else if(["with","without"].indexOf(v)>-1) w.backing=v;
-  }
-  else if(S.step==2) w.position=v;
-  else if(S.step==3){
-    var fl=FILLERS[w.process]||[], gs=GASES[w.process]||[], dm=(DIAMS[w.process]||[]).map(function(x){return x.v});
-    if(dm.indexOf(v)>-1) w.fillerDia=v;
-    else if(FLOWS.some(function(x){return x.v==v})) w.flow=v;
-    else if(fl.indexOf(v)>-1) w.filler=v;
-    else if(gs.indexOf(v)>-1) w.gas=v;
+  if(group&&group.slice(0,2)=="w:"){
+    var key=group.slice(2);
+    w[key]=v;
+    if(key=="weldType"||key=="product") w.position="";
+    if(key=="process"){ w.filler=""; w.gas=""; w.transfer=""; w.fillerDia=""; w.flow=""; }
   }
   render({keepScroll:true});
 }
 
 function onField(e){
   var t=e.target;
-  if(t.dataset.k){ S.w[t.dataset.k]=t.value; if(S.screen=="intake"&&S.step==4) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
+  if(t.dataset.k){ S.w[t.dataset.k]=t.value; if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.r){ S.r[t.dataset.r]=(t.type=="checkbox")?t.checked:t.value; if(t.type=="checkbox"||t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); }
   else if(t.dataset.c){ CFG[t.dataset.c]=t.value; }
