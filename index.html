@@ -21,8 +21,14 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0}
-body{background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:17px;line-height:1.45;-webkit-text-size-adjust:100%}
-.wrap{max-width:44rem;margin:0 auto;padding:calc(env(safe-area-inset-top, 0px) + 14px) 16px 190px}
+/* The page is a column: a scrolling content area and a footer bar that
+   never floats. A fixed bar over a scrolling document drifts and hides
+   the bottom of forms on iPhone home-screen apps; this doesn't. */
+html,body{height:100%}
+body{background:var(--ink);color:var(--paper);font-family:var(--sans);font-size:17px;line-height:1.45;-webkit-text-size-adjust:100%;
+  display:flex;flex-direction:column;height:100vh;height:100dvh;overflow:hidden}
+#app{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+.wrap{max-width:44rem;margin:0 auto;padding:calc(env(safe-area-inset-top, 0px) + 14px) 16px 40px}
 
 /* nav */
 .nav{display:flex;align-items:center;gap:10px;padding:14px 0 6px;min-height:52px}
@@ -75,7 +81,7 @@ select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,va
 .tile .g2{stroke:var(--arc);stroke-width:3;fill:none;stroke-linecap:round}
 .tile[aria-pressed=true] .g1{stroke:#C6D2DB}
 
-.bar{position:fixed;left:0;right:0;bottom:0;background:rgba(22,33,43,.96);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));backdrop-filter:blur(6px)}
+.bar{flex:none;background:var(--ink);border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom))}
 .bar .inner{max-width:44rem;margin:0 auto;display:flex;gap:10px}
 button.primary{flex:2;background:var(--arc);color:#0D1720;border:0;border-radius:8px;padding:15px;font:inherit;font-weight:650;font-size:17px;cursor:pointer}
 button.ghost{flex:1;background:transparent;color:var(--paper);border:1px solid var(--line);border-radius:8px;padding:15px;font:inherit;font-size:17px;cursor:pointer}
@@ -122,8 +128,8 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 
 /* printed record */
 #record{display:none}
-@media print{ body{background:#fff;color:#000;font-size:10pt} .wrap,.bar,.noprint{display:none!important} #record{display:block!important;padding:0} }
-#record.preview{display:block;background:#fff;color:#000;padding:18px;margin:0 0 20px;border-radius:6px}
+@media print{ html,body{height:auto;overflow:visible;display:block;background:#fff;color:#000;font-size:10pt} #app{overflow:visible;height:auto} #view,.bar,.noprint{display:none!important} #record{display:block!important;padding:0} }
+#record.preview{display:block;background:#fff;color:#000;padding:18px;margin:0 16px 24px;border-radius:6px}
 .doc{font-family:var(--sans);max-width:8in;margin:0 auto}
 .doc h1{font-size:14pt;margin:0;font-weight:700}
 .doc .sub1{font-size:9pt;margin:2px 0 0}
@@ -142,10 +148,9 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 </style>
 </head>
 <body>
-<div class="wrap" id="app"></div>
+<div id="app"><div class="wrap" id="view"></div><div id="record"></div></div>
 <div class="bar noprint" id="bar"></div>
 <div id="toast" class="noprint"></div>
-<div id="record"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
 <script>
 /* =========================================================
@@ -155,7 +160,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-14.8";
+var VERSION="2026-09-14.9";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -427,10 +432,10 @@ function go(screen, opts){ S.stack.push({screen:S.screen,coId:S.coId,wpsId:S.wps
   S.screen=screen; Object.assign(S,opts||{}); render(); }
 function back(){ var p=S.stack.pop(); if(!p){ S.screen="home"; } else { Object.assign(S,p); } render(); }
 
-var app=document.getElementById("app"), bar=document.getElementById("bar");
+var app=document.getElementById("view"), scroller=document.getElementById("app"), bar=document.getElementById("bar");
 function render(o){
   var keep = o && o.keepScroll;
-  var y = keep ? (window.scrollY||window.pageYOffset||0) : 0;
+  var y = keep ? scroller.scrollTop : 0;
   var v = VIEWS[S.screen] || VIEWS.home;
   var out = v();
   var active = document.activeElement, aid = active && active.dataset ? (active.dataset.k||active.dataset.r||active.dataset.d||active.dataset.c) : null;
@@ -438,13 +443,13 @@ function render(o){
   bar.innerHTML = out.bar ? '<div class="inner">'+out.bar+'</div>' : "";
   bar.style.display = out.bar ? "block" : "none";
   if(keep){
-    window.scrollTo(0,y);
+    scroller.scrollTop=y;
     if(aid){
       var back = app.querySelector('[data-k="'+aid+'"],[data-r="'+aid+'"],[data-d="'+aid+'"],[data-c="'+aid+'"]');
       if(back && back.focus){ try{ back.focus({preventScroll:true}); if(back.setSelectionRange && back.value) back.setSelectionRange(back.value.length,back.value.length); }catch(e){} }
     }
   } else {
-    window.scrollTo(0,0);
+    scroller.scrollTop=0;
   }
 }
 function nav(title, rightHtml){
@@ -836,7 +841,7 @@ VIEWS.wpsview = function(){
     h+='</dl></div>';
   });
   if(p.notes) h+='<div class="card"><h3>Notes</h3><p style="margin:0;font-size:.92rem;white-space:pre-wrap">'+esc(p.notes)+'</p></div>';
-  return { body:h, bar:'<button class="primary" data-act="back">Back</button>' };
+  return { body:h, bar:'<button class="ghost" data-act="sharewps">Share</button><button class="primary" data-act="printwps">Save as PDF</button>' };
 };
 
 /* ---------- welder intake ---------- */
@@ -957,15 +962,60 @@ VIEWS.sent = function(){
     +'<h1>Sent to '+esc(CFG.inspector||"the inspector")+'<span>'+(S.preview?'In the real thing, this is already in your Test records.':'Your test record is drafted. Nothing else to send.')+'</span></h1></div></div><div class="perf"></div>'
     +'<div class="ticket-bottom">'+esc(S.w.name)+' · '+esc(S.w.position)+' · '+esc(S.w.process)+'</div></div>';
   h+='<div class="card"><h3>Before you weld</h3><p style="margin:0;font-size:.9rem;color:var(--muted)">Bring your coupon to the booth. The inspector confirms the position and thickness ranges against the code book, then witnesses the test.</p></div>';
-  if(S.wps) h+=wpsCard(S.wps, "Your procedure");
+  if(S.wps) h+=wpsCard(S.wps, "Your procedure")+keepWps();
   return { body:h, bar:"" };
 };
+/* What a welder sees when they reopen a link they already sent. The
+   text message they got is their copy of the WPS; this is what it opens. */
+VIEWS.myticket = function(){
+  var t=S.ticket||{}, d=t.data||{};
+  var h='<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+(CFG.city?' &nbsp;·&nbsp; '+esc(CFG.city):'')+'</div>'
+    +'<h1>Your test ticket<span>Already sent to '+esc(CFG.inspector||"the inspector")+'. Bring your coupon to the booth.</span></h1></div>'
+    +'<div class="code-chip">AWS<br>D1.1<br>2025</div></div><div class="perf"></div>'
+    +'<div class="ticket-bottom">'+esc([d.name,d.company,d.position,d.process].filter(Boolean).join(" · ")||"Sent")+'</div></div>';
+  if(S.wps) h+=wpsCard(S.wps, "Your procedure")+keepWps();
+  else h+='<div class="empty">No WPS was attached to this ticket.</div>';
+  return { body:h, bar:"" };
+};
+function keepWps(){
+  return '<div class="card"><h3>Keep a copy</h3>'
+    +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">This link keeps working — open the text message any time to see the WPS. Or save it now.</p>'
+    +'<button class="mini" data-act="sharewps">Share as text</button> &nbsp;·&nbsp; <button class="mini" data-act="printwps">Save as PDF</button></div>';
+}
 VIEWS.closed = function(){
   var d=S.draft;
   var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop||"Weld test")+'</div>'
     +'<h1>'+esc(d.title||"Already sent")+'<span>'+esc(d.msg||"")+'</span></h1></div></div></div>';
   return { body:h, bar:"" };
 };
+
+/* Plain-text and printed forms of a WPS. */
+function wpsText(p){
+  var out=[CFG.shop+" — "+wpsLabel(p)+(p.basis?" ("+p.basis+")":""), p.title||""].filter(Boolean);
+  wpsSections(p).forEach(function(sc){
+    out.push(""); out.push(sc.title.toUpperCase());
+    sc.rows.forEach(function(r){ out.push(r[0]+": "+r[1]); });
+  });
+  if(p.notes){ out.push(""); out.push("NOTES"); out.push(p.notes); }
+  return out.join("\n");
+}
+function buildWpsDoc(p){
+  var h='<div class="doc">';
+  h+='<div class="dochead"><div><h1>Welding Procedure Specification</h1>'
+    +'<div class="sub1">'+esc(CFG.shop)+(CFG.city?' · '+esc(CFG.city):'')+' · '+esc(CFG.code)+'</div></div>'
+    +'<div style="text-align:right;font-size:9pt"><b>'+esc(wpsLabel(p))+'</b><br>'+esc(p.basis||"")+(p.pqr?'<br>'+esc(p.pqr):'')+'</div></div>';
+  if(p.title) h+='<div style="font-size:10.5pt;font-weight:600;margin:8px 0 0">'+esc(p.title)+'</div>';
+  wpsSections(p).forEach(function(sc){
+    h+='<div class="secbar">'+esc(sc.title)+'</div><div class="grid three">';
+    sc.rows.forEach(function(r){ h+=cell(r[0],r[1]); });
+    h+='</div>';
+  });
+  if(p.notes) h+='<div class="secbar">Notes</div><div class="grid"><div class="cell full"><span class="v" style="font-weight:400;white-space:pre-wrap">'+esc(p.notes)+'</span></div></div>';
+  h+='<div class="sig"><div><div style="height:.55in"></div><div class="sigline">Prepared by — '+esc(CFG.inspector)+(CFG.cert?', '+esc(CFG.cert):'')+'</div></div>'
+    +'<div><div class="stampbox">Stamp</div></div></div></div>';
+  return h;
+}
+function currentWps(){ return S.viewWps || S.wps || (S.ticket&&S.ticket.wps) || null; }
 
 /* ---------- inspect a record ---------- */
 VIEWS.inspect = function(){
@@ -1212,6 +1262,13 @@ document.addEventListener("click", function(e){
   else if(a=="mode-in"||a=="mode-up"||a=="mode-reset"){ S.draft={email:S.draft.email,mode:a.slice(5)}; render(); }
   else if(a=="finishonboard") finishOnboard();
   else if(a=="signout"){ if(AUTH.user) raw.del("wq.profile."+AUTH.user.id); sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
+  else if(a=="printwps"){ var wp=currentWps(); if(!wp) return; document.getElementById("record").innerHTML=buildWpsDoc(wp); window.print(); }
+  else if(a=="sharewps"){
+    var wp2=currentWps(); if(!wp2) return;
+    var txt=wpsText(wp2);
+    if(navigator.share) navigator.share({title:wpsLabel(wp2),text:txt}).catch(function(){});
+    else { copy(txt); el.textContent="Copied"; }
+  }
   else if(a=="copy"){ copy(window._link); el.textContent="Copied"; }
   else if(a=="sms"){ location.href="sms:?&body="+encodeURIComponent(window._msg); }
   else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}); else { copy(window._link); el.textContent="Copied"; } }
@@ -1281,7 +1338,7 @@ function welderBoot(tid){
     var t=res.data;
     if(res.error||!t){ S.screen="closed"; S.draft={title:"Ticket not found",msg:"This link doesn't match a ticket. Ask the inspector to send it again."}; render(); return; }
     CFG=Object.assign({},CFG,t.org||{});
-    if(t.status!="open"){ S.screen="closed"; S.draft={title:"Already sent",msg:"This ticket was already submitted. Bring your coupon to the booth."}; render(); return; }
+    if(t.status!="open"){ S.ticket=t; S.wps=t.wps||null; S.screen="myticket"; render(); return; }
     S.ticketId=t.id; startIntake(t.data||{}, false, t.wps||null);
   });
 }
