@@ -204,9 +204,10 @@ function rowToObj(row){ return Object.assign({id:row.id}, row.data); }
 function objToRow(o){ var d=Object.assign({},o); delete d.id; return { org_id:AUTH.org.id, id:o.id, data:d, updated_at:new Date().toISOString() }; }
 function loadAll(){
   if(!sb||!AUTH.org) return Promise.resolve();
+  var failed=false;
   return Promise.all(TABLES.map(function(t){
     return sb.from(t).select("id,data").order("updated_at",{ascending:false}).then(function(res){
-      if(res.error){ toast("Couldn't load "+t+" — "+res.error.message); return; }
+      if(res.error){ if(!failed) toast("Couldn't refresh — "+res.error.message); failed=true; return; }
       var list=res.data.map(rowToObj);
       if(t=="companies") list.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
       db.set(t,list);
@@ -1059,7 +1060,7 @@ document.addEventListener("click", function(e){
   else if(a=="setpass") setPassword();
   else if(a=="mode-in"||a=="mode-up"||a=="mode-reset"){ S.draft={email:S.draft.email,mode:a.slice(5)}; render(); }
   else if(a=="finishonboard") finishOnboard();
-  else if(a=="signout"){ sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
+  else if(a=="signout"){ if(AUTH.user) raw.del("wq.profile."+AUTH.user.id); sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
   else if(a=="copy"){ copy(window._link); el.textContent="Copied"; }
   else if(a=="sms"){ location.href="sms:?&body="+encodeURIComponent(window._msg); }
   else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}); else { copy(window._link); el.textContent="Copied"; } }
@@ -1181,17 +1182,30 @@ function finishOnboard(){
     afterSignIn();
   });
 }
+/* The session itself is kept by supabase-js in localStorage and renewed
+   in the background, so a returning inspector is already signed in.
+   The profile + org are cached too, so a bad signal on open shows the
+   console from cache instead of bouncing to the sign-in screen. */
 function afterSignIn(){
   S.screen="loading"; S.draft={msg:"Loading your records…"}; render();
-  sb.auth.getUser().then(function(u){
-    AUTH.user=u.data&&u.data.user;
+  sb.auth.getSession().then(function(res){
+    var sess=res.data&&res.data.session;
+    AUTH.user=sess&&sess.user;
     if(!AUTH.user){ S.screen="login"; S.draft={}; render(); return; }
-    return sb.from("profiles").select("*, orgs(*)").eq("user_id",AUTH.user.id).maybeSingle().then(function(res){
-      if(res.error){ S.screen="login"; S.draft={}; render(); toast(res.error.message); return; }
-      if(!res.data){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
-      AUTH.profile=res.data; AUTH.org=res.data.orgs; cfgFromAuth();
+    var cached=null; try{ cached=JSON.parse(raw.get("wq.profile."+AUTH.user.id)||"null"); }catch(e){}
+    function enter(profile, org){
+      AUTH.profile=profile; AUTH.org=org; cfgFromAuth();
+      raw.set("wq.profile."+AUTH.user.id, JSON.stringify({profile:profile, org:org}));
       S.stack=[]; S.screen="home"; S.draft={}; render();
       return loadAll().then(function(){ if(!S.preview) render({keepScroll:true}); });
+    }
+    return sb.from("profiles").select("*, orgs(*)").eq("user_id",AUTH.user.id).maybeSingle().then(function(res){
+      if(res.error){
+        if(cached&&cached.org){ toast("No signal — showing what's saved on this phone."); return enter(cached.profile, cached.org); }
+        S.screen="login"; S.draft={note:"Couldn't reach the server. Check your signal and try again."}; render(); return;
+      }
+      if(!res.data){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
+      return enter(res.data, res.data.orgs);
     });
   });
 }
