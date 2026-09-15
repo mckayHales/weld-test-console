@@ -155,7 +155,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-14.5";
+var VERSION="2026-09-14.6";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -336,7 +336,20 @@ function records(){ return db.get("records",[]); }
 function coName(id){ var c=companies().filter(function(x){return x.id==id})[0]; return c?c.name:""; }
 function wpsById(id){ return wpsAll().filter(function(p){return p.id==id})[0]; }
 function wpsLabel(p){ return p ? p.no+(p.rev?" Rev "+p.rev:"") : ""; }
+function active(){ return records().filter(function(r){return !r.archived}); }
+function archived(){ return records().filter(function(r){return r.archived}); }
+/* A company's history includes archived tests; archive only clears the inbox. */
 function recsFor(id){ return records().filter(function(r){return r.w.companyId==id}); }
+function setArchived(id,flag){
+  var r=records().filter(function(x){return x.id==id})[0]; if(!r) return;
+  if(flag) r.archived=Date.now(); else delete r.archived;
+  putRow("records",r);
+}
+function recRow(r){
+  return '<button class="sub" data-rec="'+r.id+'"><span style="flex:1"><b>'+esc(r.w.name||"Unnamed")+'</b>'
+    + '<span>'+esc([fmtDate(r.w.date),r.w.position,r.w.process,coName(r.w.companyId)].filter(Boolean).join(" · "))+'</span></span>'
+    + pill(r.status)+'</button>';
+}
 function upsertRecord(){
   var old=records().filter(function(x){return x.id==S.recId})[0]||{};
   var rec={ id:S.recId||uid(), w:S.w, r:S.r, updated:Date.now(),
@@ -455,7 +468,7 @@ function pill(status){
 var VIEWS = {};
 
 VIEWS.home = function(){
-  var recs=records(), pending=recs.filter(function(r){return !r.r.result}).length;
+  var recs=active(), pending=recs.filter(function(r){return !r.r.result}).length;
   var h = '<div class="ticket"><div class="ticket-top"><div>'
     + '<div class="shop">'+esc(CFG.shop)+' &nbsp;·&nbsp; '+esc(CFG.city)+'</div>'
     + '<h1>Weld test console<span>'+esc(CFG.inspector)+' · '+esc(CFG.cert)+'</span></h1>'
@@ -610,18 +623,23 @@ VIEWS.ticketlink = function(){
 
 /* ---------- records ---------- */
 VIEWS.records = function(){
-  var recs=records();
+  var recs=active(), arch=archived();
+  var finished=recs.filter(function(r){return r.r.result});
   var h = nav("Test records");
-  if(!recs.length){
+  if(!recs.length && !arch.length){
     h += '<div class="card"><h3>Nothing on file yet</h3>'
       + '<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Load three made-up welders so you can walk the record screen without waiting on a real test.</p>'
       + '<button class="primary" data-act="seed" style="width:100%">Load sample data</button></div>';
   }
-  recs.forEach(function(r){
-    h += '<button class="sub" data-rec="'+r.id+'"><span style="flex:1"><b>'+esc(r.w.name||"Unnamed")+'</b>'
-      + '<span>'+esc([fmtDate(r.w.date),r.w.position,r.w.process,coName(r.w.companyId)].filter(Boolean).join(" · "))+'</span></span>'
-      + pill(r.status)+'</button>';
-  });
+  if(!recs.length && arch.length) h += '<div class="empty">Nothing open. Welders\' tickets show up here when they tap Send.</div>';
+  recs.forEach(function(r){ h += recRow(r); });
+  if(finished.length>1) h += '<p class="foot" style="margin-top:8px"><button class="mini" data-act="archfinished">Archive all '+finished.length+' finished tests</button></p>';
+  if(arch.length){
+    h += '<div class="card" style="margin-top:18px"><h3 style="display:flex;justify-content:space-between;align-items:center">Archive <button class="mini" data-act="togglearch" style="padding:0">'+(S.draft.showArch?"Hide":"Show "+arch.length)+'</button></h3>';
+    if(S.draft.showArch) arch.forEach(function(r){ h += recRow(r); });
+    else h += '<p style="margin:0;font-size:.86rem;color:var(--muted)">'+arch.length+' finished test'+(arch.length==1?"":"s")+' put away. Still on file, still searchable by company.</p>';
+    h += '</div>';
+  }
   h += '<p class="foot">Welders\' tickets show up here on their own when they tap Send.<br><button class="mini" data-act="refresh">Refresh</button></p>';
   return { body:h, bar:'<button class="primary" data-act="startblank">Start a record myself</button>' };
 };
@@ -845,6 +863,8 @@ VIEWS.closed = function(){
 VIEWS.inspect = function(){
   var w=S.w,r=S.r,s=suggest(w);
   var h = nav("Test record", '<button data-act="saverec">Save</button>');
+  var arch=records().filter(function(x){return x.id==S.recId && x.archived})[0];
+  if(arch) h+='<div class="flag" style="border-color:var(--muted)"><b style="color:var(--muted)">Archived</b> — put away '+fmtDate(new Date(arch.archived).toISOString().slice(0,10))+'. You can still print it or put it back.</div>';
   h+='<div class="ticket"><div class="ticket-top"><div>'
     +'<div class="shop">'+esc(coName(w.companyId)||w.company||"No company")+'</div>'
     +'<h1>'+esc(w.name||"Unnamed")+'<span>'+esc([w.position,w.process,frac(tVal(w)),w.base].filter(Boolean).join(" · "))+'</span></h1>'
@@ -892,7 +912,12 @@ VIEWS.inspect = function(){
   h+='<div class="field"><label>Overall result</label><div class="seg">'
     +'<button class="p" data-result="Qualified" aria-pressed="'+(r.result=="Qualified")+'" style="flex:1;padding:14px">Qualified</button>'
     +'<button class="f" data-result="Not qualified" aria-pressed="'+(r.result=="Not qualified")+'" style="flex:1;padding:14px">Not qualified</button></div></div>';
-  h+='<p class="foot"><button class="mini" data-act="delrec">Delete this record</button></p>';
+  var cur=records().filter(function(x){return x.id==S.recId})[0];
+  h+='<p class="foot">'
+    +(cur ? (cur.archived
+        ? '<button class="mini" data-act="unarchive">Put back in Test records</button> &nbsp;·&nbsp; '
+        : '<button class="mini" data-act="archive">Archive this record</button> &nbsp;·&nbsp; ') : '')
+    +'<button class="mini" data-act="delrec">Delete this record</button></p>';
   var ready=r.verified&&r.result;
   return { body:h, bar:'<button class="ghost" data-act="preview">Preview</button><button class="primary" data-act="print" '+(ready?"":"disabled")+'>Print WQTR</button>' };
 };
@@ -1049,6 +1074,13 @@ document.addEventListener("click", function(e){
   else if(a=="refresh"){ el.textContent="Refreshing…"; loadAll().then(function(){ render({keepScroll:true}); }); }
   else if(a=="saverec"){ upsertRecord(); el.textContent="Saved"; }
   else if(a=="delrec"){ if(confirm("Delete this record?")){ delRow("records",S.recId); S.stack=[]; S.screen="records"; render(); } }
+  else if(a=="archive"){ upsertRecord(); setArchived(S.recId,true); S.stack=[]; S.screen="records"; render(); }
+  else if(a=="unarchive"){ setArchived(S.recId,false); render({keepScroll:true}); }
+  else if(a=="togglearch"){ S.draft.showArch=!S.draft.showArch; render({keepScroll:true}); }
+  else if(a=="archfinished"){
+    var fin=active().filter(function(r){return r.r.result});
+    if(confirm("Archive "+fin.length+" finished tests? They stay on file under Archive.")){ fin.forEach(function(r){ setArchived(r.id,true); }); render(); }
+  }
   else if(a=="preview"){ var rec=document.getElementById("record"); rec.innerHTML=buildRecord(); rec.classList.toggle("preview"); if(rec.classList.contains("preview")) rec.scrollIntoView({behavior:"smooth"}); }
   else if(a=="print"){ upsertRecord(); document.getElementById("record").innerHTML=buildRecord(); window.print(); }
   else if(a=="istep-next"){ S.step=Math.min(STEPS.length-1,S.step+1); render(); }
