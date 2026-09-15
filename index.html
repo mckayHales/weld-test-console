@@ -155,7 +155,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-14.6";
+var VERSION="2026-09-14.7";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -686,7 +686,9 @@ VIEWS.editco = function(){
     + '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
     + '<button class="primary" data-act="saveco" style="width:100%">Save company</button>'
     + '<p id="saveerr" class="err" style="display:none">Give the company a name first.</p>';
-  return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="saveco">Save company</button>' };
+  var b = '<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="saveco">Save company</button>';
+  if(d.id) b = '<button class="ghost" data-act="delco">Delete</button><button class="primary" data-act="saveco">Save company</button>';
+  return { body:h, bar:b };
 };
 
 /* ---------- WPS ---------- */
@@ -1055,6 +1057,11 @@ document.addEventListener("click", function(e){
     if(!d.name){ var se=document.getElementById("saveerr"); if(se) se.style.display="block"; return; }
     if(!d.id) d.id=uid();
     putRow("companies", d); back();
+  }
+  else if(a=="delco"){
+    var n=recsFor(S.draft.id).length;
+    var msg = n ? "Delete this company? Its "+n+" test record"+(n==1?"":"s")+" stay on file under the name they were filed with." : "Delete this company?";
+    if(confirm(msg)){ delRow("companies",S.draft.id); S.stack=[]; S.screen="companies"; render(); }
   }
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
