@@ -1,7 +1,7 @@
 # Weld Test Console — handoff
 
 A welder qualification test system for CWIs. An inspector sells weld coupons to outside
-companies, witnesses the tests, and issues signed WQTRs. This app collects the welder's
+companies, witnesses the tests, and issues signed WPQRs. This app collects the welder's
 data from their own phone, files it under the inspector's account, and drafts the record
 so the inspector only has to verify, stamp, and print.
 
@@ -39,7 +39,7 @@ what protects the data, not the key.
 |---|---|---|
 | Entry point | opens the app, signs in | taps a link the inspector texted (`?t=<ticket>`) |
 | Sees | console: records, companies, WPS library, settings | a 5-step intake form with the WPS card on top, nothing else |
-| Produces | the printed WQTR | a record in the inspector's Test records |
+| Produces | the printed WPQR | a record in the inspector's Test records |
 
 The welder never installs anything, never sees the console, never makes an account. The
 ticket id in the link is the only credential they have, and it's a 12-character random
@@ -101,7 +101,7 @@ One delegated `click` listener on `document`, dispatching on data attributes
 Schema is in `supabase/schema.sql`. Six tables:
 
 ```
-orgs        the tenant — one inspection company (name, city, code edition)
+orgs        the tenant — one inspection company (name, city, address, phone, code edition)
 profiles    user → org, plus the inspector's name and cert line
 companies   (org_id, id) → data jsonb       the client companies
 wps         (org_id, id) → data jsonb       the WPS library
@@ -139,6 +139,21 @@ won't come back to the app.
 
 ## 6. Domain rules, and the line that matters
 
+### The printed record
+
+`buildRecord()` prints a **Welder Performance Qualification Record (WPQR)** laid out
+like Yeti Welding's own paper form (the AWS Annex "actual values | ranges qualified"
+style): letterhead from the org's address and phone, welder block beside the test block,
+the base metals table, then every variable as actual value beside range qualified,
+test results with acceptance-criteria clause numbers, and a certification block. WPQR
+and WQTR are two names for the same document; the shop's paper says WPQR, so the app
+does too.
+
+The acceptance-criteria column takes its clause numbers from `CLAUSES`, keyed by code
+edition. Only D1.1:2020 is filled in (6.10.1 visual, 6.10.3.1/Fig. 6.8 bend specimens,
+6.10.3.3 bend acceptance — read off the shop's records). Any other edition prints
+"Clause 6, Part C" until someone checks the numbers against that book.
+
 Positions and thickness ranges are computed in `suggest(w)` against **AWS D1.1:2025**
 (Clause 6, Part C — welder qualification).
 
@@ -157,6 +172,11 @@ bend type  T >= 3/8" → four side bends
 **This is the important part of the whole project.** These are drafts, never authority.
 Every computed range renders as an editable field, and the Print button stays disabled
 until the inspector ticks a checkbox confirming he verified them against his code book.
+The "Qualified range — draft" card on the record screen has one row per range on the
+printed WPQR, in the same order: joints, base metal, groove and fillet thickness,
+diameter, process, backing, filler (F-number group for SMAW), groove and fillet positions.
+The lookups behind them — `POS_MAP`, `FILLET_FROM_GROOVE`, `METAL_GROUP`, `FILLER_SPEC`,
+`F_NUMBER` — sit next to `suggest()`.
 The inspector's stamp is on the output and his certification is on the line — a lookup
 table in a web app must never be what that rests on.
 
@@ -213,7 +233,7 @@ you set up. Set `S.screen` and call `render()` again.
   invite flow yet. Adding a coworker to the *same* company means inserting their profile
   row by hand. Separate companies just sign up separately.
 - **No welder continuity or expiration tracking** (D1.1 six-month continuity, requal).
-- **WPS records don't print.**
+- **WPS records print in a plain layout**, not the shop's form.
 - **No photos.**
 - **Print is browser print-to-PDF.** No archiving of the rendered output.
 - **Offline is read-only-ish.** The cache lets the console open without signal, and

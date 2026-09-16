@@ -25,6 +25,8 @@ create table orgs (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
   city        text not null default '',
+  address     text not null default '',   -- letterhead line on printed records
+  phone       text not null default '',
   code        text not null default 'AWS D1.1:2025',
   created_at  timestamptz not null default now()
 );
