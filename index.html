@@ -130,7 +130,6 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 #record{display:none}
 @media print{ @page{size:letter;margin:.45in .5in} html,body{height:auto;overflow:visible;display:block;background:#fff;color:#000;font-size:10pt} #app{overflow:visible;height:auto} #view,.bar,.noprint{display:none!important} #record{display:block!important;padding:0} }
 #record.preview{display:block;background:#fff;color:#000;padding:18px;margin:0 16px 24px;border-radius:6px;overflow-x:auto}
-.doc{font-family:var(--sans);max-width:8in;margin:0 auto}
 /* The WPQR is laid out like the shop's own paper form: a grey band and
    centered letterhead, then bordered tables with the label in the first
    column, and every variable's actual value beside its range qualified. */
@@ -142,6 +141,13 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .form .head h1{font-size:11.5pt;font-weight:700;margin:12px 0 0}
 .form .two{display:grid;grid-template-columns:1.15fr 1fr;gap:12px;align-items:start}
 .form .two table{margin-top:0}
+.form .two.even{grid-template-columns:1fr 1fr;margin-top:9px}
+.form .two.even table+table{margin-top:9px}
+table.t .hv{padding:3px 6px 2px}
+table.t .hv .v{font-weight:600;min-height:11pt;border-bottom:1px solid #000;padding-bottom:1px}
+table.t .hv .l{font-size:7.5pt;margin-top:1px}
+table.t .sketch{height:1.05in;vertical-align:middle;text-align:center;font-size:8pt}
+table.t .sketch .v{font-weight:600;font-size:9pt;margin-bottom:3px}
 table.t{width:100%;border-collapse:collapse;margin-top:9px;font-size:8.5pt}
 table.t th,table.t td{border:1px solid #000;padding:2px 5px;text-align:left;vertical-align:top;font-weight:400}
 table.t th{font-weight:700}
@@ -158,20 +164,9 @@ table.t tr:first-child .gap{border-top:0}
 .form .sig .name{font-weight:700;font-size:9pt;margin-bottom:2px}
 .form .sig .sigline{margin-top:22px}
 .form .stampbox{height:1.05in;width:1.5in}
-.doc h1{font-size:14pt;margin:0;font-weight:700}
-.doc .sub1{font-size:9pt;margin:2px 0 0}
-.dochead{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #000;padding-bottom:8px}
-.grid{display:grid;grid-template-columns:1fr 1fr;border-left:1px solid #000;border-top:1px solid #000}
-.grid.three{grid-template-columns:1fr 1fr 1fr}
-.cell{border-right:1px solid #000;border-bottom:1px solid #000;padding:4px 6px;min-height:34px}
-.cell .l{font-size:7.5pt;color:#333;display:block;margin-bottom:1px}
-.cell .v{font-size:10pt;font-weight:600}
-.cell.full{grid-column:1/-1}
-.secbar{background:#000;color:#fff;font-size:8.5pt;font-weight:700;padding:3px 6px;margin-top:10px}
-.sig{display:grid;grid-template-columns:1.4fr 1fr;gap:24px;margin-top:22px}
+.secbar{background:#8A9096;color:#fff;font-size:8.5pt;font-weight:700;padding:3px 6px;margin-top:12px;text-align:center}
 .sigline{border-top:1px solid #000;padding-top:3px;font-size:8pt}
 .stampbox{border:1px dashed #666;height:1.1in;display:flex;align-items:flex-end;justify-content:center;font-size:7.5pt;color:#666;padding-bottom:4px}
-.result-line{font-size:11pt;font-weight:700;margin-top:8px}
 </style>
 </head>
 <body>
@@ -187,7 +182,7 @@ table.t tr:first-child .gap{border-top:0}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-16.2";
+var VERSION="2026-09-16.3";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -323,7 +318,7 @@ function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){retur
 function enc(o){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 function dec(s){ try{ var b=s.replace(/-/g,"+").replace(/_/g,"/"); while(b.length%4)b+="="; return JSON.parse(decodeURIComponent(escape(atob(b)))); }catch(e){ return null; } }
 function frac(n){
-  if(n==null||n==="")return ""; var v=parseFloat(n); if(isNaN(v))return String(n);
+  if(n==null||n===""||(typeof n=="number"&&isNaN(n)))return ""; var v=parseFloat(n); if(isNaN(v))return String(n);
   var map=[[0.0625,'1/16'],[0.125,'1/8'],[0.1875,'3/16'],[0.25,'1/4'],[0.3125,'5/16'],[0.375,'3/8'],[0.4375,'7/16'],[0.5,'1/2'],[0.625,'5/8'],[0.75,'3/4'],[0.875,'7/8']];
   var w=Math.floor(v), rem=+(v-w).toFixed(4), best=null;
   for(var i=0;i<map.length;i++) if(Math.abs(map[i][0]-rem)<0.002) best=map[i][1];
@@ -1107,20 +1102,80 @@ function wpsText(p){
   if(p.notes){ out.push(""); out.push("NOTES"); out.push(p.notes); }
   return out.join("\n");
 }
+/* The printed WPS, laid out like the shop's paper form: header strip,
+   base metals beside thickness, joint details beside the prequalified
+   designation, a "Procedure" bar, then the process on the left and the
+   filler and technique on the right. */
+function box(v){ return v ? "☑" : "☐"; }
 function buildWpsDoc(p){
-  var h='<div class="doc">';
-  h+='<div class="dochead"><div><h1>Welding Procedure Specification</h1>'
-    +'<div class="sub1">'+esc(CFG.shop)+(CFG.city?' · '+esc(CFG.city):'')+' · '+esc(CFG.code)+'</div></div>'
-    +'<div style="text-align:right;font-size:9pt"><b>'+esc(wpsLabel(p))+'</b><br>'+esc(p.basis||"")+(p.pqr?'<br>'+esc(p.pqr):'')+'</div></div>';
-  if(p.title) h+='<div style="font-size:10.5pt;font-weight:600;margin:8px 0 0">'+esc(p.title)+'</div>';
-  wpsSections(p).forEach(function(sc){
-    h+='<div class="secbar">'+esc(sc.title)+'</div><div class="grid three">';
-    sc.rows.forEach(function(r){ h+=cell(r[0],r[1]); });
-    h+='</div>';
-  });
-  if(p.notes) h+='<div class="secbar">Notes</div><div class="grid"><div class="cell full"><span class="v" style="font-weight:400;white-space:pre-wrap">'+esc(p.notes)+'</span></div></div>';
-  h+='<div class="sig"><div><div style="height:.55in"></div><div class="sigline">Prepared by — '+esc(CFG.inspector)+(CFG.cert?', '+esc(CFG.cert):'')+'</div></div>'
-    +'<div><div class="stampbox">Stamp</div></div></div></div>';
+  var groove=(p.weldType||"CJP groove")!="Fillet", cjp=(p.weldType||"CJP groove")=="CJP groove", pjp=p.weldType=="PJP groove";
+  var manual=(p.process=="SMAW"||p.process=="GTAW")?"Manual":"Semiautomatic";
+  var grp=function(m){ return METAL_GROUP[m]||""; };
+  var backMat=p.backing=="With backing"?(p.backingMat||""):"";
+  var hv=function(v,l){ return '<td class="hv"><div class="v">'+esc(v||"—")+'</div><div class="l">'+esc(l)+'</div></td>'; };
+  var h='<div class="form"><div class="band"></div>';
+  h+='<div class="head"><div class="letterhead">'+esc(CFG.shop)+'</div>'
+    +'<div class="addr">'+esc([CFG.address||CFG.city, CFG.phone].filter(Boolean).join("  ·  "))+'</div>'
+    +'<h1>Welding Procedure Specification (WPS)</h1></div>';
+
+  h+='<table class="t strip"><tr>'+hv(CFG.shop,"Company Name")+hv(p.no,"WPS No.")+hv(p.rev,"Rev. No")+hv(p.date?fmtDate(p.date):"","Date")+'</tr>'
+    +'<tr>'+hv(p.contact,"Company Contact")+'<td class="hv" colspan="2"><div class="v">'+esc(p.basis=="Qualified by PQR"?(p.pqr||"PQR"):"Prequalified / "+CFG.code)+'</div><div class="l">Supporting PQR</div></td>'+hv(p.cvn,"CVN Report")+'</tr></table>';
+
+  var metal=function(k,m){ return '<tr>'+td(k,"k")+td(m,"c")+td("","c")+td(grp(m),"c")+'</tr>'; };
+  var thick=function(k,v,pw){ return '<tr>'+td(k,"k")+td(v,"c")+td(pw,"c")+'</tr>'; };
+  h+='<div class="two even">'
+    +tbl(['<tr>'+th("Base Metals")+th("Specification","c")+th("Type or Grade","c")+th("AWS Group No.","c")+'</tr>',
+      metal("Base Material",p.base), metal("Welded To",p.baseTo||p.base), metal("Backing Material",backMat), '<tr>'+td("Other","k")+'<td colspan="3"></td></tr>'])
+    +tbl(['<tr>'+th("Base Metal Thickness")+th("As-Welded","c")+th("With PWHT","c")+'</tr>',
+      thick("CJP Groove Welds", cjp?p.thickRange:"", cjp&&p.pwhtTemp?p.thickRange:""),
+      thick("CJP Groove Weld w/CVN", cjp&&p.cvn?p.thickRange:"", ""),
+      thick("PJP Groove Welds", pjp?p.thickRange:"", pjp&&p.pwhtTemp?p.thickRange:""),
+      thick("Fillet Welds", groove?"":p.thickRange, !groove&&p.pwhtTemp?p.thickRange:""),
+      thick("Diameter (If Applicable)", p.diaRange, "")])
+    +'</div>';
+
+  h+='<div class="two even">'
+    +'<div>'+tbl(['<tr>'+th("Joint Details",null,2)+'</tr>',
+      kvRow("Groove Type", groove?[p.groove,"groove",p.jointType?p.jointType.toLowerCase()+" joint":""].filter(Boolean).join(" "):"Fillet, "+(p.jointType||"")+(p.filletSize?" — "+p.filletSize:"")),
+      kvRow("Groove Angle", groove?p.angle:""), kvRow("Root Opening", groove?p.rootOpening:""), kvRow("Root Face", groove?p.rootFace:""),
+      kvRow("Backing", groove?[p.backing,backMat].filter(Boolean).join(" — "):""),
+      '<tr>'+th("Backgouging",null,2)+'</tr>', kvRow("Method", p.backgouge||"None")])
+    +tbl(['<tr>'+th("Postweld Heat Treatment",null,2)+'</tr>', kvRow("Temperature",p.pwhtTemp), kvRow("Time at Temp.",p.pwhtTime)])+'</div>'
+    +'<div>'+tbl(['<tr>'+th("Joint Details (Sketch)",null,2)+'</tr>',
+      '<tr><td colspan="2" class="sketch">'+(p.title?'<div class="v">'+esc(p.title)+'</div>':'')
+        +'<div>'+esc(groove?[p.jointType,p.groove,p.angle,p.rootOpening?"root opening "+p.rootOpening:"",p.rootFace?"root face "+p.rootFace:"",p.backing].filter(Boolean).join(" · "):"Fillet "+(p.filletSize||""))+'</div></td></tr>',
+      '<tr>'+td("Pre-Qualified per "+CFG.code,"k")+td(box(p.basis!="Qualified by PQR")+(p.basis=="Qualified by PQR"?"  Qualified by "+(p.pqr||"PQR"):""),"c")+'</tr>',
+      '<tr>'+td("Pre-Qualified Joint Designation","k")+td(p.jointDesig,"c")+'</tr>'])+'</div>'
+    +'</div>';
+
+  h+='<div class="secbar">Procedure</div>';
+  var gasProc=p.process!="SMAW"&&p.process!="FCAW-S";
+  h+='<div class="two even">'
+    +'<div>'+tbl([kvRow("Process",p.process), '<tr>'+td("Type","k")+td(manual)+'</tr>', kvRow("Position",p.positions), '<tr>'+td("Progression","k")+td(p.progression)+'</tr>'])
+    +tbl(['<tr>'+th("Electrical Characteristics",null,2)+'</tr>',
+      '<tr>'+td("Current Type & Polarity","k")+td(p.polarity)+'</tr>', '<tr>'+td("Transfer Mode","k")+td(p.transfer)+'</tr>',
+      '<tr>'+td("Amps","k")+td(p.amps)+'</tr>', '<tr>'+td("Voltage","k")+td(p.volts)+'</tr>',
+      '<tr>'+td("Wire Feed Speed","k")+td(p.wfs?p.wfs+" ipm":"")+'</tr>', '<tr>'+td("Travel Speed","k")+td(p.travel?p.travel+" ipm":"")+'</tr>',
+      '<tr>'+td("Power Source","k")+td(p.powerSource)+'</tr>'])
+    +(gasProc ? tbl(['<tr>'+th("Shielding Gas (Composition)")+th(p.gas||"—")+'</tr>',
+      '<tr>'+td("Flow Rate","k")+td(p.flow?p.flow+" cfh":"")+'</tr>', '<tr>'+td("Nozzle Size","k")+td(p.nozzle)+'</tr>',
+      '<tr>'+td("Contact Tube to Work Distance","k")+td(p.ctwd)+'</tr>']) : '')
+    +'</div>'
+    +'<div>'+tbl(['<tr>'+th("Filler Metal (AWS Spec.)","k")+th(p.fillerSpec||"—")+'</tr>',
+      '<tr>'+td("AWS Classification","k")+td(p.filler)+'</tr>', '<tr>'+td("Electrode Diameter","k")+td(p.fillerDia)+'</tr>',
+      '<tr>'+td("Manufacturer Name","k")+td(p.fillerMfr)+'</tr>'])
+    +tbl(['<tr>'+th("Technique",null,4)+'</tr>',
+      '<tr>'+td("Multi Pass","k")+td(box(p.passes=="Multiple pass"),"c")+td("Single Pass","k")+td(box(p.passes=="Single pass"),"c")+'</tr>',
+      '<tr>'+td("Stringer","k")+td(box(p.bead=="Stringer"||p.bead=="Either"),"c")+td("Weave","k")+td(box(p.bead=="Weave"||p.bead=="Either"),"c")+'</tr>',
+      '<tr>'+td("Peening","k")+'<td colspan="3">'+esc(p.peening||"None")+'</td></tr>',
+      '<tr>'+td("Interpass Cleaning","k")+'<td colspan="3">'+esc(p.cleaning||"—")+'</td></tr>'])
+    +tbl(['<tr>'+th("Preheat Temperature")+th(p.preheat||"—")+'</tr>', '<tr>'+td("Interpass Temperature","k")+td(p.interpass)+'</tr>'])
+    +'</div></div>';
+
+  if(p.notes) h+=tbl(['<tr>'+th("Notes")+'</tr>','<tr><td style="white-space:pre-wrap">'+esc(p.notes)+'</td></tr>']);
+  h+='<div class="sig"><div></div>'
+    +'<div><div class="sigline">Authorized by — '+esc(CFG.inspector)+(CFG.cert?', '+esc(CFG.cert):'')+'</div><div class="sigline">Date</div></div>'
+    +'<div class="stampbox">Inspector stamp</div></div></div>';
   return h;
 }
 function currentWps(){ return S.viewWps || S.wps || (S.ticket&&S.ticket.wps) || null; }
@@ -1257,7 +1312,6 @@ VIEWS.importer = function(){
    blocks side by side, the base metals table, then each variable's
    actual value beside the range it qualifies, results, certification.
    ========================================================= */
-function cell(l,v,c){ return '<div class="cell '+(c||"")+'"><span class="l">'+esc(l)+'</span><span class="v">'+esc(v||"—")+'</span></div>'; }
 /* Acceptance-criteria clause numbers on the results table. Only the
    editions checked against a book are filled in; any other edition
    prints the part reference and the inspector writes the clause in. */
@@ -1275,7 +1329,7 @@ function buildRecord(){
   var w=S.w,r=S.r,s=suggest(w),t=tVal(w),cl=clauseRefs();
   var g=function(k,fb){ return r[k]!==undefined&&r[k]!==""?r[k]:fb; };
   var groove=w.weldType!="fillet", pipe=w.product=="pipe", od=parseFloat(w.pipeOD), small=pipe&&!isNaN(od)&&od<24;
-  var wp=wpsById(w.wpsId)||{}, wpsNo=w.wps||wpsLabel(wp);
+  var wp=wpsById(w.wpsId), wpsNo=w.wps||wpsLabel(wp); wp=wp||{};
   var employer=coName(w.companyId)||w.company;
   var filler=w.filler=="Other"?w.fillerOther:w.filler;
   var gas=w.gas=="Other"?(w.gasOther||"Other"):(w.gas||"None");

@@ -9,7 +9,8 @@ Built for more than one inspector from the start: each inspection company is its
 tenant, and the plan is to offer it to other CWIs.
 
 **Current state:** working app, hosted on GitHub Pages, data in Supabase. Multi-tenant
-with sign-in. Welder submissions land automatically.
+with sign-in. Welder submissions land automatically. The printed WPQR and WPS are laid
+out like Yeti Welding's paper forms.
 
 ---
 
@@ -149,6 +150,11 @@ test results with acceptance-criteria clause numbers, and a certification block.
 and WQTR are two names for the same document; the shop's paper says WPQR, so the app
 does too.
 
+`buildWpsDoc()` prints the WPS the same way: header strip, base metals beside the
+thickness table, joint details beside the prequalified designation, a Procedure bar,
+process/electrical/gas on the left and filler/technique/preheat on the right. Both use
+the `.form` table styles; the older `.doc`/`.grid` styles are no longer used.
+
 The acceptance-criteria column takes its clause numbers from `CLAUSES`, keyed by code
 edition. Only D1.1:2020 is filled in (6.10.1 visual, 6.10.3.1/Fig. 6.8 bend specimens,
 6.10.3.3 bend acceptance — read off the shop's records). Any other edition prints
@@ -239,7 +245,6 @@ you set up. Set `S.screen` and call `render()` again.
   invite flow yet. Adding a coworker to the *same* company means inserting their profile
   row by hand. Separate companies just sign up separately.
 - **No welder continuity or expiration tracking** (D1.1 six-month continuity, requal).
-- **WPS records print in a plain layout**, not the shop's form.
 - **No photos.**
 - **Print is browser print-to-PDF.** No archiving of the rendered output.
 - **Offline is read-only-ish.** The cache lets the console open without signal, and
@@ -252,10 +257,9 @@ you set up. Set `S.screen` and call `render()` again.
 
 1. **Continuity and expiration tracking** per welder — the feature another CWI would pay for.
 2. **Invite a coworker** to the same org.
-3. **Printable WPS** from the library.
-4. **Trim the option lists** to what the shops actually stock.
-5. **Multi-process tickets** for combo qualifications.
-6. **Custom domain** for the hosted app.
+3. **Trim the option lists** to what the shops actually stock.
+4. **Multi-process tickets** for combo qualifications.
+5. **Custom domain** for the hosted app.
 
 ---
 
