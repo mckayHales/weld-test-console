@@ -126,55 +126,12 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .code-in{letter-spacing:.35em;text-align:center;font-size:26px!important;font-variant-numeric:tabular-nums}
 .signin{margin-top:8vh}
 
-/* printed record */
-#record{display:none}
-@media print{ @page{size:letter;margin:.4in .45in} html,body{height:auto;overflow:visible;display:block;background:#fff;color:#000} #app{overflow:visible;height:auto} #view,.bar,.noprint{display:none!important} #record{display:block!important;padding:0!important;margin:0!important;border-radius:0}
-  /* Whatever width the printer hands us -- a phone lays the page out
-     narrower than a desktop does -- the form fills it exactly, and
-     every size below is in em, so the whole sheet scales together. */
-  .form{max-width:none;width:100%!important;zoom:1!important;font-size:1.36vw} }
-#record.preview{display:block;background:#fff;color:#000;padding:18px;margin:0 16px 24px;border-radius:6px;overflow-x:auto}
-/* The WPQR and WPS are laid out like the shop's own paper forms: a grey
-   band and centered letterhead, then bordered tables with the label in
-   the first column. All spacing is in em so the sheet scales as one. */
-.form{font-family:var(--sans);max-width:7.5in;margin:0 auto;font-size:7.3pt;line-height:1.2}
-.form .band{height:.6em;background:#8A9096;margin-bottom:.8em}
-.form .head{text-align:center;margin-bottom:.7em}
-.form .head .letterhead{font-size:1.75em;font-weight:800;text-transform:uppercase;letter-spacing:.02em}
-.form .head .addr{font-weight:600;margin-top:.1em}
-.form .head h1{font-size:1.35em;font-weight:700;margin:.7em 0 0}
-.form .two{display:grid;grid-template-columns:1.15fr 1fr;gap:1.1em;align-items:start}
-.form .two table{margin-top:0}
-.form .two.even{grid-template-columns:1fr 1fr;margin-top:.8em}
-.form .two.even table+table{margin-top:.8em}
-table.t{width:100%;border-collapse:collapse;margin-top:.8em;page-break-inside:avoid;break-inside:avoid}
-table.t th,table.t td{border:1px solid #000;padding:.15em .5em;text-align:left;vertical-align:top;font-weight:400}
-table.t th{font-weight:700}
-table.t .c{text-align:center}
-table.t .k{white-space:nowrap;width:1%}
-table.t .w{width:46%}
-table.t .h{font-weight:700}
-table.t .gap{border-top:0;border-bottom:0;width:1.4em;padding:0}
-table.t .hv{padding:.3em .6em .2em}
-table.t .hv .v{font-weight:600;min-height:1.3em;border-bottom:1px solid #000;padding-bottom:.1em}
-table.t .hv .l{font-size:.9em;margin-top:.1em}
-table.t .sketch{height:7.5em;vertical-align:middle;text-align:center}
-table.t .sketch .v{font-weight:600;font-size:1.1em;margin-bottom:.3em}
-.form .ttl{font-size:1.05em;font-weight:700;margin:.9em 0 -.55em;text-transform:uppercase}
-.form .cert{margin:.7em 0 0}
-.form .result{font-size:1.2em;font-weight:700;margin:.8em 0 0}
-.form .sig{display:grid;grid-template-columns:1.1fr 1fr auto;gap:1.6em;margin-top:1em;align-items:end;page-break-inside:avoid;break-inside:avoid}
-.form .sig .name{font-weight:700;font-size:1.1em;margin-bottom:.2em}
-.form .sig .sigline{margin-top:1.8em}
-.form .sigline{border-top:1px solid #000;padding-top:.3em}
-.form .stampbox{border:1px dashed #666;height:8em;width:12em;display:flex;align-items:flex-end;justify-content:center;font-size:.9em;color:#666;padding-bottom:.4em}
-.form .secbar{background:#8A9096;color:#fff;font-weight:700;padding:.3em .6em;margin-top:1em;text-align:center}
 </style>
 </head>
 <body>
-<div id="app"><div class="wrap" id="view"></div><div id="record"></div></div>
-<div class="bar noprint" id="bar"></div>
-<div id="toast" class="noprint"></div>
+<div id="app"><div class="wrap" id="view"></div></div>
+<div class="bar" id="bar"></div>
+<div id="toast"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
 <script>
 /* =========================================================
@@ -184,7 +141,7 @@ table.t .sketch .v{font-weight:600;font-size:1.1em;margin-bottom:.3em}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-16.5";
+var VERSION="2026-09-16.6";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -913,7 +870,7 @@ VIEWS.wpsview = function(){
     h+='</dl></div>';
   });
   if(p.notes) h+='<div class="card"><h3>Notes</h3><p style="margin:0;font-size:.92rem;white-space:pre-wrap">'+esc(p.notes)+'</p></div>';
-  return { body:h, bar:'<button class="ghost" data-act="sharewps">Share</button><button class="primary" data-act="printwps">Save as PDF</button>' };
+  return { body:h, bar:'<button class="ghost" data-act="sharewps">Share</button><button class="primary" data-act="pdfwps">Save as PDF</button>' };
 };
 
 /* ---------- welder intake ---------- */
@@ -1095,7 +1052,7 @@ VIEWS.myticket = function(){
 function keepWps(){
   return '<div class="card"><h3>Keep a copy</h3>'
     +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">This link keeps working — open the text message any time to see the WPS. Or save it now.</p>'
-    +'<button class="mini" data-act="sharewps">Share as text</button> &nbsp;·&nbsp; <button class="mini" data-act="printwps">Save as PDF</button></div>';
+    +'<button class="mini" data-act="sharewps">Share as text</button> &nbsp;·&nbsp; <button class="mini" data-act="pdfwps">Save as PDF</button></div>';
 }
 VIEWS.closed = function(){
   var d=S.draft;
@@ -1114,83 +1071,6 @@ function wpsText(p){
   if(p.notes){ out.push(""); out.push("NOTES"); out.push(p.notes); }
   return out.join("\n");
 }
-/* The printed WPS, laid out like the shop's paper form: header strip,
-   base metals beside thickness, joint details beside the prequalified
-   designation, a "Procedure" bar, then the process on the left and the
-   filler and technique on the right. */
-function box(v){ return v ? "☑" : "☐"; }
-function buildWpsDoc(p){
-  var groove=(p.weldType||"CJP groove")!="Fillet", cjp=(p.weldType||"CJP groove")=="CJP groove", pjp=p.weldType=="PJP groove";
-  var manual=(p.process=="SMAW"||p.process=="GTAW")?"Manual":"Semiautomatic";
-  var grp=function(m){ return METAL_GROUP[m]||""; };
-  var backMat=p.backing=="With backing"?(p.backingMat||""):"";
-  var hv=function(v,l){ return '<td class="hv"><div class="v">'+esc(v||"—")+'</div><div class="l">'+esc(l)+'</div></td>'; };
-  var h='<div class="form"><div class="band"></div>';
-  h+='<div class="head"><div class="letterhead">'+esc(CFG.shop)+'</div>'
-    +'<div class="addr">'+esc([CFG.address||CFG.city, CFG.phone].filter(Boolean).join("  ·  "))+'</div>'
-    +'<h1>Welding Procedure Specification (WPS)</h1></div>';
-
-  h+='<table class="t strip"><tr>'+hv(CFG.shop,"Company Name")+hv(p.no,"WPS No.")+hv(p.rev,"Rev. No")+hv(p.date?fmtDate(p.date):"","Date")+'</tr>'
-    +'<tr>'+hv(p.contact,"Company Contact")+'<td class="hv" colspan="2"><div class="v">'+esc(p.basis=="Qualified by PQR"?(p.pqr||"PQR"):"Prequalified / "+CFG.code)+'</div><div class="l">Supporting PQR</div></td>'+hv(p.cvn,"CVN Report")+'</tr></table>';
-
-  var metal=function(k,m){ return '<tr>'+td(k,"k")+td(m,"c")+td("","c")+td(grp(m),"c")+'</tr>'; };
-  var thick=function(k,v,pw){ return '<tr>'+td(k,"k")+td(v,"c")+td(pw,"c")+'</tr>'; };
-  h+='<div class="two even">'
-    +tbl(['<tr>'+th("Base Metals")+th("Specification","c")+th("Type or Grade","c")+th("AWS Group No.","c")+'</tr>',
-      metal("Base Material",p.base), metal("Welded To",p.baseTo||p.base), metal("Backing Material",backMat), '<tr>'+td("Other","k")+'<td colspan="3"></td></tr>'])
-    +tbl(['<tr>'+th("Base Metal Thickness")+th("As-Welded","c")+th("With PWHT","c")+'</tr>',
-      thick("CJP Groove Welds", cjp?p.thickRange:"", cjp&&p.pwhtTemp?p.thickRange:""),
-      thick("CJP Groove Weld w/CVN", cjp&&p.cvn?p.thickRange:"", ""),
-      thick("PJP Groove Welds", pjp?p.thickRange:"", pjp&&p.pwhtTemp?p.thickRange:""),
-      thick("Fillet Welds", groove?"":p.thickRange, !groove&&p.pwhtTemp?p.thickRange:""),
-      thick("Diameter (If Applicable)", p.diaRange, "")])
-    +'</div>';
-
-  h+='<div class="two even">'
-    +'<div>'+tbl(['<tr>'+th("Joint Details",null,2)+'</tr>',
-      kvRow("Groove Type", groove?[p.groove,"groove",p.jointType?p.jointType.toLowerCase()+" joint":""].filter(Boolean).join(" "):"Fillet, "+(p.jointType||"")+(p.filletSize?" — "+p.filletSize:"")),
-      kvRow("Groove Angle", groove?p.angle:""), kvRow("Root Opening", groove?p.rootOpening:""), kvRow("Root Face", groove?p.rootFace:""),
-      kvRow("Backing", groove?[p.backing,backMat].filter(Boolean).join(" — "):""),
-      '<tr>'+th("Backgouging",null,2)+'</tr>', kvRow("Method", p.backgouge||"None")])
-    +tbl(['<tr>'+th("Postweld Heat Treatment",null,2)+'</tr>', kvRow("Temperature",p.pwhtTemp), kvRow("Time at Temp.",p.pwhtTime)])+'</div>'
-    +'<div>'+tbl(['<tr>'+th("Joint Details (Sketch)",null,2)+'</tr>',
-      '<tr><td colspan="2" class="sketch">'+(p.title?'<div class="v">'+esc(p.title)+'</div>':'')
-        +'<div>'+esc(groove?[p.jointType,p.groove,p.angle,p.rootOpening?"root opening "+p.rootOpening:"",p.rootFace?"root face "+p.rootFace:"",p.backing].filter(Boolean).join(" · "):"Fillet "+(p.filletSize||""))+'</div></td></tr>',
-      '<tr>'+td("Pre-Qualified per "+CFG.code,"k")+td(box(p.basis!="Qualified by PQR")+(p.basis=="Qualified by PQR"?"  Qualified by "+(p.pqr||"PQR"):""),"c")+'</tr>',
-      '<tr>'+td("Pre-Qualified Joint Designation","k")+td(p.jointDesig,"c")+'</tr>'])+'</div>'
-    +'</div>';
-
-  h+='<div class="secbar">Procedure</div>';
-  var gasProc=p.process!="SMAW"&&p.process!="FCAW-S";
-  h+='<div class="two even">'
-    +'<div>'+tbl([kvRow("Process",p.process), '<tr>'+td("Type","k")+td(manual)+'</tr>', kvRow("Position",p.positions), '<tr>'+td("Progression","k")+td(p.progression)+'</tr>'])
-    +tbl(['<tr>'+th("Electrical Characteristics",null,2)+'</tr>',
-      '<tr>'+td("Current Type & Polarity","k")+td(p.polarity)+'</tr>', '<tr>'+td("Transfer Mode","k")+td(p.transfer)+'</tr>',
-      '<tr>'+td("Amps","k")+td(p.amps)+'</tr>', '<tr>'+td("Voltage","k")+td(p.volts)+'</tr>',
-      '<tr>'+td("Wire Feed Speed","k")+td(p.wfs?p.wfs+" ipm":"")+'</tr>', '<tr>'+td("Travel Speed","k")+td(p.travel?p.travel+" ipm":"")+'</tr>',
-      '<tr>'+td("Power Source","k")+td(p.powerSource)+'</tr>'])
-    +(gasProc ? tbl(['<tr>'+th("Shielding Gas (Composition)")+th(p.gas||"—")+'</tr>',
-      '<tr>'+td("Flow Rate","k")+td(p.flow?p.flow+" cfh":"")+'</tr>', '<tr>'+td("Nozzle Size","k")+td(p.nozzle)+'</tr>',
-      '<tr>'+td("Contact Tube to Work Distance","k")+td(p.ctwd)+'</tr>']) : '')
-    +'</div>'
-    +'<div>'+tbl(['<tr>'+th("Filler Metal (AWS Spec.)","k")+th(p.fillerSpec||"—")+'</tr>',
-      '<tr>'+td("AWS Classification","k")+td(p.filler)+'</tr>', '<tr>'+td("Electrode Diameter","k")+td(p.fillerDia)+'</tr>',
-      '<tr>'+td("Manufacturer Name","k")+td(p.fillerMfr)+'</tr>'])
-    +tbl(['<tr>'+th("Technique",null,4)+'</tr>',
-      '<tr>'+td("Multi Pass","k")+td(box(p.passes=="Multiple pass"),"c")+td("Single Pass","k")+td(box(p.passes=="Single pass"),"c")+'</tr>',
-      '<tr>'+td("Stringer","k")+td(box(p.bead=="Stringer"||p.bead=="Either"),"c")+td("Weave","k")+td(box(p.bead=="Weave"||p.bead=="Either"),"c")+'</tr>',
-      '<tr>'+td("Peening","k")+'<td colspan="3">'+esc(p.peening||"None")+'</td></tr>',
-      '<tr>'+td("Interpass Cleaning","k")+'<td colspan="3">'+esc(p.cleaning||"—")+'</td></tr>'])
-    +tbl(['<tr>'+th("Preheat Temperature")+th(p.preheat||"—")+'</tr>', '<tr>'+td("Interpass Temperature","k")+td(p.interpass)+'</tr>'])
-    +'</div></div>';
-
-  if(p.notes) h+=tbl(['<tr>'+th("Notes")+'</tr>','<tr><td style="white-space:pre-wrap">'+esc(p.notes)+'</td></tr>']);
-  h+='<div class="sig"><div></div>'
-    +'<div><div class="sigline">Authorized by — '+esc(CFG.inspector)+(CFG.cert?', '+esc(CFG.cert):'')+'</div><div class="sigline">Date</div></div>'
-    +'<div class="stampbox">Inspector stamp</div></div></div>';
-  return h;
-}
-function currentWps(){ return S.viewWps || S.wps || (S.ticket&&S.ticket.wps) || null; }
 
 /* ---------- inspect a record ---------- */
 VIEWS.inspect = function(){
@@ -1271,7 +1151,7 @@ VIEWS.inspect = function(){
         : '<button class="mini" data-act="archive">Archive this record</button> &nbsp;·&nbsp; ') : '')
     +'<button class="mini" data-act="delrec">Delete this record</button></p>';
   var ready=r.verified&&r.result;
-  return { body:h, bar:'<button class="ghost" data-act="preview">Preview</button><button class="primary" data-act="print" '+(ready?"":"disabled")+'>Print WPQR</button>' };
+  return { body:h, bar:'<button class="ghost" data-act="pdfrec" data-draft="1">Preview</button><button class="primary" data-act="pdfrec" '+(ready?"":"disabled")+'>Save WPQR</button>' };
 };
 function resRow(label,key){
   var v=S.r[key];
@@ -1320,25 +1200,124 @@ VIEWS.importer = function(){
 };
 
 /* =========================================================
-   Printed record — the WPQR
-   Laid out like the shop's paper form: letterhead, welder and test
-   blocks side by side, the base metals table, then each variable's
-   actual value beside the range it qualifies, results, certification.
+   The PDFs — WPQR and WPS
+   Built here with jsPDF instead of the browser's print dialog. A
+   phone's print engine lays the page out at its own width and the
+   sheet ran long; here every box goes at a fixed spot on a letter
+   page, so it is one page on anything, and the result is a file the
+   share sheet can take. Both are laid out like the shop's paper forms.
    ========================================================= */
+var PDF_SRC=["https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
+             "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"];
+var pdfLoading=null;
+function pdfReady(){ return !!(window.jspdf&&window.jspdf.jsPDF&&window.jspdf.jsPDF.API.autoTable); }
+/* Started at boot so the library is in hand by the time a button is
+   tapped: iOS only opens the share sheet from inside the tap itself. */
+function loadPdfLib(){
+  if(pdfReady()) return Promise.resolve();
+  if(pdfLoading) return pdfLoading;
+  function one(src){ return new Promise(function(ok,no){ var s=document.createElement("script"); s.src=src; s.onload=ok; s.onerror=function(){ no(new Error(src)); }; document.head.appendChild(s); }); }
+  pdfLoading=one(PDF_SRC[0]).then(function(){ return one(PDF_SRC[1]); }).catch(function(e){ pdfLoading=null; throw e; });
+  return pdfLoading;
+}
+/* Hand the file over: the share sheet on a phone (Files, Messages,
+   AirPrint...), a new tab on a desktop, a download if neither works. */
+function deliverPdf(d,name){
+  var blob=d.output("blob"), mobile=/iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  var url=URL.createObjectURL(blob);
+  function download(){ var a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); }
+  var file=null; try{ file=new File([blob],name,{type:"application/pdf"}); }catch(e){}
+  if(mobile && file && navigator.canShare && navigator.canShare({files:[file]})) navigator.share({files:[file],title:name}).catch(function(e){ if(!/Abort/.test(String(e&&e.name))) download(); });
+  else if(mobile) download();
+  else if(!window.open(url,"_blank")) download();
+  setTimeout(function(){ URL.revokeObjectURL(url); },120000);
+}
+function pdfName(s){ return String(s||"sheet").replace(/[^\w.-]+/g,"_")+".pdf"; }
+
 /* Acceptance-criteria clause numbers on the results table. Only the
    editions checked against a book are filled in; any other edition
    prints the part reference and the inspector writes the clause in. */
 var CLAUSES={ "2020":{ visual:"6.10.1", bendTest:"6.10.3.1 and Fig. 6.8", bend:"6.10.3.3" } };
 function clauseRefs(){ var y=(String(CFG.code).match(/20\d\d/)||[])[0]; return CLAUSES[y]||{ visual:"Clause 6, Part C", bendTest:"Clause 6, Part C", bend:"Clause 6, Part C" }; }
-function td(v,cls){ return '<td'+(cls?' class="'+cls+'"':'')+'>'+esc(v===""||v==null?"—":v)+'</td>'; }
-function th(v,cls,span){ return '<th'+(cls?' class="'+cls+'"':'')+(span?' colspan="'+span+'"':'')+'>'+esc(v)+'</th>'; }
-function tbl(rows){ return '<table class="t">'+rows.join("")+'</table>'; }
-function kvRow(k,v){ return '<tr>'+td(k,"k h")+td(v)+'</tr>'; }
-var GAP='<td class="gap"></td>';
-/* label | actual | (gap) | range */
-function avRow(k,a,q,head){ return '<tr>'+td(k,"k"+(head?" h":""))+td(a,"c")+GAP+td(q,"c")+'</tr>'; }
 function accept(v){ return v=="Pass"?"Acceptable":v=="Fail"?"Unacceptable":""; }
-function buildRecord(){
+
+/* ---- page geometry and drawing helpers (points; letter is 612 x 792) ---- */
+var PG={ w:612, h:792, m:30, gap:8 };
+function dash(v){ return v===""||v==null?"—":String(v); }
+function boxCell(on){ return { content:"", box:!!on }; }
+function pdfDoc(){ var d=new window.jspdf.jsPDF({unit:"pt",format:"letter"}); d.setFont("helvetica","normal"); d.setTextColor(0); return d; }
+/* One bordered table. o: x, w, y, head (one row), body, col (column
+   styles), bold (body columns set bold), center (center the value
+   cells), parse (extra per-cell hook). Returns the y under it. */
+function grid(d,o){
+  var bold=o.bold||[0];
+  d.autoTable({ startY:o.y, margin:{left:o.x,right:PG.w-o.x-o.w,top:PG.m,bottom:PG.m}, tableWidth:o.w,
+    head:o.head?[o.head]:undefined, body:o.body, theme:"grid", pageBreak:"avoid",
+    styles:{ font:"helvetica", fontSize:7.2, cellPadding:{top:1.7,bottom:1.7,left:3,right:3}, lineColor:0, lineWidth:.5, textColor:0, fillColor:false, overflow:"linebreak", valign:"middle" },
+    headStyles:{ fontStyle:"bold", fillColor:false, textColor:0, halign:"center" },
+    alternateRowStyles:{ fillColor:false },
+    columnStyles:o.col||{},
+    didParseCell:function(c){
+      var i=c.column.index;
+      if(c.section=="head"){ if(i==0) c.cell.styles.halign="left"; }
+      else if(bold.indexOf(i)>-1){ c.cell.styles.fontStyle="bold"; c.cell.styles.halign="left"; }
+      else c.cell.styles.halign=o.center?"center":"left";
+      var own=c.cell.raw&&c.cell.raw.styles; if(own) Object.assign(c.cell.styles,own);   // a cell's own styles win
+      if(o.parse) o.parse(c);
+    },
+    didDrawCell:function(c){
+      var raw=c.cell.raw; if(!raw||raw.box===undefined) return;
+      var s=6, cx=c.cell.x+c.cell.width/2-s/2, cy=c.cell.y+c.cell.height/2-s/2;
+      d.setLineWidth(.6); d.rect(cx,cy,s,s);
+      if(raw.box){ d.setLineWidth(1); d.line(cx+1.2,cy+3.2,cx+2.6,cy+4.8); d.line(cx+2.6,cy+4.8,cx+5,cy+1.4); }
+    } });
+  return d.lastAutoTable.finalY;
+}
+function letterhead(d,title){
+  var W=PG.w-2*PG.m;
+  d.setFillColor(138,144,150); d.rect(PG.m,PG.m,W,5,"F");
+  d.setFont("helvetica","bold"); d.setFontSize(15);
+  d.text(String(CFG.shop||"").toUpperCase(), PG.w/2, PG.m+23, {align:"center"});
+  d.setFontSize(8); var addr=[CFG.address||CFG.city, CFG.phone].filter(Boolean).join("    ·    ");
+  if(addr) d.text(addr, PG.w/2, PG.m+34, {align:"center"});
+  d.setFontSize(11); d.text(title, PG.w/2, PG.m+52, {align:"center"});
+  d.setFont("helvetica","normal");
+  return PG.m+60;
+}
+function sectionTitle(d,y,t){ d.setFont("helvetica","bold"); d.setFontSize(8); d.text(t.toUpperCase(),PG.m,y+9); d.setFont("helvetica","normal"); return y+12; }
+function greyBar(d,y,t){
+  var W=PG.w-2*PG.m;
+  d.setFillColor(138,144,150); d.rect(PG.m,y,W,11,"F");
+  d.setTextColor(255); d.setFont("helvetica","bold"); d.setFontSize(8); d.text(t.toUpperCase(),PG.w/2,y+8,{align:"center"});
+  d.setTextColor(0); d.setFont("helvetica","normal");
+  return y+11+PG.gap;
+}
+/* Signature block: an optional contractor line on the left, the
+   authorized-by and date lines in the middle, the stamp box on the right. */
+function signature(d,y,leftName,leftLabel){
+  var x=PG.m, W=PG.w-2*PG.m, mid=x+W*.42, stamp=x+W-96;
+  d.setLineWidth(.5); d.setDrawColor(0); d.setTextColor(0);
+  if(leftLabel){
+    d.setFont("helvetica","bold"); d.setFontSize(8.5); d.text(String(leftName||""), x, y+22);
+    d.setFont("helvetica","normal"); d.line(x,y+26,x+W*.36,y+26); d.setFontSize(7); d.text(leftLabel, x, y+34);
+  }
+  d.setFontSize(7);
+  d.line(mid,y+26,stamp-14,y+26); d.text("Authorized by — "+[CFG.inspector,CFG.cert].filter(Boolean).join(", "), mid, y+34, {maxWidth:stamp-14-mid});
+  d.line(mid,y+52,stamp-14,y+52); d.text("Date", mid, y+60);
+  d.setDrawColor(120); d.setLineDashPattern([2,2],0); d.rect(stamp,y,96,62); d.setLineDashPattern([],0);
+  d.setTextColor(120); d.text("Inspector stamp", stamp+48, y+56, {align:"center"}); d.setTextColor(0); d.setDrawColor(0);
+  return y+64;
+}
+/* An unverified record prints as a draft, and says so. */
+function watermark(d){
+  d.saveGraphicsState(); d.setGState(new d.GState({opacity:.12}));
+  d.setFont("helvetica","bold"); d.setFontSize(110); d.setTextColor(0);
+  d.text("DRAFT", PG.w/2, PG.h/2+40, {align:"center", angle:35});
+  d.restoreGraphicsState(); d.setFont("helvetica","normal");
+}
+
+/* ---- the WPQR ---- */
+function wpqrPdf(draft){
   var w=S.w,r=S.r,s=suggest(w),t=tVal(w),cl=clauseRefs();
   var g=function(k,fb){ return r[k]!==undefined&&r[k]!==""?r[k]:fb; };
   var groove=w.weldType!="fillet", pipe=w.product=="pipe", od=parseFloat(w.pipeOD), small=pipe&&!isNaN(od)&&od<24;
@@ -1349,86 +1328,153 @@ function buildRecord(){
   var thick=frac(t), grp=METAL_GROUP[w.base]||"";
   var spec=/^A\d/.test(w.base||"")?"ASTM "+w.base:w.base;
   var jointType=(pipe?"Pipe":"Plate")+" — "+(groove
-    ? [wp.groove,"groove"].filter(Boolean).join(" ")+(w.backing=="with"?" w/ backing":" without backing")
-    : "fillet");
+    ? [wp.groove,"groove"].filter(Boolean).join(" ")+(w.backing=="with"?" w/ backing":" without backing") : "fillet");
   var prog=w.progression=="Downhill"?"Vertical down":w.progression=="Uphill"?"Vertical up":"";
   var manual=(w.process=="SMAW"||w.process=="GTAW")?"Manual":"Semi-automatic";
   var backA=groove?(w.backing=="with"?"With":"Without"):"N/A";
   var vert=/3G|5G|6G|3F/.test(w.position);
   var qPos=g("qPos",s.positions), qFPos=g("qFPos",s.filletPositions);
-
-  var h='<div class="form"><div class="band"></div>';
-  h+='<div class="head"><div class="letterhead">'+esc(CFG.shop)+'</div>'
-    +'<div class="addr">'+esc([CFG.address||CFG.city, CFG.phone].filter(Boolean).join("  ·  "))+'</div>'
-    +'<h1>Welder Performance Qualification Record (WPQR)</h1></div>';
-
-  h+='<div class="two">'
-    +tbl([kvRow("Name",w.name),kvRow("ID Number",w.stamp),kvRow("Company",employer),kvRow("Division",w.division)])
-    +tbl([kvRow("Test Date",fmtDate(w.date)),kvRow("Record No.",r.testNo),kvRow("WPS No.",wpsNo),
-          kvRow("Qualified To",[CFG.code,wp.jointDesig].filter(Boolean).join("  "))])
-    +'</div>';
-
-  var metalRow=function(k){ return '<tr>'+td(k,"k")+td(spec,"c")+td("","c")+td(grp,"c")+td("","c")+td("","c")+td(thick,"c")+td(pipe&&!isNaN(od)?frac(od):"","c")+'</tr>'; };
-  h+=tbl(['<tr>'+th("Base Metals")+th("Specification","c")+th("Type or Grade","c")+th("AWS Group No.","c")+th("Size (NPS)","c")+th("Schedule","c")+th("Thickness","c")+th("Diameter","c")+'</tr>',
-    metalRow("Base Material"), metalRow("Welded To")]);
-
-  h+=tbl(['<tr>'+th("Variables")+th("Actual Values","c")+GAP+th("Ranges Qualified","c")+'</tr>',
-    avRow("Type of Weld Joint",jointType,g("qJoint",s.joints)),
-    avRow("Base Metal",grp?"Group "+grp+" to Group "+grp:w.base,g("qBase",s.base))]);
-
   var qThick=g("qThick",s.thickMin?s.thickMin+" to "+s.thickMax:""), qFillet=g("qFillet",s.filletThick), qDia=g("qDia",s.diameter);
-  var thickRow=function(k,a,b,qa,qb){ return '<tr>'+td(k,"k")+td(a,"c")+td(b,"c")+GAP+td(qa,"c")+td(qb,"c")+'</tr>'; };
-  h+=tbl(['<tr>'+th("")+th("Groove","c")+th("Fillet","c")+GAP+th("Groove","c")+th("Fillet","c")+'</tr>',
-    thickRow("Plate Thickness", !pipe&&groove?thick:"", !pipe&&!groove?thick:"", qThick, qFillet),
-    thickRow("Pipe/Tube Thickness", pipe&&groove?thick:"", pipe&&!groove?thick:"", qThick, groove?"Unlimited":qFillet),
-    thickRow("Pipe Diameter", pipe&&groove&&!isNaN(od)?frac(od):"", pipe&&!groove&&!isNaN(od)?frac(od):"", qDia, groove?"Unlimited":qDia)]);
+  var fspec=FILLER_SPEC[filler]||wp.fillerSpec||"", fnum=F_NUMBER[filler]||"";
+  var IND=" ";
 
-  h+=tbl(['<tr>'+th("Welding Process")+th(w.process,"c")+GAP+th(g("qProc",s.process),"c")+'</tr>',
-    avRow("Type",manual,manual),
-    avRow("Backing",backA,g("qBack",s.backing)),
-    avRow("Filler Metal",FILLER_SPEC[filler]||wp.fillerSpec||"",FILLER_SPEC[filler]||wp.fillerSpec||"",1),
-    avRow("AWS Classification",filler,g("qFiller",s.filler)),
-    avRow("F-Number",F_NUMBER[filler]||"",F_NUMBER[filler]||""),
-    avRow("Position",w.position,"",1),
-    avRow('Groove — Plate / Pipe > 24"', groove&&!small?w.position:"", groove?qPos:""),
-    avRow('Groove — Pipe < 24"', groove&&small?w.position:"", groove&&pipe?qPos:""),
-    avRow('Fillet — Plate and Pipe > 24"', !groove&&!small?w.position:"", qFPos),
-    avRow('Fillet — Pipe < 24"', !groove&&small?w.position:"", qFPos),
-    avRow("Progression", vert?prog:"", vert?prog:""),
-    avRow("GMAW Transfer Mode", w.transfer, w.transfer),
-    avRow("Single or Multiple Electrodes","Single","Single"),
-    avRow("Gas/Flux Type", gas, gas)]);
+  var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, y=letterhead(d,"Welder Performance Qualification Record (WPQR)");
+  var lw=Math.round(W*.55), rw=W-lw-PG.gap;
+  var y1=grid(d,{x:x,w:lw,y:y,col:{0:{cellWidth:64}},body:[["Name",dash(w.name)],["ID Number",dash(w.stamp)],["Company",dash(employer)],["Division",dash(w.division)]]});
+  var y2=grid(d,{x:x+lw+PG.gap,w:rw,y:y,col:{0:{cellWidth:64}},body:[["Test Date",dash(fmtDate(w.date))],["Record No.",dash(r.testNo)],["WPS No.",dash(wpsNo)],["Qualified To",dash([CFG.code,wp.jointDesig].filter(Boolean).join("   "))]]});
+  y=Math.max(y1,y2)+PG.gap;
 
-  var resRows=['<tr>'+th("Type of Test","w")+th("Acceptance Criteria","c")+th("Results","c")+th("Remarks")+'</tr>'];
-  var res=function(k,crit,v,rem){ resRows.push('<tr>'+td(k)+td(crit,"c")+td(accept(v),"c")+td(rem||"")+'</tr>'); };
-  res("Visual examination per "+cl.visual, cl.visual, r.visual);
+  var mh=["Base Metals","Specification","Type or Grade","AWS Group No.","Thickness"].concat(pipe?["Diameter"]:[]);
+  var mrow=function(k){ return [k,dash(spec),"—",dash(grp),dash(thick)].concat(pipe?[dash(!isNaN(od)?frac(od):"")]:[]); };
+  y=grid(d,{x:x,w:W,y:y,center:1,head:mh,body:[mrow("Base Material"),mrow("Welded To")]})+PG.gap;
+
+  var av=function(k,a,q){ return [k,dash(a),dash(q)]; }, colAV={0:{cellWidth:160}};
+  y=grid(d,{x:x,w:W,y:y,center:1,col:colAV,head:["Variables","Actual Values","Ranges Qualified"],body:[
+    av("Type of Weld Joint",jointType,g("qJoint",s.joints)),
+    av("Base Metal",grp?"Group "+grp+" to Group "+grp:w.base,g("qBase",s.base))]})+PG.gap;
+
+  y=grid(d,{x:x,w:W,y:y,center:1,col:colAV,head:["Thickness and Diameter","Actual — Groove","Actual — Fillet","Qualified — Groove","Qualified — Fillet"],body:[
+    ["Plate Thickness", dash(!pipe&&groove?thick:""), dash(!pipe&&!groove?thick:""), dash(qThick), dash(qFillet)],
+    ["Pipe/Tube Thickness", dash(pipe&&groove?thick:""), dash(pipe&&!groove?thick:""), dash(qThick), dash(groove?"Unlimited":qFillet)],
+    ["Pipe Diameter", dash(pipe&&groove&&!isNaN(od)?frac(od):""), dash(pipe&&!groove&&!isNaN(od)?frac(od):""), dash(qDia), dash(groove?"Unlimited":qDia)]]})+PG.gap;
+
+  y=grid(d,{x:x,w:W,y:y,center:1,col:colAV,head:["Welding Process",dash(w.process),dash(g("qProc",s.process))],body:[
+    av("Type",manual,manual),
+    av("Backing",backA,g("qBack",s.backing)),
+    av("Filler Metal (AWS Spec.)",fspec,fspec),
+    av("AWS Classification",filler,g("qFiller",s.filler)),
+    av("F-Number",fnum,fnum),
+    av("Position",w.position,""),
+    av(IND+"Groove — Plate / Pipe > 24\"", groove&&!small?w.position:"", groove?qPos:""),
+    av(IND+"Groove — Pipe < 24\"", groove&&small?w.position:"", groove&&pipe?qPos:""),
+    av(IND+"Fillet — Plate and Pipe > 24\"", !groove&&!small?w.position:"", qFPos),
+    av(IND+"Fillet — Pipe < 24\"", !groove&&small?w.position:"", qFPos),
+    av("Progression", vert?prog:"", vert?prog:""),
+    av("GMAW Transfer Mode", w.transfer, w.transfer),
+    av("Single or Multiple Electrodes","Single","Single"),
+    av("Gas/Flux Type", gas, gas)]})+PG.gap;
+
+  var res=[], push=function(k,crit,v){ res.push([k,dash(crit),dash(accept(v)),""]); };
+  push("Visual examination per "+cl.visual, cl.visual, r.visual);
   if(r.method=="bend"){
     if(!isNaN(t)&&t>=0.375){
       var sides=["bendSide1","bendSide2","bendSide3","bendSide4"].map(function(k){return r[k]});
-      if(sides.every(function(v){return v==sides[0]})) res("Four side bends per "+cl.bendTest, cl.bend, sides[0]);
-      else sides.forEach(function(v,i){ res("Side bend "+(i+1)+" per "+cl.bendTest, cl.bend, v); });
-    }
-    else { res("Root bend per "+cl.bendTest, cl.bend, r.bendRootFace1); res("Face bend per "+cl.bendTest, cl.bend, r.bendRootFace2); }
+      if(sides.every(function(v){return v==sides[0]})) push("Four side bends per "+cl.bendTest, cl.bend, sides[0]);
+      else sides.forEach(function(v,i){ push("Side bend "+(i+1)+" per "+cl.bendTest, cl.bend, v); });
+    } else { push("Root bend per "+cl.bendTest, cl.bend, r.bendRootFace1); push("Face bend per "+cl.bendTest, cl.bend, r.bendRootFace2); }
   }
-  if(r.method=="rt") res("Radiographic examination","Clause 6, Part C",r.rt);
-  if(r.method=="macro") res("Macroetch / fillet break","Clause 6, Part C",r.macro);
-  if(r.remarks||w.notes) resRows.push('<tr>'+td("Remarks","h")+'<td colspan="3">'+esc(r.remarks||w.notes)+'</td></tr>');
-  h+='<div class="ttl">Test Results</div>'+tbl(resRows);
+  if(r.method=="rt") push("Radiographic examination","Clause 6, Part C",r.rt);
+  if(r.method=="macro") push("Macroetch / fillet break","Clause 6, Part C",r.macro);
+  if(r.remarks||w.notes) res.push(["Remarks",{content:r.remarks||w.notes,colSpan:3,styles:{halign:"left"}}]);
+  y=sectionTitle(d,y,"Test Results");
+  y=grid(d,{x:x,w:W,y:y,center:1,bold:[],col:{0:{cellWidth:230}},head:["Type of Test","Acceptance Criteria","Results","Remarks"],body:res,
+    parse:function(c){ if(c.section=="body"&&c.column.index==0){ c.cell.styles.halign="left"; if(c.cell.raw=="Remarks") c.cell.styles.fontStyle="bold"; } }})+PG.gap;
 
-  h+='<div class="ttl">Certification</div>'+tbl([
-    kvRow("Test Conducted By",[CFG.inspector,CFG.cert].filter(Boolean).join(", ")),
-    kvRow("Laboratory",CFG.shop),
-    kvRow("Test Number",r.testNo),
-    kvRow("File Number",r.testNo)]);
-
-  h+='<div class="result">Result: '+esc(r.result||"—")+'</div>';
-  h+='<p class="cert">We, the undersigned, certify that the statements in this record are correct and that the test welds were prepared, welded, and tested in accordance with the requirements of Clause 6 of '+esc(CFG.code)+'.</p>';
-  h+='<div class="sig">'
-    +'<div><div class="name">'+esc(employer)+'</div><div class="sigline">Manufacturer or Contractor</div></div>'
-    +'<div><div class="sigline">Authorized by — '+esc(CFG.inspector)+(CFG.cert?', '+esc(CFG.cert):'')+'</div><div class="sigline">Date</div></div>'
-    +'<div class="stampbox">Inspector stamp</div></div></div>';
-  return h;
+  y=sectionTitle(d,y,"Certification");
+  y=grid(d,{x:x,w:W,y:y,col:{0:{cellWidth:110}},body:[
+    ["Test Conducted By",dash([CFG.inspector,CFG.cert].filter(Boolean).join(", "))],
+    ["Laboratory",dash(CFG.shop)],
+    ["Test Number",dash(r.testNo)],
+    ["File Number",dash(r.testNo)]]})+6;
+  d.setFont("helvetica","bold"); d.setFontSize(9.5); d.text("Result: "+(r.result||"—"),x,y+9); y+=14;
+  d.setFont("helvetica","normal"); d.setFontSize(7);
+  var stmt=d.splitTextToSize("We, the undersigned, certify that the statements in this record are correct and that the test welds were prepared, welded, and tested in accordance with the requirements of Clause 6 of "+CFG.code+".", W);
+  d.text(stmt,x,y+7); y+=stmt.length*8.5+2;
+  signature(d,y,employer,"Manufacturer or Contractor");
+  if(draft) watermark(d);
+  return d;
 }
+
+/* ---- the WPS ---- */
+function wpsPdf(p){
+  var groove=(p.weldType||"CJP groove")!="Fillet", cjp=(p.weldType||"CJP groove")=="CJP groove", pjp=p.weldType=="PJP groove";
+  var manual=(p.process=="SMAW"||p.process=="GTAW")?"Manual":"Semiautomatic";
+  var backMat=p.backing=="With backing"?(p.backingMat||""):"";
+  var gasProc=p.process!="SMAW"&&p.process!="FCAW-S";
+  var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, half=(W-PG.gap)/2, xr=x+half+PG.gap;
+  var y=letterhead(d,"Welding Procedure Specification (WPS)");
+
+  /* header strip: a value line with its label under it, like the paper */
+  y=grid(d,{x:x,w:W,y:y,bold:[],body:[
+    [dash(CFG.shop),dash(p.no),dash(p.rev),dash(p.date?fmtDate(p.date):"")],
+    ["Company Name","WPS No.","Rev. No","Date"],
+    [dash(p.contact),{content:dash(p.basis=="Qualified by PQR"?(p.pqr||"PQR"):"Prequalified / "+CFG.code),colSpan:2},dash(p.cvn)],
+    ["Company Contact",{content:"Supporting PQR",colSpan:2},"CVN Report"]],
+    parse:function(c){
+      if(c.row.index%2==0){ c.cell.styles.fontStyle="bold"; c.cell.styles.lineWidth={top:.5,left:.5,right:.5,bottom:0}; c.cell.styles.cellPadding={top:2.5,bottom:0,left:3,right:3}; }
+      else { c.cell.styles.fontSize=6; c.cell.styles.lineWidth={top:0,left:.5,right:.5,bottom:.5}; c.cell.styles.cellPadding={top:0,bottom:2,left:3,right:3}; }
+    }})+PG.gap;
+
+  var metal=function(k,m){ return [k,dash(m),"—",dash(METAL_GROUP[m]||"")]; };
+  var yl=grid(d,{x:x,w:half,y:y,center:1,head:["Base Metals","Specification","Type or Grade","AWS Group No."],
+    body:[metal("Base Material",p.base),metal("Welded To",p.baseTo||p.base),metal("Backing Material",backMat),["Other","—","—","—"]]});
+  var tr=function(k,v,pw){ return [k,dash(v),dash(pw)]; };
+  var yr=grid(d,{x:xr,w:half,y:y,center:1,head:["Base Metal Thickness","As-Welded","With PWHT"],body:[
+    tr("CJP Groove Welds", cjp?p.thickRange:"", cjp&&p.pwhtTemp?p.thickRange:""),
+    tr("CJP Groove Weld w/CVN", cjp&&p.cvn?p.thickRange:"", ""),
+    tr("PJP Groove Welds", pjp?p.thickRange:"", pjp&&p.pwhtTemp?p.thickRange:""),
+    tr("Fillet Welds", groove?"":p.thickRange, !groove&&p.pwhtTemp?p.thickRange:""),
+    tr("Diameter (If Applicable)", p.diaRange, "")]});
+  y=Math.max(yl,yr)+PG.gap;
+
+  var jt=groove ? [p.groove,"groove",p.jointType?p.jointType.toLowerCase()+" joint":""].filter(Boolean).join(" ")
+                : "Fillet, "+(p.jointType||"")+(p.filletSize?" — "+p.filletSize:"");
+  yl=grid(d,{x:x,w:half,y:y,col:{0:{cellWidth:96}},head:[{content:"Joint Details",colSpan:2}],body:[
+    ["Groove Type",dash(jt)],["Groove Angle",dash(groove?p.angle:"")],["Root Opening",dash(groove?p.rootOpening:"")],["Root Face",dash(groove?p.rootFace:"")],
+    ["Backing",dash(groove?[p.backing,backMat].filter(Boolean).join(" — "):"")],["Backgouging Method",dash(p.backgouge||"None")],
+    ["PWHT Temperature",dash(p.pwhtTemp)],["PWHT Time at Temp.",dash(p.pwhtTime)]]});
+  var desc=(p.title?p.title+"\n":"")+(groove
+    ? [p.jointType,p.groove,p.angle,p.rootOpening?"root opening "+p.rootOpening:"",p.rootFace?"root face "+p.rootFace:"",p.backing].filter(Boolean).join("  ·  ")
+    : "Fillet "+(p.filletSize||""));
+  yr=grid(d,{x:xr,w:half,y:y,col:{0:{cellWidth:150}},head:[{content:"Joint Details",colSpan:2}],body:[
+    [{content:desc,colSpan:2,styles:{halign:"center",minCellHeight:52,fontStyle:"normal"}}],
+    ["Pre-Qualified per "+CFG.code, boxCell(p.basis!="Qualified by PQR")],
+    ["Pre-Qualified Joint Designation", dash(p.jointDesig)]],
+    parse:function(c){ if(c.section=="body"&&c.row.index>0&&c.column.index==1) c.cell.styles.halign="center"; }});
+  y=greyBar(d,Math.max(yl,yr)+PG.gap,"Procedure");
+
+  var yL=y, yR=y, lab={0:{cellWidth:110}};
+  yL=grid(d,{x:x,w:half,y:yL,col:lab,body:[["Process",dash(p.process)],["Type",manual],["Position",dash(p.positions)],["Progression",dash(p.progression)]]})+PG.gap;
+  yL=grid(d,{x:x,w:half,y:yL,col:lab,head:[{content:"Electrical Characteristics",colSpan:2}],body:[
+    ["Current Type & Polarity",dash(p.polarity)],["Transfer Mode",dash(p.transfer)],["Amps",dash(p.amps)],["Voltage",dash(p.volts)],
+    ["Wire Feed Speed",dash(p.wfs?p.wfs+" ipm":"")],["Travel Speed",dash(p.travel?p.travel+" ipm":"")],["Power Source",dash(p.powerSource)]]})+PG.gap;
+  if(gasProc) yL=grid(d,{x:x,w:half,y:yL,col:lab,head:["Shielding Gas (Composition)",dash(p.gas)],body:[
+    ["Flow Rate",dash(p.flow?p.flow+" cfh":"")],["Nozzle Size",dash(p.nozzle)],["Contact Tube to Work Distance",dash(p.ctwd)]]})+PG.gap;
+
+  yR=grid(d,{x:xr,w:half,y:yR,col:lab,head:["Filler Metal (AWS Spec.)",dash(p.fillerSpec)],body:[
+    ["AWS Classification",dash(p.filler)],["Electrode Diameter",dash(p.fillerDia)],["Manufacturer Name",dash(p.fillerMfr)]]})+PG.gap;
+  yR=grid(d,{x:xr,w:half,y:yR,bold:[0,2],col:{1:{cellWidth:24},3:{cellWidth:24}},head:[{content:"Technique",colSpan:4}],body:[
+    ["Multi Pass",boxCell(p.passes=="Multiple pass"),"Single Pass",boxCell(p.passes=="Single pass")],
+    ["Stringer",boxCell(p.bead=="Stringer"||p.bead=="Either"),"Weave",boxCell(p.bead=="Weave"||p.bead=="Either")],
+    ["Peening",{content:dash(p.peening||"None"),colSpan:3}],
+    ["Interpass Cleaning",{content:dash(p.cleaning),colSpan:3}]]})+PG.gap;
+  yR=grid(d,{x:xr,w:half,y:yR,col:lab,head:["Preheat Temperature",dash(p.preheat)],body:[["Interpass Temperature",dash(p.interpass)]]})+PG.gap;
+  y=Math.max(yL,yR);
+  if(p.notes) y=grid(d,{x:x,w:W,y:y,bold:[],head:["Notes"],body:[[p.notes]]})+PG.gap;
+  signature(d,y,"",null);
+  return d;
+}
+function currentWps(){ return S.viewWps || S.wps || (S.ticket&&S.ticket.wps) || null; }
 
 /* =========================================================
    Events
@@ -1508,8 +1554,12 @@ document.addEventListener("click", function(e){
     var fin=active().filter(function(r){return r.r.result});
     if(confirm("Archive "+fin.length+" finished tests? They stay on file under Archive.")){ fin.forEach(function(r){ setArchived(r.id,true); }); render(); }
   }
-  else if(a=="preview"){ var rec=document.getElementById("record"); rec.innerHTML=buildRecord(); rec.classList.toggle("preview"); if(rec.classList.contains("preview")){ fitPreview(rec); rec.scrollIntoView({behavior:"smooth"}); } }
-  else if(a=="print"){ upsertRecord(); document.getElementById("record").innerHTML=buildRecord(); window.print(); }
+  else if(a=="pdfrec"){
+    if(!pdfReady()){ toast("Still loading the PDF tool — try again in a second."); loadPdfLib().catch(function(){ toast("Couldn't load the PDF tool. Check your signal."); }); return; }
+    var final=S.r.verified&&S.r.result&&!el.dataset.draft;
+    if(final) upsertRecord();
+    deliverPdf(wpqrPdf(!final), pdfName(S.r.testNo||(S.w.name?S.w.name+" WPQR":"WPQR")));
+  }
   else if(a=="istep-next"){ S.step=Math.min(stepList().length-1,S.step+1); render(); }
   else if(a=="istep-back"){ S.step=Math.max(0,S.step-1); render(); }
   else if(a=="isend"){ sendIntake(el); }
@@ -1521,7 +1571,11 @@ document.addEventListener("click", function(e){
   else if(a=="mode-in"||a=="mode-up"||a=="mode-reset"){ S.draft={email:S.draft.email,mode:a.slice(5)}; render(); }
   else if(a=="finishonboard") finishOnboard();
   else if(a=="signout"){ if(AUTH.user) raw.del("wq.profile."+AUTH.user.id); sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
-  else if(a=="printwps"){ var wp=currentWps(); if(!wp) return; document.getElementById("record").innerHTML=buildWpsDoc(wp); window.print(); }
+  else if(a=="pdfwps"){
+    var wp=currentWps(); if(!wp) return;
+    if(!pdfReady()){ toast("Still loading the PDF tool — try again in a second."); loadPdfLib().catch(function(){ toast("Couldn't load the PDF tool. Check your signal."); }); return; }
+    deliverPdf(wpsPdf(wp), pdfName(CFG.shop+" "+wpsLabel(wp)));
+  }
   else if(a=="sharewps"){
     var wp2=currentWps(); if(!wp2) return;
     var txt=wpsText(wp2);
@@ -1533,8 +1587,6 @@ document.addEventListener("click", function(e){
   else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}); else { copy(window._link); el.textContent="Copied"; } }
 });
 function copy(t){ try{ navigator.clipboard.writeText(t); }catch(e){} }
-/* On screen the sheet is shown at paper proportions, shrunk to the phone. */
-function fitPreview(rec){ var f=rec.querySelector(".form"); if(!f) return; f.style.width="7.5in"; f.style.zoom=Math.min(1,(rec.clientWidth-36)/720); }
 
 function openRecord(id){
   var r=records().filter(function(x){return x.id==id})[0]; if(!r) return;
@@ -1721,7 +1773,7 @@ document.addEventListener("keydown", function(e){
   var b=app.querySelector("button.primary"); if(b){ e.preventDefault(); b.click(); }
 });
 function refreshBar(){
-  var p=bar.querySelector('[data-act=print]'); if(p) p.disabled=!(S.r.verified&&S.r.result);
+  var p=bar.querySelector('button.primary[data-act=pdfrec]'); if(p) p.disabled=!(S.r.verified&&S.r.result);
   var n=bar.querySelector('[data-act=isend]'); if(n) n.disabled=missing().length>0;
 }
 
@@ -1731,6 +1783,7 @@ function refreshBar(){
    Supabase puts its own tokens in the hash after a magic link; the
    client library consumes them on load. */
 (function(){
+  loadPdfLib().catch(function(){});
   var tid=new URLSearchParams(location.search).get("t");
   if(tid){ welderBoot(tid); return; }
   if(!sb){ S.screen="closed"; S.draft={title:"Can't reach the server",msg:"Check your connection and reload."}; render(); return; }

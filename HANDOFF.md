@@ -26,8 +26,9 @@ python -m http.server 8765
 ```
 
 No build step. `index.html` is the whole app; `manifest.webmanifest` and the two PNGs
-make it installable ("Add to Home Screen"). The only dependency is `supabase-js`, loaded
-from jsDelivr at the top of the script.
+make it installable ("Add to Home Screen"). Dependencies, all from jsDelivr: `supabase-js`
+at the top of the script, and `jspdf` + `jspdf-autotable`, fetched in the background at
+boot and used only to build the PDFs.
 
 The Supabase project URL and publishable key sit at the top of the script. They are
 public by design (they ship to every browser); the row-level security in the database is
@@ -142,20 +143,32 @@ won't come back to the app.
 
 ## 6. Domain rules, and the line that matters
 
-### The printed record
+### The PDFs
 
-`buildRecord()` prints a **Welder Performance Qualification Record (WPQR)** laid out
-like Yeti Welding's own paper form (the AWS Annex "actual values | ranges qualified"
-style): letterhead from the org's address and phone, welder block beside the test block,
-the base metals table, then every variable as actual value beside range qualified,
-test results with acceptance-criteria clause numbers, and a certification block. WPQR
-and WQTR are two names for the same document; the shop's paper says WPQR, so the app
-does too.
+The WPQR and WPS are **built in the app with jsPDF**, not printed through the browser.
+The browser route was tried first: iOS lays a print page out at its own width, so the
+sheet spilled off the right edge and onto a second page, and there was no way to see
+what the phone would do from a desktop. With jsPDF every box goes at a fixed spot on a
+letter page (612 × 792 pt, 30 pt margins), so it is one page on anything, and the result
+is a file. `deliverPdf()` hands it to the share sheet on a phone (Files, Messages,
+AirPrint), opens it in a tab on a desktop, or downloads it.
 
-`buildWpsDoc()` prints the WPS the same way: header strip, base metals beside the
-thickness table, joint details beside the prequalified designation, a Procedure bar,
-process/electrical/gas on the left and filler/technique/preheat on the right. Both use
-the `.form` table styles; the older `.doc`/`.grid` styles are no longer used.
+`wpqrPdf(draft)` is the **Welder Performance Qualification Record**, laid out like Yeti
+Welding's paper form (the AWS Annex "actual values | ranges qualified" style): letterhead
+from the org's address and phone, welder block beside the test block, base metals, every
+variable as actual value beside range qualified, results with acceptance-criteria clause
+numbers, certification block, contractor and authorized-by lines, stamp box. Preview on
+an unverified record prints with a DRAFT watermark; the Save button stays disabled until
+the verify gate is ticked. WPQR and WQTR are two names for the same document; the paper
+says WPQR, so the app does too.
+
+`wpsPdf(p)` is the WPS the same way: header strip, base metals beside the thickness
+table, joint details beside the prequalified designation, a Procedure bar, process /
+electrical / gas down the left, filler / technique / preheat down the right.
+
+`grid()` wraps autoTable with the house style (hairline borders, no fills, bold label
+column). Side-by-side tables are two `grid()` calls at the same `y` with different `x`
+and `w`; continue from the larger of the two returned bottoms.
 
 The acceptance-criteria column takes its clause numbers from `CLAUSES`, keyed by code
 edition. Only D1.1:2020 is filled in (6.10.1 visual, 6.10.3.1/Fig. 6.8 bend specimens,
@@ -248,7 +261,7 @@ you set up. Set `S.screen` and call `render()` again.
   row by hand. Separate companies just sign up separately.
 - **No welder continuity or expiration tracking** (D1.1 six-month continuity, requal).
 - **No photos.**
-- **Print is browser print-to-PDF.** No archiving of the rendered output.
+- **No archiving of the PDF.** It goes to the share sheet and that's the copy.
 - **Offline is read-only-ish.** The cache lets the console open without signal, and
   writes go to the cache, but a write made offline is not queued for later — it's lost
   on reload. Fine for now; a retry queue is the fix if it bites.
