@@ -1,7 +1,8 @@
-# Weld Test Console — handoff
+# Weld Sync — handoff
 
-A welder qualification test system for CWIs. An inspector sells weld coupons to outside
-companies, witnesses the tests, and issues signed WPQRs. This app collects the welder's
+A welder qualification test system for CWIs. An inspector (the org — McKay's own inspection
+company, not the welder's employer) sells weld coupons to outside companies, witnesses the
+tests, and issues signed WPQRs under the inspection company's letterhead. This app collects the welder's
 data from their own phone, files it under the inspector's account, and drafts the record
 so the inspector only has to verify, stamp, and print.
 
@@ -102,7 +103,8 @@ One delegated `click` listener on `document`, dispatching on data attributes
 Schema is in `supabase/schema.sql`. Six tables:
 
 ```
-orgs        the tenant — one inspection company (name, city, address, phone, code edition)
+orgs        the tenant — one inspection company (name, city, address, phone, code edition —
+            one of EDITIONS, chosen in Settings)
 profiles    user → org, plus the inspector's name and cert line
 companies   (org_id, id) → data jsonb       the client companies
 wps         (org_id, id) → data jsonb       the WPS library

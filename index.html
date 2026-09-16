@@ -7,11 +7,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Weld Test">
+<meta name="apple-mobile-web-app-title" content="Weld Sync">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
 <link rel="manifest" href="manifest.webmanifest">
-<title>Weld Test Console</title>
+<title>Weld Sync</title>
 <style>
 :root{
   --ink:#16212B; --panel:#1E2B36; --panel2:#263644; --line:#3A4C5C;
@@ -176,13 +176,13 @@ table.t tr:first-child .gap{border-top:0}
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
 <script>
 /* =========================================================
-   Weld Test Console — inspector side + welder ticket links
+   Weld Sync — inspector side + welder ticket links
    One page. Inspectors sign in; their data lives in Supabase,
    scoped to their inspection company. Welders never sign in —
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-16.3";
+var VERSION="2026-09-16.4";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -211,6 +211,13 @@ function token(){ var a=new Uint8Array(12); (window.crypto||window.msCrypto).get
 /* ---------- settings ----------
    Assembled from the org row and the profile row once signed in. */
 var CFG = { shop:"", city:"", address:"", phone:"", inspector:"", cert:"", code:"AWS D1.1:2025" };
+/* The editions the app knows. The clause numbers on the printed WPQR
+   come from CLAUSES, keyed by the year in this string. */
+var EDITIONS=["AWS D1.1:2020","AWS D1.1:2025"];
+function editionSelect(attr,cur){
+  var list=EDITIONS.indexOf(cur)>-1||!cur ? EDITIONS : EDITIONS.concat([cur]);
+  return '<select '+attr+'>'+list.map(function(e){return '<option '+(e==cur?"selected":"")+'>'+esc(e)+'</option>';}).join("")+'</select>';
+}
 function cfgFromAuth(){
   if(!AUTH.org) return;
   CFG={ shop:AUTH.org.name||"", city:AUTH.org.city||"", address:AUTH.org.address||"", phone:AUTH.org.phone||"",
@@ -220,7 +227,10 @@ function saveCfg(){
   if(!sb||!AUTH.org) return;
   AUTH.org.name=CFG.shop; AUTH.org.city=CFG.city; AUTH.org.address=CFG.address; AUTH.org.phone=CFG.phone; AUTH.org.code=CFG.code;
   AUTH.profile.name=CFG.inspector; AUTH.profile.cert=CFG.cert;
-  sb.from("orgs").update({name:CFG.shop,city:CFG.city,address:CFG.address,phone:CFG.phone,code:CFG.code}).eq("id",AUTH.org.id).then(chk);
+  sb.from("orgs").update({name:CFG.shop,city:CFG.city,code:CFG.code}).eq("id",AUTH.org.id).then(chk);
+  sb.from("orgs").update({address:CFG.address,phone:CFG.phone}).eq("id",AUTH.org.id).then(function(res){
+    if(res&&res.error) toast("Address and phone didn't save — run supabase/migrations/2026-09-16-org-letterhead.sql on the project.");
+  });
   sb.from("profiles").update({name:CFG.inspector,cert:CFG.cert}).eq("user_id",AUTH.user.id).then(chk);
 }
 
@@ -526,7 +536,7 @@ VIEWS.home = function(){
   var recs=active(), pending=recs.filter(function(r){return !r.r.result}).length;
   var h = '<div class="ticket"><div class="ticket-top"><div>'
     + '<div class="shop">'+esc(CFG.shop)+' &nbsp;·&nbsp; '+esc(CFG.city)+'</div>'
-    + '<h1>Weld test console<span>'+esc(CFG.inspector)+' · '+esc(CFG.cert)+'</span></h1>'
+    + '<h1>Weld Sync<span>'+esc(CFG.inspector)+' · '+esc(CFG.cert)+'</span></h1>'
     + '</div>'+codeChip()+'</div><div class="perf"></div>'
     + '<div class="ticket-bottom">'+recs.length+' record'+(recs.length==1?"":"s")+' · '+companies().length+' compan'+(companies().length==1?"y":"ies")+'</div></div>';
 
@@ -558,7 +568,7 @@ VIEWS.home = function(){
 VIEWS.login = function(){
   var d=S.draft, mode=d.mode||"in";
   var h='<div class="ticket signin"><div class="ticket-top"><div>'
-    +'<div class="shop">Weld test console</div>'
+    +'<div class="shop">Weld Sync</div>'
     +'<h1>'+(mode=="up"?"Create your account":mode=="reset"?"Reset password":"Sign in")+'<span>For inspectors. Welders don\'t sign in — they open the link you text them.</span></h1>'
     +'</div>'+codeChip()+'</div></div>';
   if(d.note) h+='<div class="flag"><b>'+esc(d.note)+'</b></div>';
@@ -575,7 +585,7 @@ VIEWS.login = function(){
 };
 VIEWS.newpass = function(){
   var d=S.draft;
-  var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">Weld test console</div>'
+  var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">Weld Sync</div>'
     +'<h1>New password<span>Pick one and you\'re back in.</span></h1></div></div></div>';
   h+='<div class="field"><label>New password — 8 characters or more</label><input type="password" data-d="password" value="'+esc(d.password||"")+'" autocomplete="new-password"></div>'
     +'<button class="primary" data-act="setpass" style="width:100%">Save password</button>'
@@ -587,11 +597,11 @@ VIEWS.onboard = function(){
   var h='<div class="ticket"><div class="ticket-top"><div><div class="shop">First time here</div>'
     +'<h1>Your shop and stamp<span>This is the header on every certificate you print. You can change it later in Settings.</span></h1>'
     +'</div></div></div>';
-  h+='<div class="field"><label>Inspection company <span class="req">*</span></label><input type="text" data-d="shop" value="'+esc(d.shop||"")+'" placeholder="Yeti Welding"></div>'
-    +'<div class="field"><label>City</label><input type="text" data-d="city" value="'+esc(d.city||"")+'" placeholder="Springville, Utah"></div>'
+  h+='<div class="field"><label>Inspection company <span class="req">*</span></label><input type="text" data-d="shop" value="'+esc(d.shop||"")+'" placeholder="Your company, as it goes on the letterhead"></div>'
+    +'<div class="field"><label>City</label><input type="text" data-d="city" value="'+esc(d.city||"")+'" placeholder="City, State"></div>'
     +'<div class="field"><label>Your name, as it goes on the signature line <span class="req">*</span></label><input type="text" data-d="inspector" value="'+esc(d.inspector||"")+'"></div>'
     +'<div class="field"><label>Certification line</label><input type="text" data-d="cert" value="'+esc(d.cert||"")+'" placeholder="AWS CWI #12345678"></div>'
-    +'<div class="field"><label>Code edition</label><input type="text" data-d="code" value="'+esc(d.code||"AWS D1.1:2025")+'"></div>'
+    +'<div class="field"><label>Code edition</label>'+editionSelect('data-d="code"', d.code||"AWS D1.1:2025")+'</div>'
     +'<button class="primary" data-act="finishonboard" style="width:100%">Open the console</button>'
     +'<p id="autherr" class="err" style="display:none"></p>';
   return { body:h, bar:"" };
@@ -1271,13 +1281,14 @@ function resRow(label,key){
 /* ---------- settings ---------- */
 VIEWS.settings = function(){
   var h = nav("Settings");
-  h+='<div class="field"><label>Shop name</label><input type="text" data-c="shop" value="'+esc(CFG.shop)+'"></div>'
+  h+='<p class="hint">Your inspection company. It is the letterhead on every WPQR and WPS you print, and the "test conducted by" line. The welder\'s employer is entered per record.</p>'
+    +'<div class="field"><label>Inspection company</label><input type="text" data-c="shop" value="'+esc(CFG.shop)+'"></div>'
     +'<div class="field"><label>City</label><input type="text" data-c="city" value="'+esc(CFG.city)+'"></div>'
-    +'<div class="field"><label>Street address, for the letterhead</label><input type="text" data-c="address" value="'+esc(CFG.address)+'" placeholder="1680 West 1600 South - Springville, Utah"></div>'
+    +'<div class="field"><label>Street address, for the letterhead</label><input type="text" data-c="address" value="'+esc(CFG.address)+'" placeholder="Street address, City, State"></div>'
     +'<div class="field"><label>Phone</label><input type="tel" data-c="phone" value="'+esc(CFG.phone)+'"></div>'
     +'<div class="field"><label>Inspector</label><input type="text" data-c="inspector" value="'+esc(CFG.inspector)+'"></div>'
     +'<div class="field"><label>Certification line on the signature block</label><input type="text" data-c="cert" value="'+esc(CFG.cert)+'" placeholder="AWS CWI #12345678"></div>'
-    +'<div class="field"><label>Code edition</label><input type="text" data-c="code" value="'+esc(CFG.code)+'"></div>';
+    +'<div class="field"><label>Code edition — the book you verify against; it sets the clause numbers on the WPQR</label>'+editionSelect('data-c="code"', CFG.code)+'</div>';
   h+='<div class="card"><h3>Testing</h3>'
     +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Three made-up welders and two companies, so you can walk the record screen without waiting on a real test.</p>'
     +(hasDemo()

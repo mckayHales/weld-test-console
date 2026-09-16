@@ -1,6 +1,6 @@
 {
-  "name": "Weld Test Console",
-  "short_name": "Weld Test",
+  "name": "Weld Sync",
+  "short_name": "Weld Sync",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
