@@ -185,8 +185,14 @@ property. Add code logic as *suggestions with an explicit verify gate*, not as a
 
 ### The WPS card
 
-A WPS in the library carries the procedure variables (filler, diameter, gas, flow, amps,
-volts, polarity, preheat) alongside the qualification ones. When a ticket names a WPS,
+A WPS in the library carries every field on the shop's paper WPS form: header (number,
+rev, date, contact, prequalified or PQR + CVN), joint details with the prequalified joint
+designation (`jointDesig`, e.g. `B-U2a-GF` — it prints on the WPQR's "Qualified To"
+line), backgouging, base and welded-to metals, filler with spec and manufacturer, gas with
+nozzle and contact-tip-to-work, electrical with power source, preheat/interpass/PWHT, and
+technique with peening. Diameter and flow may be ranges (`.045" to 1/16"`, `30–40`);
+`prefillFromWps` only pre-picks a value that matches a tile exactly, so a range leaves
+the welder to pick the one on the machine. When a ticket names a WPS,
 the welder's intake shows the card at the top of the "What are you welding?" step, and
 `prefillFromWps` pre-picks the tiles that exactly match — process, filler, diameter, gas,
 flow, base metal. Anything without an exact tile match stays blank for the welder to

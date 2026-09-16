@@ -187,7 +187,7 @@ table.t tr:first-child .gap{border-top:0}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-16.1";
+var VERSION="2026-09-16.2";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -419,11 +419,11 @@ function seedDemo(){
           {id:"demo-co-2",name:"Canyon Mechanical",contact:"Dee Parker",phone:"801-555-0188",_demo:true}];
   co.forEach(function(c){ putRow("companies",c); });
 
-  var ps=[{id:"demo-wps-1",no:"WPS-01",rev:"0",basis:"Prequalified",process:"FCAW-G",base:"A36 / A572 Gr. 50",
-           title:"CJP butt, single V, steel backing",weldType:"CJP groove",jointType:"Butt",groove:"Single V",angle:"45°",rootOpening:'1/4"',rootFace:"0",
-           backing:"With backing",backingMat:"Steel",interpass:"550 °F",progression:"Uphill",travel:"8–12",bead:"Stringer",passes:"Multiple pass",cleaning:"Wire brush",wfs:"250–300",fillerSpec:"A5.20",
-           filler:"E71T-1C",fillerDia:'.045"',gas:"75% Ar / 25% CO2",flow:"35",amps:"180–220",volts:"24–27",polarity:"DCEP",preheat:"50 °F min",
-           thickRange:'1/8" to 3/4"',positions:"All",notes:"CJP groove, 45° single V, 1/4\" root opening, steel backing.",_demo:true},
+  var ps=[{id:"demo-wps-1",no:"WPS-01",rev:"0",basis:"Prequalified",date:"2025-05-01",contact:"Dillon Hales",process:"FCAW-G",base:"A36",baseTo:"A36",
+           title:"CJP butt, single V, steel backing",weldType:"CJP groove",jointType:"Butt",jointDesig:"B-U2a-GF",groove:"Single V",angle:"45°–60°",rootOpening:'3/16" ± 1/16"',rootFace:"0",
+           backing:"With backing",backingMat:"Steel",backgouge:"None",interpass:"550 °F max",progression:"Uphill",travel:"7–12",bead:"Either",passes:"Multiple pass",cleaning:"Chipping hammer, hand brush, grinder",peening:"None",wfs:"250–320",fillerSpec:"A5.20",
+           filler:"E71T-1C",fillerDia:'.045" to 1/16"',gas:"75% Ar / 25% CO2",flow:"30–40",nozzle:'3/4"',ctwd:'1/2" to 1"',amps:"See wire feed",volts:"25–30",polarity:"DCEP",powerSource:"CV",preheat:"32 °F min",
+           thickRange:'3/8" to 3/4"',positions:"F, V",notes:"",_demo:true},
           {id:"demo-wps-2",no:"WPS-07",rev:"1",basis:"Qualified by PQR",pqr:"PQR-03",process:"GTAW",base:"304/304L",
            title:"Open-root pipe, single V, purged",weldType:"CJP groove",jointType:"Butt",groove:"Single V",angle:"37.5°",rootOpening:'1/8"',rootFace:'1/16"',
            backing:"No backing",diaRange:'2" and up',progression:"Uphill",travel:"3–5",bead:"Stringer",passes:"Multiple pass",cleaning:"Wire brush",fillerSpec:"A5.9",
@@ -515,6 +515,8 @@ function tiles(list,cur,withIcons,group){
       +(d&&v!==""?'<small>'+esc(d)+'</small>':'')+'</button>'; });
   return h+'</div>';
 }
+/* "AWS D1.1:2020" -> AWS / D1.1 / 2020 on three lines */
+function codeChip(){ return '<div class="code-chip">'+String(CFG.code||"AWS D1.1").split(/[\s:]+/).map(esc).join("<br>")+'</div>'; }
 function pill(status){
   var c = status=="Qualified"?"ok" : status=="Not qualified"?"no" : "wait";
   return '<span class="pill '+c+'">'+esc(status||"Awaiting test")+'</span>';
@@ -530,7 +532,7 @@ VIEWS.home = function(){
   var h = '<div class="ticket"><div class="ticket-top"><div>'
     + '<div class="shop">'+esc(CFG.shop)+' &nbsp;·&nbsp; '+esc(CFG.city)+'</div>'
     + '<h1>Weld test console<span>'+esc(CFG.inspector)+' · '+esc(CFG.cert)+'</span></h1>'
-    + '</div><div class="code-chip">AWS<br>D1.1<br>2025</div></div><div class="perf"></div>'
+    + '</div>'+codeChip()+'</div><div class="perf"></div>'
     + '<div class="ticket-bottom">'+recs.length+' record'+(recs.length==1?"":"s")+' · '+companies().length+' compan'+(companies().length==1?"y":"ies")+'</div></div>';
 
   h += '<div class="menu">'
@@ -563,7 +565,7 @@ VIEWS.login = function(){
   var h='<div class="ticket signin"><div class="ticket-top"><div>'
     +'<div class="shop">Weld test console</div>'
     +'<h1>'+(mode=="up"?"Create your account":mode=="reset"?"Reset password":"Sign in")+'<span>For inspectors. Welders don\'t sign in — they open the link you text them.</span></h1>'
-    +'</div><div class="code-chip">AWS<br>D1.1<br>2025</div></div></div>';
+    +'</div>'+codeChip()+'</div></div>';
   if(d.note) h+='<div class="flag"><b>'+esc(d.note)+'</b></div>';
   h+='<div class="field"><label>Email</label><input type="email" data-d="email" value="'+esc(d.email||"")+'" placeholder="you@example.com" autocomplete="email" inputmode="email"></div>';
   if(mode!="reset") h+='<div class="field"><label>Password'+(mode=="up"?' <span style="color:var(--muted);font-weight:400">— 8 characters or more</span>':'')+'</label><input type="password" data-d="password" value="'+esc(d.password||"")+'" autocomplete="'+(mode=="up"?"new-password":"current-password")+'"></div>';
@@ -644,7 +646,7 @@ VIEWS.newticket = function(){
 function wpsCard(p, title){
   if(!p) return "";
   var groove=(p.weldType||"CJP groove")!="Fillet";
-  var joint=groove ? [p.groove, p.angle, p.rootOpening?"root "+p.rootOpening:"", p.backing].filter(Boolean).join(", ")
+  var joint=groove ? [p.jointDesig, p.groove, p.angle, p.rootOpening?"root "+p.rootOpening:"", p.backing].filter(Boolean).join(", ")
                    : ["Fillet", p.filletSize].filter(Boolean).join(" ");
   var rows = [
     ["Joint", joint],
@@ -781,6 +783,9 @@ var WPS_PROG=[{v:"Uphill"},{v:"Downhill"}];
 var WPS_PASS=[{v:"Stringer"},{v:"Weave"},{v:"Either"}];
 var WPS_MULTI=[{v:"Single pass"},{v:"Multiple pass"}];
 var WPS_CLEAN=[{v:"Wire brush"},{v:"Grind"},{v:"Chip"},{v:"Needle scale"}];
+var WPS_GOUGE=[{v:"None"},{v:"Grind"},{v:"Arc gouge"},{v:"Arc gouge and grind"}];
+var WPS_POWER=[{v:"CV",d:"Constant voltage"},{v:"CC",d:"Constant current"}];
+var WPS_PEEN=[{v:"None"},{v:"Permitted"}];
 var WPS_POS=[{v:"All"},{v:"F"},{v:"F, H"},{v:"F, H, V"},{v:"F, V, OH"},{v:"F, H, V, OH"}];
 
 function dtiles(key,list){ return tiles(list, S.draft[key]||"", false, "d:"+key); }
@@ -797,25 +802,29 @@ VIEWS.wpsedit = function(){
   var h = nav(d.id?"Edit WPS":"New WPS", d.id?'<button data-act="viewwps" data-wps-id="'+esc(d.id)+'">Preview</button>':'');
   h += '<div class="row"><div class="field"><label>WPS number <span class="req">*</span></label><input type="text" data-d="no" value="'+esc(d.no||"")+'" placeholder="WPS-01"></div>'
     + '<div class="field"><label>Rev</label><input type="text" data-d="rev" value="'+esc(d.rev||"")+'" placeholder="0"></div></div>';
+  h += '<div class="row"><div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div>'
+    + '<div class="field"><label>Company contact</label><input type="text" data-d="contact" value="'+esc(d.contact||"")+'" placeholder="Who to ask about it"></div></div>';
   h += '<div class="field"><label>Prequalified or qualified by PQR</label><select data-d="basis">'
     + ["Prequalified","Qualified by PQR"].map(function(o){return '<option '+(d.basis==o?"selected":"")+'>'+o+'</option>';}).join("")+'</select></div>';
-  if(d.basis=="Qualified by PQR") h += dfield("Supporting PQR","pqr","text","PQR-03");
+  if(d.basis=="Qualified by PQR") h += '<div class="row">'+dfield("Supporting PQR","pqr","text","PQR-03")+dfield("CVN report","cvn","text","if any")+'</div>';
   h += dfield("Title / description","title","text","CJP butt, 45° single V, backed");
 
   h += '<div class="card"><h3>Joint design</h3>'
     + '<div class="field"><label>Weld type</label>'+dtiles("weldType",WPS_WELD)+'</div>'
     + '<div class="field"><label>Joint type</label>'+dtiles("jointType",WPS_JOINT)+'</div>';
+  if(groove&&d.basis!="Qualified by PQR") h += '<div class="field"><label>Prequalified joint designation</label>'+dtext("jointDesig","e.g. B-U2a-GF, from D1.1 Figure 5.1 / 5.2")+'</div>';
   if(groove) h += '<div class="field"><label>Groove</label>'+dtiles("groove",WPS_GROOVE)+'</div>'
     + '<div class="field"><label>Groove angle</label>'+dtiles("angle",WPS_ANGLE)+dtext("angle","or type it, e.g. 50°")+'</div>'
     + '<div class="field"><label>Root opening</label>'+dtiles("rootOpening",WPS_ROOT)+dtext("rootOpening","or type it")+'</div>'
     + '<div class="field"><label>Root face</label>'+dtiles("rootFace",WPS_FACE)+dtext("rootFace","or type it")+'</div>'
     + '<div class="field"><label>Backing</label>'+dtiles("backing",WPS_BACKING)+'</div>'
-    + (d.backing=="With backing" ? '<div class="field"><label>Backing material</label>'+dtiles("backingMat",WPS_BACKMAT)+dtext("backingMat","or type it")+'</div>' : '');
-  else h += '<div class="field"><label>Fillet size</label>'+dtext("filletSize",'e.g. 1/4" min')+'</div>';
+    + (d.backing=="With backing" ? '<div class="field"><label>Backing material</label>'+dtiles("backingMat",WPS_BACKMAT)+dtext("backingMat","or type it")+'</div>' : '')
+    + '<div class="field" style="margin:0"><label>Backgouging method</label>'+dtiles("backgouge",WPS_GOUGE)+'</div>';
+  else h += '<div class="field" style="margin:0"><label>Fillet size</label>'+dtext("filletSize",'e.g. 1/4" min')+'</div>';
   h += '</div>';
 
   h += '<div class="card"><h3>Base metal</h3>'
-    + dfield("Specification","base","text","A36 / A572 Gr. 50")
+    + '<div class="row">'+dfield("Base material","base","text","A36")+dfield("Welded to","baseTo","text","same, if blank")+'</div>'
     + '<div class="row"><div class="field" style="margin:0"><label>Thickness range</label><input type="text" data-d="thickRange" value="'+esc(d.thickRange||"")+'" placeholder="1/8&quot; to 3/4&quot;"></div>'
     + '<div class="field" style="margin:0"><label>Diameter range</label><input type="text" data-d="diaRange" value="'+esc(d.diaRange||"")+'" placeholder="Plate, or 2&quot; and up"></div></div></div>';
 
@@ -824,13 +833,16 @@ VIEWS.wpsedit = function(){
   if(d.process=="GMAW") h += '<div class="field"><label>Transfer mode</label>'+dtiles("transfer",[{v:"Spray"},{v:"Globular"},{v:"Short circuit"},{v:"Pulsed"}])+'</div>';
   h += '<div class="field"><label>Filler classification</label>'+dtiles("filler",(FILLERS[d.process]||[]).filter(function(f){return f!="Other"}).map(function(f){return {v:f}}))+dtext("filler","or type the AWS classification")+'</div>'
     + dfield("AWS filler spec","fillerSpec","text","A5.20")
-    + '<div class="field" style="margin:0"><label>'+esc(DIAM_LABEL[d.process]||"Filler diameter")+'</label>'+dtiles("fillerDia",DIAMS[d.process]||[])+dtext("fillerDia","or type it")+'</div>';
+    + '<div class="field"><label>'+esc(DIAM_LABEL[d.process]||"Filler diameter")+'</label>'+dtiles("fillerDia",DIAMS[d.process]||[])+dtext("fillerDia",'or a range, e.g. .045" to 1/16"')+'</div>'
+    + '<div class="field" style="margin:0"><label>Manufacturer / trade name</label>'+dtext("fillerMfr","optional")+'</div>';
   h += '</div>';
 
   if(d.process!="SMAW"&&d.process!="FCAW-S"){
     h += '<div class="card"><h3>Shielding</h3>'
       + '<div class="field"><label>Gas</label>'+dtiles("gas",(GASES[d.process]||[]).filter(function(g){return g!="Other"&&g!="None"}).map(function(g){return {v:g}}))+dtext("gas","or type it")+'</div>'
-      + '<div class="field" style="margin:0"><label>Flow rate</label>'+dtiles("flow",FLOWS)+'</div></div>';
+      + '<div class="field"><label>Flow rate</label>'+dtiles("flow",FLOWS)+dtext("flow","or a range, e.g. 30–40")+'</div>'
+      + '<div class="row"><div class="field" style="margin:0"><label>Nozzle size</label><input type="text" data-d="nozzle" value="'+esc(d.nozzle||"")+'" placeholder="3/4&quot;"></div>'
+      + '<div class="field" style="margin:0"><label>Contact tip to work</label><input type="text" data-d="ctwd" value="'+esc(d.ctwd||"")+'" placeholder="1/2&quot; to 1&quot;"></div></div></div>';
   }
 
   h += '<div class="card"><h3>Electrical</h3>'
@@ -839,11 +851,14 @@ VIEWS.wpsedit = function(){
     + '<div class="row"><div class="field" style="margin:0"><label>Polarity</label><select data-d="polarity"><option value="">—</option>'
     + ["DCEP","DCEN","AC"].map(function(p){return '<option '+(d.polarity==p?"selected":"")+'>'+p+'</option>'}).join("")+'</select></div>'
     + (wireProc(d.process) ? '<div class="field" style="margin:0"><label>Wire feed (ipm)</label><input type="text" data-d="wfs" value="'+esc(d.wfs||"")+'" placeholder="250–300"></div>' : '<div></div>')
-    + '</div></div>';
+    + '</div>'
+    + '<div class="field" style="margin:14px 0 0"><label>Power source</label>'+dtiles("powerSource",WPS_POWER)+'</div></div>';
 
-  h += '<div class="card"><h3>Preheat and interpass</h3>'
-    + '<div class="row"><div class="field" style="margin:0"><label>Preheat, min</label><input type="text" data-d="preheat" value="'+esc(d.preheat||"")+'" placeholder="50 °F"></div>'
-    + '<div class="field" style="margin:0"><label>Interpass, max</label><input type="text" data-d="interpass" value="'+esc(d.interpass||"")+'" placeholder="550 °F"></div></div></div>';
+  h += '<div class="card"><h3>Preheat, interpass, PWHT</h3>'
+    + '<div class="row"><div class="field"><label>Preheat, min</label><input type="text" data-d="preheat" value="'+esc(d.preheat||"")+'" placeholder="50 °F"></div>'
+    + '<div class="field"><label>Interpass</label><input type="text" data-d="interpass" value="'+esc(d.interpass||"")+'" placeholder="550 °F max"></div></div>'
+    + '<div class="row"><div class="field" style="margin:0"><label>PWHT temperature</label><input type="text" data-d="pwhtTemp" value="'+esc(d.pwhtTemp||"")+'" placeholder="None"></div>'
+    + '<div class="field" style="margin:0"><label>PWHT time at temp</label><input type="text" data-d="pwhtTime" value="'+esc(d.pwhtTime||"")+'" placeholder="—"></div></div></div>';
 
   h += '<div class="card"><h3>Technique</h3>'
     + '<div class="field"><label>Positions</label>'+dtiles("positions",WPS_POS)+dtext("positions","or type it")+'</div>'
@@ -851,7 +866,8 @@ VIEWS.wpsedit = function(){
     + '<div class="field"><label>Travel speed (ipm)</label>'+dtext("travel","e.g. 8–12")+'</div>'
     + '<div class="field"><label>Bead</label>'+dtiles("bead",WPS_PASS)+'</div>'
     + '<div class="field"><label>Passes</label>'+dtiles("passes",WPS_MULTI)+'</div>'
-    + '<div class="field" style="margin:0"><label>Interpass cleaning</label>'+dtiles("cleaning",WPS_CLEAN)+dtext("cleaning","or type it")+'</div></div>';
+    + '<div class="field"><label>Interpass cleaning</label>'+dtiles("cleaning",WPS_CLEAN)+dtext("cleaning","or type it, e.g. chipping hammer, hand brush, grinder")+'</div>'
+    + '<div class="field" style="margin:0"><label>Peening</label>'+dtiles("peening",WPS_PEEN)+'</div></div>';
 
   h += '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
     + '<button class="primary" data-act="savewps" style="width:100%">Save WPS</button>'
@@ -867,23 +883,23 @@ function wpsSections(p){
   var groove=(p.weldType||"CJP groove")!="Fillet";
   function sec(title,rows){ rows=rows.filter(function(r){return r[1]}); return rows.length?{title:title,rows:rows}:null; }
   return [
-    sec("Joint design",[["Weld type",p.weldType],["Joint",p.jointType],["Groove",groove?p.groove:""],["Groove angle",groove?p.angle:""],
+    sec("Joint design",[["Weld type",p.weldType],["Joint",p.jointType],["Prequalified joint",groove?p.jointDesig:""],["Groove",groove?p.groove:""],["Groove angle",groove?p.angle:""],
       ["Root opening",groove?p.rootOpening:""],["Root face",groove?p.rootFace:""],["Backing",groove?p.backing:""],
-      ["Backing material",p.backing=="With backing"?p.backingMat:""],["Fillet size",groove?"":p.filletSize]]),
-    sec("Base metal",[["Specification",p.base],["Thickness",p.thickRange],["Diameter",p.diaRange]]),
-    sec("Process and filler",[["Process",p.process+(p.transfer?" — "+p.transfer:"")],["Filler",p.filler],["AWS spec",p.fillerSpec],["Diameter",p.fillerDia]]),
-    sec("Shielding",[["Gas",p.gas],["Flow",p.flow?p.flow+" CFH":""]]),
-    sec("Electrical",[["Amps",p.amps],["Volts",p.volts],["Polarity",p.polarity],["Wire feed",p.wfs?p.wfs+" ipm":""]]),
-    sec("Preheat and interpass",[["Preheat, min",p.preheat],["Interpass, max",p.interpass]]),
-    sec("Technique",[["Positions",p.positions],["Progression",p.progression],["Travel speed",p.travel?p.travel+" ipm":""],["Bead",p.bead],["Passes",p.passes],["Cleaning",p.cleaning]])
+      ["Backing material",p.backing=="With backing"?p.backingMat:""],["Backgouging",groove?p.backgouge:""],["Fillet size",groove?"":p.filletSize]]),
+    sec("Base metal",[["Base material",p.base],["Welded to",p.baseTo],["Thickness",p.thickRange],["Diameter",p.diaRange]]),
+    sec("Process and filler",[["Process",p.process+(p.transfer?" — "+p.transfer:"")],["Filler",p.filler],["AWS spec",p.fillerSpec],["Diameter",p.fillerDia],["Manufacturer",p.fillerMfr]]),
+    sec("Shielding",[["Gas",p.gas],["Flow",p.flow?p.flow+" CFH":""],["Nozzle",p.nozzle],["Contact tip to work",p.ctwd]]),
+    sec("Electrical",[["Amps",p.amps],["Volts",p.volts],["Polarity",p.polarity],["Wire feed",p.wfs?p.wfs+" ipm":""],["Power source",p.powerSource]]),
+    sec("Preheat, interpass, PWHT",[["Preheat, min",p.preheat],["Interpass",p.interpass],["PWHT temperature",p.pwhtTemp],["PWHT time",p.pwhtTime]]),
+    sec("Technique",[["Positions",p.positions],["Progression",p.progression],["Travel speed",p.travel?p.travel+" ipm":""],["Bead",p.bead],["Passes",p.passes],["Cleaning",p.cleaning],["Peening",p.peening]])
   ].filter(Boolean);
 }
 VIEWS.wpsview = function(){
   var p=S.viewWps; if(!p) return { body:nav("WPS")+'<div class="empty">Not found.</div>', bar:"" };
   var h=nav("WPS");
   h+='<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+(p.basis?' &nbsp;·&nbsp; '+esc(p.basis):'')+'</div>'
-    +'<h1>'+esc(wpsLabel(p))+(p.title?'<span>'+esc(p.title)+'</span>':'')+'</h1></div><div class="code-chip">AWS<br>D1.1<br>2025</div></div>'
-    +(p.pqr?'<div class="perf"></div><div class="ticket-bottom">Supported by '+esc(p.pqr)+'</div>':'')+'</div>';
+    +'<h1>'+esc(wpsLabel(p))+(p.title?'<span>'+esc(p.title)+'</span>':'')+'</h1></div>'+codeChip()+'</div>'
+    +'<div class="perf"></div><div class="ticket-bottom">'+esc([p.date?fmtDate(p.date):"", p.pqr?"Supported by "+p.pqr:"", p.contact?"Contact "+p.contact:""].filter(Boolean).join(" · ")||CFG.code)+'</div></div>';
   wpsSections(p).forEach(function(sc){
     h+='<div class="card"><h3>'+esc(sc.title)+'</h3><dl class="kv">';
     sc.rows.forEach(function(r){ h+='<dt>'+esc(r[0])+'</dt><dd>'+esc(r[1])+'</dd>'; });
@@ -911,7 +927,7 @@ VIEWS.intake = function(){
   var h = previewBar() + '<div class="ticket"><div class="ticket-top"><div>'
     + '<div class="shop">'+esc(CFG.shop)+' &nbsp;·&nbsp; '+esc(CFG.city)+'</div>'
     + '<h1>Weld test ticket<span>Fill this out before you strike an arc. It writes your test record for you.</span></h1>'
-    + '</div><div class="code-chip">AWS<br>D1.1<br>2025</div></div><div class="perf"></div>'
+    + '</div>'+codeChip()+'</div><div class="perf"></div>'
     + '<div class="ticket-bottom">'+(w.company?esc(w.company)+' · ':'')+fmtDate(w.date)+'</div></div>';
   var steps=stepList();
   h += '<div class="rail">';
@@ -995,7 +1011,8 @@ function stepCoupon(){
   if(w.filler=="Other"&&!w.fillerOther) gaps+='<div class="field"><input type="text" data-k="fillerOther" value="'+esc(w.fillerOther)+'" placeholder="Type the AWS classification"></div>';
   if(dia.length&&!w.fillerDia) gaps+='<div class="field"><label>'+esc(DIAM_LABEL[w.process]||"Filler diameter")+' <span class="req">*</span></label>'+tiles(dia,w.fillerDia,false,"w:fillerDia")+'</div>';
   if(gs[0]!="None"&&!w.gas) gaps+='<div class="field"><label>Shielding gas <span class="req">*</span></label>'+tiles(gs,w.gas,false,"w:gas")+'</div>';
-  if(gaps) h+='<div class="card"><h3>Not on the WPS — what did you pull?</h3>'+gaps+'</div>';
+  if(w.gas&&w.gas!="None"&&w.gas!="Other"&&!w.flow) gaps+='<div class="field"><label>Flow rate</label>'+tiles(FLOWS,w.flow,false,"w:flow")+'</div>';
+  if(gaps) h+='<div class="card"><h3>What did you pull off the rack?</h3><p style="margin:-6px 0 12px;font-size:.86rem;color:var(--muted)">The WPS leaves these open or gives a range. Pick what is actually on the machine.</p>'+gaps+'</div>';
   h+='<div class="field"><label>Anything the inspector should know</label><textarea data-k="notes" placeholder="Optional">'+esc(w.notes)+'</textarea></div>';
   return h;
 }
@@ -1062,7 +1079,7 @@ VIEWS.myticket = function(){
   var t=S.ticket||{}, d=t.data||{};
   var h='<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+(CFG.city?' &nbsp;·&nbsp; '+esc(CFG.city):'')+'</div>'
     +'<h1>Your test ticket<span>Already sent to '+esc(CFG.inspector||"the inspector")+'. Bring your coupon to the booth.</span></h1></div>'
-    +'<div class="code-chip">AWS<br>D1.1<br>2025</div></div><div class="perf"></div>'
+    +''+codeChip()+'</div><div class="perf"></div>'
     +'<div class="ticket-bottom">'+esc([d.name,d.company,d.position,d.process].filter(Boolean).join(" · ")||"Sent")+'</div></div>';
   if(S.wps) h+=wpsCard(S.wps, "Your procedure")+keepWps();
   else h+='<div class="empty">No WPS was attached to this ticket.</div>';
@@ -1469,10 +1486,11 @@ function prefillFromWps(p){
   if(p.transfer) w.transfer=p.transfer;
   var fl=FILLERS[w.process]||[], gs=GASES[w.process]||[];
   if(p.filler){ if(fl.indexOf(p.filler)>-1) w.filler=p.filler; else { w.filler="Other"; w.fillerOther=p.filler; } }
-  if(p.fillerDia) w.fillerDia=p.fillerDia;
+  // A WPS may give a range (".045\" to 1/16\"", "30–40"); then the welder picks the one they pulled.
+  if(p.fillerDia && (DIAMS[w.process]||[]).some(function(d){return d.v==p.fillerDia})) w.fillerDia=p.fillerDia;
   if(gs[0]=="None") w.gas="None";
   else if(p.gas){ if(gs.indexOf(p.gas)>-1) w.gas=p.gas; else { w.gas="Other"; w.gasOther=p.gas; } }
-  if(p.flow) w.flow=String(p.flow);
+  if(p.flow && FLOWS.some(function(f){return f.v==String(p.flow)})) w.flow=String(p.flow);
   if(p.base) w.base=p.base;
   if(p.weldType) w.weldType = p.weldType=="Fillet" ? "fillet" : "groove";
   if(p.backing) w.backing = p.backing=="No backing" ? "without" : "with";
