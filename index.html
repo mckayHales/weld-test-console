@@ -142,7 +142,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-17.2";
+var VERSION="2026-09-17.3";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -821,7 +821,8 @@ VIEWS.wpsedit = function(){
   h += '<div class="field"><label>Filler classification</label>'+dtiles("filler",(FILLERS[d.process]||[]).filter(function(f){return f!="Other"}).map(function(f){return {v:f}}))+dtext("filler","or type the AWS classification")+'</div>'
     + dfield("AWS filler spec","fillerSpec","text","A5.20")
     + '<div class="field"><label>'+esc(DIAM_LABEL[d.process]||"Filler diameter")+'</label>'+dtiles("fillerDia",DIAMS[d.process]||[])+dtext("fillerDia",'or a range, e.g. .045" to 1/16"')+'</div>'
-    + '<div class="field" style="margin:0"><label>Manufacturer / trade name</label>'+dtext("fillerMfr","optional")+'</div>';
+    + '<div class="field"><label>Manufacturer / trade name</label>'+dtext("fillerMfr","optional")+'</div>'
+    + '<div class="field" style="margin:0"><label>Supplemental filler metal</label>'+dtext("suppFiller","None")+'</div>';
   h += '</div>';
 
   if(d.process!="SMAW"&&d.process!="FCAW-S"){
@@ -851,6 +852,7 @@ VIEWS.wpsedit = function(){
     + '<div class="field"><label>Positions</label>'+dtiles("positions",WPS_POS)+dtext("positions","or type it")+'</div>'
     + '<div class="field"><label>Vertical progression</label>'+dtiles("progression",WPS_PROG)+'</div>'
     + '<div class="field"><label>Travel speed (ipm)</label>'+dtext("travel","e.g. 8–12")+'</div>'
+    + '<div class="field"><label>Maximum heat input</label>'+dtext("heatInput","e.g. 45 kJ/in, or leave blank")+'</div>'
     + '<div class="field"><label>Bead</label>'+dtiles("bead",WPS_PASS)+'</div>'
     + '<div class="field"><label>Passes</label>'+dtiles("passes",WPS_MULTI)+'</div>'
     + '<div class="field"><label>Interpass cleaning</label>'+dtiles("cleaning",WPS_CLEAN)+dtext("cleaning","or type it, e.g. chipping hammer, hand brush, grinder")+'</div>'
@@ -874,11 +876,11 @@ function wpsSections(p){
       ["Root opening",groove?p.rootOpening:""],["Root face",groove?p.rootFace:""],["Backing",groove?p.backing:""],
       ["Backing material",p.backing=="With backing"?p.backingMat:""],["Backgouging",groove?p.backgouge:""],["Fillet size",groove?"":p.filletSize]]),
     sec("Base metal",[["Base material",p.base],["Welded to",p.baseTo],["Thickness",p.thickRange],["Diameter",p.diaRange]]),
-    sec("Process and filler",[["Process",p.process+(p.transfer?" — "+p.transfer:"")],["Filler",p.filler],["AWS spec",fillerSpecFor(p.filler)||p.fillerSpec],["Diameter",p.fillerDia],["Manufacturer",p.fillerMfr]]),
+    sec("Process and filler",[["Process",p.process+(p.transfer?" — "+p.transfer:"")],["Filler",p.filler],["AWS spec",fillerSpecFor(p.filler)||p.fillerSpec],["Diameter",p.fillerDia],["Manufacturer",p.fillerMfr],["Supplemental filler",p.suppFiller]]),
     sec("Shielding",[["Gas",p.gas],["Flow",p.flow?p.flow+" CFH":""],["Nozzle",p.nozzle],["Contact tip to work",p.ctwd]]),
     sec("Electrical",[["Amps",p.amps],["Volts",p.volts],["Polarity",p.polarity],["Wire feed",p.wfs?p.wfs+" ipm":""],["Power source",p.powerSource]]),
     sec("Preheat, interpass, PWHT",[["Preheat, min",p.preheat],["Interpass",p.interpass],["PWHT temperature",p.pwhtTemp],["PWHT time",p.pwhtTime]]),
-    sec("Technique",[["Positions",p.positions],["Progression",p.progression],["Travel speed",p.travel?p.travel+" ipm":""],["Bead",p.bead],["Passes",p.passes],["Cleaning",p.cleaning],["Peening",p.peening]])
+    sec("Technique",[["Positions",p.positions],["Progression",p.progression],["Travel speed",p.travel?p.travel+" ipm":""],["Max heat input",p.heatInput],["Bead",p.bead],["Passes",p.passes],["Cleaning",p.cleaning],["Peening",p.peening]])
   ].filter(Boolean);
 }
 /* A PDF shown inside the app before it's saved or sent. */
@@ -1512,12 +1514,12 @@ function wpsPdf(p){
   yL=grid(d,{x:x,w:half,y:yL,col:lab,body:[["Process",dash(p.process)],["Type",manual],["Position",dash(p.positions)],["Progression",dash(p.progression)]]})+PG.gap;
   yL=grid(d,{x:x,w:half,y:yL,col:lab,head:[{content:"Electrical Characteristics",colSpan:2}],body:[
     ["Current Type & Polarity",dash(p.polarity)],["Transfer Mode",dash(p.transfer)],["Amps",dash(p.amps)],["Voltage",dash(p.volts)],
-    ["Wire Feed Speed",dash(p.wfs?p.wfs+" ipm":"")],["Travel Speed",dash(p.travel?p.travel+" ipm":"")],["Power Source",dash(p.powerSource)]]})+PG.gap;
+    ["Wire Feed Speed",dash(p.wfs?p.wfs+" ipm":"")],["Travel Speed",dash(p.travel?p.travel+" ipm":"")],["Maximum Heat Input",dash(p.heatInput)],["Power Source",dash(p.powerSource)]]})+PG.gap;
   if(gasProc) yL=grid(d,{x:x,w:half,y:yL,col:lab,head:["Shielding Gas (Composition)",dash(p.gas)],body:[
     ["Flow Rate",dash(p.flow?p.flow+" cfh":"")],["Nozzle Size",dash(p.nozzle)],["Contact Tube to Work Distance",dash(p.ctwd)]]})+PG.gap;
 
   yR=grid(d,{x:xr,w:half,y:yR,col:lab,head:["Filler Metal (AWS Spec.)",dash(fillerSpecFor(p.filler)||p.fillerSpec)],body:[
-    ["AWS Classification",dash(p.filler)],["Electrode Diameter",dash(p.fillerDia)],["Manufacturer Name",dash(p.fillerMfr)]]})+PG.gap;
+    ["AWS Classification",dash(p.filler)],["Electrode Diameter",dash(p.fillerDia)],["Manufacturer Name",dash(p.fillerMfr)],["Supplemental Filler Metal",dash(p.suppFiller||"None")]]})+PG.gap;
   yR=grid(d,{x:xr,w:half,y:yR,bold:[0,2],col:{1:{cellWidth:24},3:{cellWidth:24}},head:[{content:"Technique",colSpan:4}],body:[
     ["Multi Pass",boxCell(p.passes=="Multiple pass"),"Single Pass",boxCell(p.passes=="Single pass")],
     ["Stringer",boxCell(p.bead=="Stringer"||p.bead=="Either"),"Weave",boxCell(p.bead=="Weave"||p.bead=="Either")],
