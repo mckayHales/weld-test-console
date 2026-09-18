@@ -145,7 +145,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-17.5";
+var VERSION="2026-09-18.1";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -1461,7 +1461,9 @@ function grid(d,o){
       if(o.parse) o.parse(c);
     },
     didDrawCell:function(c){
-      var raw=c.cell.raw; if(!raw||raw.box===undefined) return;
+      var raw=c.cell.raw; if(!raw) return;
+      if(raw.sketch){ drawJoint(d,raw.sketch,c.cell.x,c.cell.y,c.cell.width,c.cell.height); return; }
+      if(raw.box===undefined) return;
       var s=6, cx=c.cell.x+c.cell.width/2-s/2, cy=c.cell.y+c.cell.height/2-s/2;
       d.setLineWidth(.6); d.rect(cx,cy,s,s);
       if(raw.box){ d.setLineWidth(1); d.line(cx+1.2,cy+3.2,cx+2.6,cy+4.8); d.line(cx+2.6,cy+4.8,cx+5,cy+1.4); }
@@ -1730,6 +1732,96 @@ function pqrPdf(p){
   return d;
 }
 
+/* ---- the joint sketch on the WPS ----
+   Drawn from the WPS fields, not scanned from the book: groove type,
+   angle, root opening, root face, backing and joint type set the
+   shape, and the symbols (a, R, f, T) match the paper's sketch. The
+   numbers live in the table next to it; the picture is the shape. */
+function inches(s){ s=String(s||"").trim(); var m=s.match(/(\d+(?:\.\d+)?)\s*\/\s*(\d+)/); if(m) return +m[1]/+m[2]; m=s.match(/\d+(?:\.\d+)?/); return m?+m[0]:0; }
+function degrees(s,fb){ var m=String(s||"").match(/\d+(?:\.\d+)?/); return m?+m[0]:fb; }
+function poly(d,pts,close){
+  var segs=[]; for(var i=1;i<pts.length;i++) segs.push([pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]]);
+  d.lines(segs, pts[0][0], pts[0][1], [1,1], "S", !!close);
+}
+/* quarter-ish arc as short segments, from angle a0 to a1 (radians) */
+function arcPts(cx,cy,r,a0,a1,n){ var out=[]; for(var i=0;i<=n;i++){ var a=a0+(a1-a0)*i/n; out.push([cx+r*Math.cos(a), cy+r*Math.sin(a)]); } return out; }
+function drawJoint(d,p,cx,cy,cw,ch){
+  var fillet=(p.weldType||"CJP groove")=="Fillet", g=p.groove||"Single V", jt=p.jointType||"Butt";
+  var T=20, L=50, R=inches(p.rootOpening)>0?6:0, f=inches(p.rootFace)>0?5:0;
+  var ang=degrees(p.angle,45), half=Math.tan(ang/2*Math.PI/180), full=Math.tan(Math.min(ang,80)*Math.PI/180);
+  var backing=p.backing=="With backing";
+  d.setLineWidth(.7); d.setDrawColor(0); d.setTextColor(0); d.setFont("helvetica","italic"); d.setFontSize(6.5);
+  var tick=function(x,y0,y1,label){ d.setLineWidth(.4); d.line(x,y0,x,y1); d.line(x-2,y0,x+2,y0); d.line(x-2,y1,x+2,y1); d.text(label,x+3,(y0+y1)/2+2); d.setLineWidth(.7); };
+  var sym=function(t,x,y){ if(t=="α"){ d.setFont("symbol","normal"); d.text("a",x,y,{align:"center"}); d.setFont("helvetica","italic"); } else d.text(t,x,y,{align:"center"}); };
+
+  if(fillet || jt=="T" || jt=="Corner" || jt=="Lap" || jt=="Edge"){
+    /* a base plate with a member standing on it (T, corner) or lying on it (lap) */
+    var bw=Math.min(cw-40, 120), bx=cx+(cw-bw)/2-8, bt=cy+ch-14, bb=bt+T*.75;
+    if(jt=="Lap"){
+      var ov=bw*.4, y2=bt-T*.75;
+      poly(d,[[bx,bt],[bx+bw*.7,bt],[bx+bw*.7,bb],[bx,bb]],true);
+      poly(d,[[bx+bw*.7-ov,y2],[bx+bw,y2],[bx+bw,bt],[bx+bw*.7-ov,bt]],true);
+      var lg=T*.6; d.setLineWidth(.5);
+      poly(d,[[bx+bw*.7,bt],[bx+bw*.7+lg,bt],[bx+bw*.7,bt+lg]],true);              // at the lower plate's end, under the overhang
+      poly(d,[[bx+bw*.7-ov,y2],[bx+bw*.7-ov-lg,bt],[bx+bw*.7-ov,bt]],true);        // at the upper plate's end, on the lower plate
+      sym("leg",bx+bw*.7-ov-lg-9,bt-3); tick(bx+bw+6,y2,bt,"T"); return;
+    }
+    if(jt=="Edge"){
+      var ex=cx+cw/2-T-8, et=cy+12, eb=cy+ch-10;
+      poly(d,[[ex,et+6],[ex+T,et+6],[ex+T,eb],[ex,eb]],true); poly(d,[[ex+T+R,et+6],[ex+2*T+R,et+6],[ex+2*T+R,eb],[ex+T+R,eb]],true);
+      d.setLineWidth(.5); poly(d,[[ex+T-4,et+6],[ex+T+R+4,et+6],[ex+T+R/2,et]],true);
+      tick(ex+2*T+R+6,et+6,eb,"T"); return;
+    }
+    var corner=jt=="Corner";
+    var mx=corner? bx+bw-T : bx+bw/2-T/2, mtop=cy+10, mb=bt-R;    // member: x, top, bottom
+    poly(d,[[bx,bt],[bx+bw,bt],[bx+bw,bb],[bx,bb]],true);
+    if(fillet || g=="Square"){
+      poly(d,[[mx,mtop],[mx+T,mtop],[mx+T,mb],[mx,mb]],true);
+      d.setLineWidth(.5); var leg=T*.8;
+      poly(d,[[mx,bt],[mx-leg,bt],[mx,bt-leg]],true);
+      if(!corner) poly(d,[[mx+T,bt],[mx+T+leg,bt],[mx+T,bt-leg]],true);
+      sym("leg",mx-leg-9,bt-3); d.setLineWidth(.7);
+    } else if(/Double/.test(g)){
+      var h2=((T-f)/2)/full;
+      poly(d,[[mx,mtop],[mx+T,mtop],[mx+T,mb-h2],[mx+T/2+f/2,mb],[mx+T/2-f/2,mb],[mx,mb-h2]],true);
+      sym("α",mx-8,mb-h2-3); sym("α",mx+T+8,mb-h2-3);
+    } else {
+      var h1=(T-f)/full;                                             // single bevel, root face on the far side
+      poly(d,[[mx,mtop],[mx+T,mtop],[mx+T,mb],[mx+T-f,mb],[mx,mb-h1]],true);
+      sym("α",mx-8,mb-h1-2); if(f) sym("f",mx+T+6,mb-1);
+    }
+    if(R){ sym("R",mx+T+8,bt+1); }
+    tick(mx+T+(corner?6:22),mtop,mb,"T"); tick(bx-6,bt,bb,"T"); return;
+  }
+
+  /* butt joint: two plates in line, the groove between them */
+  var midX=cx+cw/2-10, top=cy+ch/2-T/2+4, bot=top+T, gapL=midX-R/2, gapR=midX+R/2, xl=gapL-L, xr=gapR+L;
+  var leftFace, rightFace;                                           // top-to-bottom along the groove
+  var vee=function(x,sgn,tanA,dbl){                                  // face for one plate; sgn -1 left, +1 right
+    if(dbl){ var h=(T-f)/2; return [[x+sgn*tanA*h,top],[x,top+h],[x,bot-h],[x+sgn*tanA*h,bot]]; }
+    return [[x+sgn*tanA*(T-f),top],[x,bot-f],[x,bot]];
+  };
+  var uface=function(x,sgn){ var r=Math.min(7,(T-f)/2), wall=Math.tan(8*Math.PI/180)*(T-f-r);
+    return [[x+sgn*(r+wall),top]].concat(arcPts(x,bot-f-r,r,sgn>0?0:Math.PI,Math.PI/2,6)).concat([[x,bot]]); };
+  var square=function(x){ return [[x,top],[x,bot]]; };
+  if(g=="Single V"){ leftFace=vee(gapL,-1,half); rightFace=vee(gapR,1,half); }
+  else if(g=="Double V"){ leftFace=vee(gapL,-1,half,1); rightFace=vee(gapR,1,half,1); }
+  else if(g=="Single bevel"){ leftFace=square(gapL); rightFace=vee(gapR,1,full); }
+  else if(g=="Double bevel"){ leftFace=square(gapL); rightFace=vee(gapR,1,full,1); }
+  else if(g=="U"){ leftFace=uface(gapL,-1); rightFace=uface(gapR,1); }
+  else if(g=="J"){ leftFace=square(gapL); rightFace=uface(gapR,1); }
+  else { leftFace=square(gapL); rightFace=square(gapR); }
+  poly(d,[[xl,top]].concat(leftFace).concat([[xl,bot]]),true);
+  poly(d,[[xr,top]].concat(rightFace).concat([[xr,bot]]),true);
+  if(backing){ poly(d,[[gapL-12,bot],[gapR+12,bot],[gapR+12,bot+6],[gapL-12,bot+6]],true); }
+  /* symbols */
+  if(g!="Square"){ var ax=(g=="Single bevel"||g=="Double bevel"||g=="J")?gapR+6:midX; sym("α",ax,top-3); }
+  if(R){ d.setLineWidth(.4); d.line(gapL,bot+(backing?9:3),gapL,bot+(backing?15:9)); d.line(gapR,bot+(backing?9:3),gapR,bot+(backing?15:9)); d.setLineWidth(.7); sym("R",midX,bot+(backing?21:14)); }
+  if(f&&!/Double/.test(g)){ sym("f",gapR+(g=="Single bevel"||g=="J"?-6:4)+8,bot-f/2+2); }
+  tick(xr+7,top,bot,"T");
+  d.setFont("helvetica","normal");
+}
+
 /* ---- the WPS ---- */
 function wpsPdf(p){
   var groove=(p.weldType||"CJP groove")!="Fillet", cjp=(p.weldType||"CJP groove")=="CJP groove", pjp=p.weldType=="PJP groove";
@@ -1768,11 +1860,9 @@ function wpsPdf(p){
     ["Groove Type",dash(jt)],["Groove Angle",dash(groove?p.angle:"")],["Root Opening",dash(groove?p.rootOpening:"")],["Root Face",dash(groove?p.rootFace:"")],
     ["Backing",dash(groove?[p.backing,backMat].filter(Boolean).join(" — "):"")],["Backgouging Method",dash(p.backgouge||"None")],
     ["PWHT Temperature",dash(p.pwhtTemp)],["PWHT Time at Temp.",dash(p.pwhtTime)]]});
-  var desc=(p.title?p.title+"\n":"")+(groove
-    ? [p.jointType,p.groove,p.angle,p.rootOpening?"root opening "+p.rootOpening:"",p.rootFace?"root face "+p.rootFace:"",p.backing].filter(Boolean).join("  ·  ")
-    : "Fillet "+(p.filletSize||""));
-  yr=grid(d,{x:xr,w:half,y:y,col:{0:{cellWidth:150}},head:[{content:"Joint Details",colSpan:2}],body:[
-    [{content:desc,colSpan:2,styles:{halign:"center",minCellHeight:52,fontStyle:"normal"}}],
+  yr=grid(d,{x:xr,w:half,y:y,col:{0:{cellWidth:150}},head:[{content:"Joint Details (Sketch)",colSpan:2}],body:[
+    [{content:"",sketch:p,colSpan:2,styles:{minCellHeight:78}}],
+    [{content:p.title||"",colSpan:2,styles:{halign:"center",fontStyle:"normal",fontSize:6.5}}],
     ["Pre-Qualified per "+CFG.code, boxCell(p.basis!="Qualified by PQR")],
     ["Pre-Qualified Joint Designation", dash(p.jointDesig)]],
     parse:function(c){ if(c.section=="body"&&c.row.index>0&&c.column.index==1) c.cell.styles.halign="center"; }});

@@ -194,8 +194,13 @@ DRAFT watermark; Save stays disabled until the verify gate is ticked. WPQR and W
 two names for the same document; the paper says WPQR, so the app does too.
 
 `wpsPdf(p)` is the WPS the same way: header strip, base metals beside the thickness
-table, joint details beside the prequalified designation, a Procedure bar, process /
-electrical / gas down the left, filler / technique / preheat down the right. `pqrPdf(p)`
+table, joint details beside the sketch and the prequalified designation, a Procedure bar,
+process / electrical / gas down the left, filler / technique / preheat down the right.
+The sketch is **drawn from the WPS fields** by `drawJoint()` — groove type, angle, root
+opening, root face, backing and joint type set the shape; α, R, f and T are labelled as
+on the paper — not scanned from the code book (AWS's figures are copyrighted, and the
+drawing follows the numbers anyway). Butt joints show two plates in line; T, corner, lap
+and edge joints show a base plate and a member; fillets show the legs. `pqrPdf(p)`
 is the PQR: the procedure as run, per-pass readings, test results. `inspectionPdf(i)` is
 the Report of Visual Inspection: job and client block, one row per item with its result,
 notes, overall result, standards applied.
