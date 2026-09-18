@@ -145,7 +145,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-18.1";
+var VERSION="2026-09-18.2";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -203,6 +203,24 @@ function saveCfg(){
   });
   sb.from("profiles").update({name:CFG.inspector,cert:CFG.cert}).eq("user_id",AUTH.user.id).then(chk);
 }
+
+/* ---------- whose letterhead ----------
+   Every PDF prints under a brand: the org's (the inspection company),
+   or, for a client who wants their records in their own binder, that
+   client's. Branding sits on the company row; a record or a WPS says
+   which one to use. The certification block always names the org as
+   the tester, whichever letterhead is on top. */
+var BRAND_RED="#C8102E";
+function orgBrand(){ return { name:CFG.shop, address:CFG.address||CFG.city, phone:CFG.phone, logo:CFG.logo, color:BRAND_RED, own:true }; }
+function companyBrand(c){ return { name:c.lhName||c.name, address:c.lhAddress||"", phone:c.lhPhone||c.phone||"", logo:c.logo||"", color:c.lhColor||BRAND_RED, own:false }; }
+function companyById(id){ return id ? companies().filter(function(x){return x.id==id})[0] : null; }
+function recordBrand(w){
+  var c=companyById(w.companyId);
+  var mode=w.letterhead||(c&&c.letterhead=="company"?"company":"org");
+  return mode=="company"&&c ? companyBrand(c) : orgBrand();
+}
+function wpsBrand(p){ if(p.brand) return p.brand; var c=companyById(p.companyId); return c ? companyBrand(c) : orgBrand(); }
+function hexRgb(h){ var m=/^#?([0-9a-f]{6})$/i.exec(h||""); if(!m) return hexRgb(BRAND_RED); var n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; }
 
 /* ---------- sync ----------
    Reads come from the cache. Writes go to the cache first (so the
@@ -373,7 +391,7 @@ function suggest(w){
 }
 
 /* ---------- state ---------- */
-function blankW(){ return { code:"",name:"",company:"",companyId:"",phone:"",stamp:"",division:"",date:today(),
+function blankW(){ return { code:"",name:"",company:"",companyId:"",letterhead:"",phone:"",stamp:"",division:"",date:today(),
   weldType:"groove",product:"plate",process:"",transfer:"",position:"",backing:"with",progression:"",
   base:"",thickness:"",thicknessCustom:"",pipeOD:"",pipeWall:"",filler:"",fillerOther:"",fillerDia:"",
   gas:"",gasOther:"",flow:"",amps:"",volts:"",polarity:"DCEP",preheat:"",wps:"",wpsId:"",notes:"" }; }
@@ -806,8 +824,17 @@ VIEWS.editco = function(){
   h += '<div class="field"><label>Company name <span class="req">*</span></label><input type="text" data-d="name" value="'+esc(d.name||"")+'"></div>'
     + '<div class="field"><label>Contact</label><input type="text" data-d="contact" value="'+esc(d.contact||"")+'"></div>'
     + '<div class="field"><label>Phone</label><input type="tel" data-d="phone" value="'+esc(d.phone||"")+'"></div>'
-    + '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
-    + '<button class="primary" data-act="saveco" style="width:100%">Save company</button>'
+    + '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>';
+  h += '<div class="card"><h3>Their letterhead</h3>'
+    + '<p style="margin:0 0 12px;font-size:.86rem;color:var(--muted)">Some clients want their records in their own binder under their own name. Set that up here; the certification block still says who tested.</p>'
+    + '<div class="field"><label>Print their records on</label>'+dtiles("letterhead",[{v:"org",d:CFG.shop||"our letterhead"},{v:"company",d:"their own"}])+'</div>'
+    + '<div class="field"><label>Name on the letterhead</label><input type="text" data-d="lhName" value="'+esc(d.lhName||"")+'" placeholder="'+esc(d.name||"Same as the company name")+'"></div>'
+    + '<div class="row">'+dfield("Address","lhAddress","text","Street, City, State")+dfield("Phone","lhPhone","tel","")+'</div>'
+    + '<div class="row"><div class="field" style="margin:0"><label>Name color</label><input type="color" data-d="lhColor" value="'+esc(d.lhColor||BRAND_RED)+'" style="height:50px;padding:4px"></div>'
+    + '<div class="field" style="margin:0"><label>Logo</label>'
+    + (d.logo?'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><img src="'+d.logo+'" alt="" style="height:44px;background:#fff;border-radius:6px;padding:3px"><button class="mini" data-act="cleardraftlogo">Remove</button></div>':'')
+    + '<input type="file" id="cologofile" accept="image/*" style="font-size:14px"></div></div></div>';
+  h += '<button class="primary" data-act="saveco" style="width:100%">Save company</button>'
     + '<p id="saveerr" class="err" style="display:none">Give the company a name first.</p>';
   var b = '<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="saveco">Save company</button>';
   if(d.id) b = '<button class="ghost" data-act="delco">Delete</button><button class="primary" data-act="saveco">Save company</button>';
@@ -822,7 +849,7 @@ VIEWS.wpslist = function(){
   if(!ps.length) h += '<div class="empty">No WPS on file yet.</div>';
   ps.forEach(function(p){
     h += '<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(p.no)+(p.rev?" Rev "+esc(p.rev):"")+'</b>'
-      + '<span>'+esc([p.process,p.base,p.positions,p.thickRange].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>';
+      + '<span>'+esc([coName(p.companyId),p.process,p.base,p.positions,p.thickRange].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>';
   });
   h += '<h2 class="step" style="margin-top:22px">PQR</h2><p class="hint">Procedure qualification records — the test that proves a WPS. Start one from a WPS, or from scratch.</p>';
   if(!qs.length) h += '<div class="empty">No PQRs on file.</div>';
@@ -900,6 +927,9 @@ VIEWS.wpsedit = function(){
   var h = nav(d.id?"Edit "+kindName:"New "+kindName, d.id?'<button data-act="viewwps" data-wps-id="'+esc(d.id)+'">Preview</button>':'');
   h += '<div class="row"><div class="field"><label>'+kindName+' number <span class="req">*</span></label><input type="text" data-d="no" value="'+esc(d.no||"")+'" placeholder="'+(pq?"PQR-01":"WPS-01")+'"></div>'
     + '<div class="field"><label>Rev</label><input type="text" data-d="rev" value="'+esc(d.rev||"")+'" placeholder="0"></div></div>';
+  h += '<div class="field"><label>Whose procedure</label><select data-d="companyId"><option value="">'+esc(CFG.shop||"Ours")+' — our library</option>'
+    + companies().map(function(c){return '<option value="'+c.id+'" '+(d.companyId==c.id?"selected":"")+'>'+esc(c.name)+'</option>';}).join("")+'</select>'
+    + (d.companyId?'<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">Prints on their letterhead, with their name in the Company box.</p>':'')+'</div>';
   h += '<div class="row"><div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div>'
     + '<div class="field"><label>Company contact</label><input type="text" data-d="contact" value="'+esc(d.contact||"")+'" placeholder="Who to ask about it"></div></div>';
   if(pq){
@@ -1277,7 +1307,16 @@ VIEWS.inspect = function(){
     +'<div class="row"><div class="field"><label>ID number / stamp</label><input type="text" data-k="stamp" value="'+esc(w.stamp)+'"></div>'
     +'<div class="field"><label>Division / title</label><input type="text" data-k="division" value="'+esc(w.division)+'" placeholder="Welder"></div></div>'
     +'<div class="field" style="margin:0"><label>Company</label><select data-k="companyId"><option value="">'+esc(w.company?w.company+" (as typed)":"— None —")+'</option>'
-    +cs.map(function(c){return '<option value="'+c.id+'" '+(w.companyId==c.id?"selected":"")+'>'+esc(c.name)+'</option>';}).join("")+'</select></div></div>';
+    +cs.map(function(c){return '<option value="'+c.id+'" '+(w.companyId==c.id?"selected":"")+'>'+esc(c.name)+'</option>';}).join("")+'</select></div>';
+  var lco=companyById(w.companyId);
+  if(lco){
+    var dflt=lco.letterhead=="company"?lco.name:CFG.shop;
+    h+='<div class="field" style="margin:14px 0 0"><label>Letterhead on the record</label><select data-k="letterhead">'
+      +'<option value="">'+esc("Default for this company — "+dflt)+'</option>'
+      +'<option value="org" '+(w.letterhead=="org"?"selected":"")+'>'+esc(CFG.shop)+'</option>'
+      +'<option value="company" '+(w.letterhead=="company"?"selected":"")+'>'+esc(lco.lhName||lco.name)+'</option></select></div>';
+  }
+  h+='</div>';
 
   h+='<div class="card"><h3>Record number and method</h3>'
     +'<div class="field"><label>Qualified to</label>'+editionSelect('data-k="code"', recCode(w))+'</div><div class="row">'
@@ -1470,13 +1509,14 @@ function grid(d,o){
     } });
   return d.lastAutoTable.finalY;
 }
-function letterhead(d,title){
-  var W=PG.w-2*PG.m;
+function letterhead(d,title,b){
+  b=b||orgBrand();
+  var W=PG.w-2*PG.m, rgb=hexRgb(b.color);
   d.setFillColor(138,144,150); d.rect(PG.m,PG.m,W,5,"F");
-  if(CFG.logo){ try{ var pr=d.getImageProperties(CFG.logo), lh=44, lw=lh*pr.width/pr.height; if(lw>90){ lw=90; lh=lw*pr.height/pr.width; } d.addImage(CFG.logo,"PNG",PG.m,PG.m+9,lw,lh); }catch(e){} }
-  d.setFont("helvetica","bold"); d.setFontSize(15); d.setTextColor(200,16,46);
-  d.text(String(CFG.shop||"").toUpperCase(), PG.w/2, PG.m+23, {align:"center"});
-  d.setTextColor(0); d.setFontSize(8); var addr=[CFG.address||CFG.city, CFG.phone].filter(Boolean).join("    ·    ");
+  if(b.logo){ try{ var pr=d.getImageProperties(b.logo), lh=44, lw=lh*pr.width/pr.height; if(lw>90){ lw=90; lh=lw*pr.height/pr.width; } d.addImage(b.logo,"PNG",PG.m,PG.m+9,lw,lh); }catch(e){} }
+  d.setFont("helvetica","bold"); d.setFontSize(15); d.setTextColor(rgb[0],rgb[1],rgb[2]);
+  d.text(String(b.name||"").toUpperCase(), PG.w/2, PG.m+23, {align:"center"});
+  d.setTextColor(0); d.setFontSize(8); var addr=[b.address, b.phone].filter(Boolean).join("    ·    ");
   if(addr) d.text(addr, PG.w/2, PG.m+34, {align:"center"});
   d.setFontSize(11); d.text(title, PG.w/2, PG.m+52, {align:"center"});
   d.setFont("helvetica","normal");
@@ -1536,7 +1576,7 @@ function wpqrPdf(draft){
   var fspec=fillerSpecFor(filler)||wp.fillerSpec||"", fnum=F_NUMBER[filler]||"";
   var IND="   ", GREY=[236,236,236];
 
-  var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, y=letterhead(d,"Welder Performance Qualification Record (WPQR)");
+  var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, y=letterhead(d,"Welder Performance Qualification Record (WPQR)",recordBrand(w));
   var shade=function(c){ if(c.section=="head"||(c.section=="body"&&c.column.index==0)) c.cell.styles.fillColor=GREY; };
 
   // Identity: two tables with the photo box between them, as on the shop's form.
@@ -1673,9 +1713,9 @@ function pqrPdf(p){
   var manual=(p.process=="SMAW"||p.process=="GTAW")?"Manual":"Semiautomatic";
   var gasProc=p.process!="SMAW"&&p.process!="FCAW-S";
   var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, half=(W-PG.gap)/2, xr=x+half+PG.gap;
-  var y=letterhead(d,"Procedure Qualification Record (PQR)");
+  var b=wpsBrand(p), y=letterhead(d,"Procedure Qualification Record (PQR)",b);
   y=grid(d,{x:x,w:W,y:y,bold:[],body:[
-    [dash(CFG.shop),dash(p.no),dash(p.rev),dash(p.date?fmtDate(p.date):"")],
+    [dash(b.name),dash(p.no),dash(p.rev),dash(p.date?fmtDate(p.date):"")],
     ["Company Name","PQR No.","Rev. No","Date"],
     [dash(p.contact),{content:dash(p.wpsQual),colSpan:2},dash(code)],
     ["Company Contact",{content:"WPS Qualified",colSpan:2},"Code"]],
@@ -1829,11 +1869,11 @@ function wpsPdf(p){
   var backMat=p.backing=="With backing"?(p.backingMat||""):"";
   var gasProc=p.process!="SMAW"&&p.process!="FCAW-S";
   var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, half=(W-PG.gap)/2, xr=x+half+PG.gap;
-  var y=letterhead(d,"Welding Procedure Specification (WPS)");
+  var b=wpsBrand(p), y=letterhead(d,"Welding Procedure Specification (WPS)",b);
 
   /* header strip: a value line with its label under it, like the paper */
   y=grid(d,{x:x,w:W,y:y,bold:[],body:[
-    [dash(CFG.shop),dash(p.no),dash(p.rev),dash(p.date?fmtDate(p.date):"")],
+    [dash(b.name),dash(p.no),dash(p.rev),dash(p.date?fmtDate(p.date):"")],
     ["Company Name","WPS No.","Rev. No","Date"],
     [dash(p.contact),{content:dash(p.basis=="Qualified by PQR"?(p.pqr||"PQR"):"Prequalified / "+CFG.code),colSpan:2},dash(p.cvn)],
     ["Company Contact",{content:"Supporting PQR",colSpan:2},"CVN Report"]],
@@ -1911,6 +1951,7 @@ document.addEventListener("click", function(e){
   else if(a=="settings") go("settings");
   else if(a=="savecfg"){ saveCfg(); back(); }
   else if(a=="clearlogo"){ CFG.logo=""; render({keepScroll:true}); }
+  else if(a=="cleardraftlogo"){ S.draft.logo=""; render({keepScroll:true}); }
   else if(a=="export") go("exported");
   else if(a=="import") go("importer");
   else if(a=="copyblob"){ copy(window._blob); el.textContent="Copied"; }
@@ -2006,9 +2047,9 @@ document.addEventListener("click", function(e){
   else if(a=="pdfwps"){
     var wp=currentWps(); if(!wp) return;
     if(!needPdf()) return;
-    deliverPdf(isPqr(wp)?pqrPdf(wp):wpsPdf(wp), pdfName(CFG.shop+" "+docLabel(wp)));
+    deliverPdf(isPqr(wp)?pqrPdf(wp):wpsPdf(wp), pdfName(wpsBrand(wp).name+" "+docLabel(wp)));
   }
-  else if(a=="previewwps"){ var wp3=currentWps(); if(!wp3||!needPdf()) return; showPdf(isPqr(wp3)?pqrPdf(wp3):wpsPdf(wp3), pdfName(CFG.shop+" "+docLabel(wp3)), docLabel(wp3)); }
+  else if(a=="previewwps"){ var wp3=currentWps(); if(!wp3||!needPdf()) return; showPdf(isPqr(wp3)?pqrPdf(wp3):wpsPdf(wp3), pdfName(wpsBrand(wp3).name+" "+docLabel(wp3)), docLabel(wp3)); }
   else if(a=="previewrec"){
     if(!needPdf()) return;
     var fin=S.r.verified&&S.r.result;
@@ -2078,8 +2119,8 @@ function createTicket(btn){
     data:{ companyId:d.companyId||"", company:coName(d.companyId), name:d.name||"",
            wpsId:d.wpsId||"", wps:wpsLabel(p), position:d.position||"", process:d.process||"" },
     wps: p ? Object.assign({},p) : null,
-    org_info:{ shop:CFG.shop, city:CFG.city, inspector:CFG.inspector, code:CFG.code } };
-  if(t.wps) delete t.wps._demo;
+    org_info:{ shop:CFG.shop, city:CFG.city, address:CFG.address, phone:CFG.phone, logo:CFG.logo, inspector:CFG.inspector, code:CFG.code } };
+  if(t.wps){ delete t.wps._demo; t.wps.brand=wpsBrand(p); }
   btn.disabled=true; btn.textContent="Creating…";
   sb.from("tickets").insert(t).then(function(res){
     if(res.error){ btn.disabled=false; btn.textContent="Create link"; toast("Couldn't create the ticket — "+res.error.message); return; }
@@ -2218,6 +2259,7 @@ document.addEventListener("input", function(e){
 document.addEventListener("change", function(e){
   var t=e.target;
   if(t.id=="logofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ CFG.logo=d; render({keepScroll:true}); }); return; }
+  if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; render({keepScroll:true}); }); return; }
   if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
 });
 /* Shrink a chosen image to a small PNG data URL for the letterhead. */
