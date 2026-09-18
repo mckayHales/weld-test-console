@@ -125,6 +125,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .wps-card .kv dd{color:#EAF2FA}
 .code-in{letter-spacing:.35em;text-align:center;font-size:26px!important;font-variant-numeric:tabular-nums}
 .signin{margin-top:8vh}
+.pdfframe{width:100%;height:calc(100vh - 230px);height:calc(100dvh - 230px);min-height:420px;border:1px solid var(--line);border-radius:8px;background:#fff}
 
 </style>
 </head>
@@ -141,7 +142,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-17.1";
+var VERSION="2026-09-17.2";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -315,6 +316,21 @@ var METAL_GROUP={ "A36":"I","A572 Gr. 50":"II","A992":"II","A500 Gr. B/C":"I / I
 var FILLER_SPEC={ "E6010":"A5.1","E6011":"A5.1","E7018":"A5.1","E7018-H4R":"A5.1","E308L-16":"A5.4",
   "ER70S-2":"A5.18","ER70S-3":"A5.18","ER70S-6":"A5.18","ER308LSi":"A5.9","ER308L":"A5.9","ER316L":"A5.9",
   "E71T-1C":"A5.20","E71T-9C":"A5.20","E70T-1":"A5.20","E71T-11":"A5.20","E71T-8":"A5.20","E70T-4":"A5.20","E81T1-Ni1":"A5.29" };
+/* The AWS filler spec (the "book") for a classification: the table above,
+   else the classification's own pattern. Typed-in fillers get it too. */
+function fillerSpecFor(cls){
+  cls=String(cls||"").trim().toUpperCase(); if(!cls) return "";
+  if(FILLER_SPEC[cls]) return FILLER_SPEC[cls];
+  if(/^E\d{2}T/.test(cls))   return /-(NI|K|B|W|D)\d/.test(cls)||/^E[89]\dT|^E1[01]\dT/.test(cls) ? "A5.29" : "A5.20";  // FCAW: low-alloy vs carbon
+  if(/^E3\d{2}[A-Z]{0,3}T/.test(cls)) return "A5.22";   // FCAW stainless (E308LT1-1, E309LMoT…)
+  if(/^ER3\d{2}/.test(cls))  return "A5.9";    // GMAW/GTAW stainless
+  if(/^ER[67]\dS/.test(cls)) return "A5.18";   // GMAW/GTAW carbon
+  if(/^ER[89]\dS|^ER1\d{2}S/.test(cls)) return "A5.28";  // GMAW/GTAW low-alloy
+  if(/^E3\d{2}[A-Z]{0,3}-\d/.test(cls)) return "A5.4";    // SMAW stainless (E308L-16, E309LMo-15)
+  if(/^E[67]0\d{2}$/.test(cls)) return "A5.1"; // SMAW carbon
+  if(/^E[67]0\d{2}-|^E[89]0\d{2}|^E1\d0\d{2}/.test(cls)) return "A5.5";  // SMAW low-alloy
+  return "";
+}
 /* SMAW electrode groups (Table 6.12): a test with a higher F-number
    qualifies the lower ones. */
 var F_NUMBER={ "E6010":"F3","E6011":"F3","E7018":"F4","E7018-H4R":"F4","E308L-16":"F5" };
@@ -381,10 +397,9 @@ function upsertRecord(){
 
 
 /* ---------- sample data for testing ---------- */
-function seedDemo(){
+function demoData(){
   var co=[{id:"demo-co-1",name:"Wasatch Steel Fabrication",contact:"Ray Alder",phone:"801-555-0142",_demo:true},
           {id:"demo-co-2",name:"Canyon Mechanical",contact:"Dee Parker",phone:"801-555-0188",_demo:true}];
-  co.forEach(function(c){ putRow("companies",c); });
 
   var ps=[{id:"demo-wps-1",no:"WPS-01",rev:"0",basis:"Prequalified",date:"2025-05-01",contact:"Dillon Hales",process:"FCAW-G",base:"A36",baseTo:"A36",
            title:"CJP butt, single V, steel backing",weldType:"CJP groove",jointType:"Butt",jointDesig:"B-U2a-GF",groove:"Single V",angle:"45°–60°",rootOpening:'3/16" ± 1/16"',rootFace:"0",
@@ -396,7 +411,6 @@ function seedDemo(){
            backing:"No backing",diaRange:'2" and up',progression:"Uphill",travel:"3–5",bead:"Stringer",passes:"Multiple pass",cleaning:"Wire brush",fillerSpec:"A5.9",
            filler:"ER308L",fillerDia:'3/32"',gas:"100% Argon",flow:"25",amps:"85–110",volts:"11–13",polarity:"DCEN",
            thickRange:'1/16" to 1/2"',positions:"All",notes:"Open root, argon purge 15 CFH.",_demo:true}];
-  ps.forEach(function(w){ putRow("wps",w); });
 
   function mk(id,w,r,status){
     return { id:id, _demo:true, updated:Date.now(), status:status,
@@ -434,7 +448,13 @@ function seedDemo(){
       "Not qualified")
   ];
   recs[2].w.thickness="custom"; recs[2].w.thicknessCustom="0.28";
-  recs.forEach(function(r){ putRow("records",r); });
+  return { co:co, ps:ps, recs:recs };
+}
+function seedDemo(){
+  var d=demoData();
+  d.co.forEach(function(c){ putRow("companies",c); });
+  d.ps.forEach(function(w){ putRow("wps",w); });
+  d.recs.forEach(function(r){ putRow("records",r); });
 }
 function clearDemo(){
   TABLES.forEach(function(t){
@@ -854,16 +874,41 @@ function wpsSections(p){
       ["Root opening",groove?p.rootOpening:""],["Root face",groove?p.rootFace:""],["Backing",groove?p.backing:""],
       ["Backing material",p.backing=="With backing"?p.backingMat:""],["Backgouging",groove?p.backgouge:""],["Fillet size",groove?"":p.filletSize]]),
     sec("Base metal",[["Base material",p.base],["Welded to",p.baseTo],["Thickness",p.thickRange],["Diameter",p.diaRange]]),
-    sec("Process and filler",[["Process",p.process+(p.transfer?" — "+p.transfer:"")],["Filler",p.filler],["AWS spec",p.fillerSpec],["Diameter",p.fillerDia],["Manufacturer",p.fillerMfr]]),
+    sec("Process and filler",[["Process",p.process+(p.transfer?" — "+p.transfer:"")],["Filler",p.filler],["AWS spec",fillerSpecFor(p.filler)||p.fillerSpec],["Diameter",p.fillerDia],["Manufacturer",p.fillerMfr]]),
     sec("Shielding",[["Gas",p.gas],["Flow",p.flow?p.flow+" CFH":""],["Nozzle",p.nozzle],["Contact tip to work",p.ctwd]]),
     sec("Electrical",[["Amps",p.amps],["Volts",p.volts],["Polarity",p.polarity],["Wire feed",p.wfs?p.wfs+" ipm":""],["Power source",p.powerSource]]),
     sec("Preheat, interpass, PWHT",[["Preheat, min",p.preheat],["Interpass",p.interpass],["PWHT temperature",p.pwhtTemp],["PWHT time",p.pwhtTime]]),
     sec("Technique",[["Positions",p.positions],["Progression",p.progression],["Travel speed",p.travel?p.travel+" ipm":""],["Bead",p.bead],["Passes",p.passes],["Cleaning",p.cleaning],["Peening",p.peening]])
   ].filter(Boolean);
 }
+/* A PDF shown inside the app before it's saved or sent. */
+VIEWS.pdfview = function(){
+  var v=S.pdf||{};
+  var h=nav(v.title||"Preview");
+  if(v.note) h+='<div class="flag" style="margin-bottom:10px"><b>'+esc(v.note)+'</b></div>';
+  h+='<iframe class="pdfframe" src="'+esc(v.url)+'#toolbar=0&view=FitH" title="PDF preview"></iframe>';
+  h+='<p class="foot">'+(v.pages>1?v.pages+' pages — ':'')+'If only the first page shows here, Save and open it in Files to see the rest.</p>';
+  return { body:h, bar:'<button class="ghost" data-act="back">Back</button><button class="primary" data-act="pdfsave">Save / Share</button>' };
+};
+function showPdf(doc,name,title,note){
+  var url=URL.createObjectURL(doc.output("blob"));
+  go("pdfview",{ pdf:{ doc:doc, name:name, url:url, title:title, note:note, pages:doc.internal.getNumberOfPages() } });
+}
+function needPdf(){
+  if(pdfReady()) return true;
+  toast("Still loading the PDF tool — try again in a second."); loadPdfLib().catch(function(){ toast("Couldn't load the PDF tool. Check your signal."); });
+  return false;
+}
+/* Build a WPQR for a record that isn't the one on screen (samples). */
+function withRecord(rec, fn){
+  var keep={w:S.w,r:S.r,recId:S.recId};
+  S.w=Object.assign(blankW(),rec.w); S.r=Object.assign(blankR(),rec.r); S.recId=rec.id;
+  try{ return fn(); } finally { S.w=keep.w; S.r=keep.r; S.recId=keep.recId; }
+}
+
 VIEWS.wpsview = function(){
   var p=S.viewWps; if(!p) return { body:nav("WPS")+'<div class="empty">Not found.</div>', bar:"" };
-  var h=nav("WPS");
+  var h=nav("WPS", '<button data-act="previewwps">Preview PDF</button>');
   h+='<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+(p.basis?' &nbsp;·&nbsp; '+esc(p.basis):'')+'</div>'
     +'<h1>'+esc(wpsLabel(p))+(p.title?'<span>'+esc(p.title)+'</span>':'')+'</h1></div>'+codeChip()+'</div>'
     +'<div class="perf"></div><div class="ticket-bottom">'+esc([p.date?fmtDate(p.date):"", p.pqr?"Supported by "+p.pqr:"", p.contact?"Contact "+p.contact:""].filter(Boolean).join(" · ")||CFG.code)+'</div></div>';
@@ -1154,7 +1199,7 @@ VIEWS.inspect = function(){
         : '<button class="mini" data-act="archive">Archive this record</button> &nbsp;·&nbsp; ') : '')
     +'<button class="mini" data-act="delrec">Delete this record</button></p>';
   var ready=r.verified&&r.result;
-  return { body:h, bar:'<button class="ghost" data-act="pdfrec" data-draft="1">Preview</button><button class="primary" data-act="pdfrec" '+(ready?"":"disabled")+'>Save WPQR</button>' };
+  return { body:h, bar:'<button class="ghost" data-act="previewrec">Preview</button><button class="primary" data-act="pdfrec" '+(ready?"":"disabled")+'>Save WPQR</button>' };
 };
 function resRow(label,key){
   var v=S.r[key];
@@ -1182,6 +1227,9 @@ VIEWS.settings = function(){
     +(hasDemo()
       ? '<button class="mini" data-act="unseed">Remove sample data</button>'
       : '<button class="mini" data-act="seed">Load sample data</button>')+'</div>';
+  h+='<div class="card"><h3>Sample documents</h3>'
+    +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">What the forms look like with your letterhead, using made-up data. Nothing is saved.</p>'
+    +'<button class="mini" data-act="samplewpqr">Preview a WPQR</button> &nbsp;·&nbsp; <button class="mini" data-act="samplewps">Preview a WPS</button></div>';
   h+='<div class="card"><h3>Your data</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Everything is saved to your account and shows up on any phone you sign in on. Export is a spare copy; Import adds records from an older backup.</p>'
     +'<button class="mini" data-act="export">Export everything</button> &nbsp; <button class="mini" data-act="import">Import a backup</button></div>';
   h+='<div class="card"><h3>Account</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">'+esc(AUTH.user?AUTH.user.email:"")+'</p>'
@@ -1342,7 +1390,7 @@ function wpqrPdf(draft){
   var vert=/3G|5G|6G|3F/.test(w.position);
   var qPos=g("qPos",s.positions), qFPos=g("qFPos",s.filletPositions);
   var qThick=g("qThick",s.thickMin?s.thickMin+" to "+s.thickMax:""), qFillet=g("qFillet",s.filletThick), qDia=g("qDia",s.diameter);
-  var fspec=FILLER_SPEC[filler]||wp.fillerSpec||"", fnum=F_NUMBER[filler]||"";
+  var fspec=fillerSpecFor(filler)||wp.fillerSpec||"", fnum=F_NUMBER[filler]||"";
   var IND=" ";
 
   var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, y=letterhead(d,"Welder Performance Qualification Record (WPQR)");
@@ -1468,7 +1516,7 @@ function wpsPdf(p){
   if(gasProc) yL=grid(d,{x:x,w:half,y:yL,col:lab,head:["Shielding Gas (Composition)",dash(p.gas)],body:[
     ["Flow Rate",dash(p.flow?p.flow+" cfh":"")],["Nozzle Size",dash(p.nozzle)],["Contact Tube to Work Distance",dash(p.ctwd)]]})+PG.gap;
 
-  yR=grid(d,{x:xr,w:half,y:yR,col:lab,head:["Filler Metal (AWS Spec.)",dash(p.fillerSpec)],body:[
+  yR=grid(d,{x:xr,w:half,y:yR,col:lab,head:["Filler Metal (AWS Spec.)",dash(fillerSpecFor(p.filler)||p.fillerSpec)],body:[
     ["AWS Classification",dash(p.filler)],["Electrode Diameter",dash(p.fillerDia)],["Manufacturer Name",dash(p.fillerMfr)]]})+PG.gap;
   yR=grid(d,{x:xr,w:half,y:yR,bold:[0,2],col:{1:{cellWidth:24},3:{cellWidth:24}},head:[{content:"Technique",colSpan:4}],body:[
     ["Multi Pass",boxCell(p.passes=="Multiple pass"),"Single Pass",boxCell(p.passes=="Single pass")],
@@ -1581,9 +1629,22 @@ document.addEventListener("click", function(e){
   else if(a=="signout"){ if(AUTH.user) raw.del("wq.profile."+AUTH.user.id); sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
   else if(a=="pdfwps"){
     var wp=currentWps(); if(!wp) return;
-    if(!pdfReady()){ toast("Still loading the PDF tool — try again in a second."); loadPdfLib().catch(function(){ toast("Couldn't load the PDF tool. Check your signal."); }); return; }
+    if(!needPdf()) return;
     deliverPdf(wpsPdf(wp), pdfName(CFG.shop+" "+wpsLabel(wp)));
   }
+  else if(a=="previewwps"){ var wp3=currentWps(); if(!wp3||!needPdf()) return; showPdf(wpsPdf(wp3), pdfName(CFG.shop+" "+wpsLabel(wp3)), wpsLabel(wp3)); }
+  else if(a=="previewrec"){
+    if(!needPdf()) return;
+    var fin=S.r.verified&&S.r.result;
+    showPdf(wpqrPdf(!fin), pdfName(S.r.testNo||(S.w.name?S.w.name+" WPQR":"WPQR")), "WPQR preview", fin?"":"Marked DRAFT until you verify the ranges and pick a result.");
+  }
+  else if(a=="pdfsave"){ if(S.pdf&&S.pdf.doc) deliverPdf(S.pdf.doc, S.pdf.name); }
+  else if(a=="samplewpqr"){
+    if(!needPdf()) return;
+    var dd=demoData(); var doc=withRecord(dd.recs[1], function(){ return wpqrPdf(false); });
+    showPdf(doc, "Sample_WPQR.pdf", "Sample WPQR", "Made-up welder. Your letterhead, your code edition.");
+  }
+  else if(a=="samplewps"){ if(!needPdf()) return; var dp=demoData().ps[0]; showPdf(wpsPdf(dp), "Sample_WPS.pdf", "Sample WPS", "Made-up procedure. Your letterhead."); }
   else if(a=="sharewps"){
     var wp2=currentWps(); if(!wp2) return;
     var txt=wpsText(wp2);
@@ -1749,7 +1810,11 @@ function afterSignIn(){
 function pick(v,group){
   if(group=="tpos"){ S.draft.position=v; render({keepScroll:true}); return; }
   if(group=="tproc"||group=="wproc"){ S.draft.process=v; render({keepScroll:true}); return; }
-  if(group&&group.slice(0,2)=="d:"){ var k=group.slice(2); S.draft[k]=(S.draft[k]===v?"":v); render({keepScroll:true}); return; }
+  if(group&&group.slice(0,2)=="d:"){
+    var k=group.slice(2); S.draft[k]=(S.draft[k]===v?"":v);
+    if(k=="filler"){ var sp=fillerSpecFor(S.draft.filler); if(sp) S.draft.fillerSpec=sp; }
+    render({keepScroll:true}); return;
+  }
   var w=S.w;
   if(group&&group.slice(0,2)=="w:"){
     var key=group.slice(2);
