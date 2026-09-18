@@ -141,7 +141,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-16.6";
+var VERSION="2026-09-17.1";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -169,7 +169,7 @@ function token(){ var a=new Uint8Array(12); (window.crypto||window.msCrypto).get
 
 /* ---------- settings ----------
    Assembled from the org row and the profile row once signed in. */
-var CFG = { shop:"", city:"", address:"", phone:"", inspector:"", cert:"", code:"AWS D1.1:2025" };
+var CFG = { shop:"", city:"", address:"", phone:"", logo:"", inspector:"", cert:"", code:"AWS D1.1:2025" };
 /* The editions the app knows. The clause numbers on the printed WPQR
    come from CLAUSES, keyed by the year in this string. */
 var EDITIONS=["AWS D1.1:2020","AWS D1.1:2025"];
@@ -180,15 +180,18 @@ function editionSelect(attr,cur){
 function cfgFromAuth(){
   if(!AUTH.org) return;
   CFG={ shop:AUTH.org.name||"", city:AUTH.org.city||"", address:AUTH.org.address||"", phone:AUTH.org.phone||"",
-        code:AUTH.org.code||"AWS D1.1:2025", inspector:AUTH.profile.name||"", cert:AUTH.profile.cert||"" };
+        logo:AUTH.org.logo||"", code:AUTH.org.code||"AWS D1.1:2025", inspector:AUTH.profile.name||"", cert:AUTH.profile.cert||"" };
 }
 function saveCfg(){
   if(!sb||!AUTH.org) return;
-  AUTH.org.name=CFG.shop; AUTH.org.city=CFG.city; AUTH.org.address=CFG.address; AUTH.org.phone=CFG.phone; AUTH.org.code=CFG.code;
+  AUTH.org.name=CFG.shop; AUTH.org.city=CFG.city; AUTH.org.address=CFG.address; AUTH.org.phone=CFG.phone; AUTH.org.logo=CFG.logo; AUTH.org.code=CFG.code;
   AUTH.profile.name=CFG.inspector; AUTH.profile.cert=CFG.cert;
   sb.from("orgs").update({name:CFG.shop,city:CFG.city,code:CFG.code}).eq("id",AUTH.org.id).then(chk);
   sb.from("orgs").update({address:CFG.address,phone:CFG.phone}).eq("id",AUTH.org.id).then(function(res){
     if(res&&res.error) toast("Address and phone didn't save — run supabase/migrations/2026-09-16-org-letterhead.sql on the project.");
+  });
+  sb.from("orgs").update({logo:CFG.logo||null}).eq("id",AUTH.org.id).then(function(res){
+    if(res&&res.error) toast("The logo didn't save — run supabase/migrations/2026-09-17-org-logo.sql on the project.");
   });
   sb.from("profiles").update({name:CFG.inspector,cert:CFG.cert}).eq("user_id",AUTH.user.id).then(chk);
 }
@@ -281,7 +284,7 @@ function mIcon(k){
 var CHEV='<svg width="9" height="15" viewBox="0 0 9 15" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 1l6 6.5L1 14"/></svg>';
 
 /* ---------- helpers ---------- */
-function today(){ return new Date().toISOString().slice(0,10); }
+function today(){ var d=new Date(), z=function(n){return (n<10?"0":"")+n}; return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
 function fmtDate(s){ if(!s)return ""; var p=String(s).split("-"); return p.length==3?p[1]+"/"+p[2]+"/"+p[0]:s; }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
 function enc(o){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
@@ -300,7 +303,7 @@ function tVal(w){ return w.thickness=="custom"?parseFloat(w.thicknessCustom):par
 /* ---------- qualified range drafts ----------
    Everything here is a draft the inspector edits and verifies against
    the code book; nothing prints without the checkbox. */
-var POS_MAP={ "groove-plate":{"1G":"F","2G":"F, H","3G":"F, V","4G":"F, OH","3G+4G":"F, H, V, OH (all)"},
+var POS_MAP={ "groove-plate":{"1G":"F","2G":"F, H","3G":"F, H, V","4G":"F, OH","3G+4G":"F, H, V, OH (all)"},
   "groove-pipe":{"1G":"F","2G":"F, H","5G":"F, V, OH","6G":"F, H, V, OH (all)","2G+5G":"F, H, V, OH (all)"},
   "fillet":{"1F":"F","2F":"F, H","3F":"F, H, V","4F":"F, H, OH","3F+4F":"F, H, V, OH (all)"} };
 /* Fillet positions a groove test qualifies (D1.1 Table 6.10). */
@@ -1168,6 +1171,9 @@ VIEWS.settings = function(){
     +'<div class="field"><label>City</label><input type="text" data-c="city" value="'+esc(CFG.city)+'"></div>'
     +'<div class="field"><label>Street address, for the letterhead</label><input type="text" data-c="address" value="'+esc(CFG.address)+'" placeholder="Street address, City, State"></div>'
     +'<div class="field"><label>Phone</label><input type="tel" data-c="phone" value="'+esc(CFG.phone)+'"></div>'
+    +'<div class="field"><label>Logo, top-left of the letterhead</label>'
+    +(CFG.logo?'<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px"><img src="'+CFG.logo+'" alt="" style="height:64px;background:#fff;border-radius:6px;padding:4px"><button class="mini" data-act="clearlogo">Remove</button></div>':'')
+    +'<input type="file" id="logofile" accept="image/*" style="font-size:14px"></div>'
     +'<div class="field"><label>Inspector</label><input type="text" data-c="inspector" value="'+esc(CFG.inspector)+'"></div>'
     +'<div class="field"><label>Certification line on the signature block</label><input type="text" data-c="cert" value="'+esc(CFG.cert)+'" placeholder="AWS CWI #12345678"></div>'
     +'<div class="field"><label>Code edition — the book you verify against; it sets the clause numbers on the WPQR</label>'+editionSelect('data-c="code"', CFG.code)+'</div>';
@@ -1276,6 +1282,7 @@ function grid(d,o){
 function letterhead(d,title){
   var W=PG.w-2*PG.m;
   d.setFillColor(138,144,150); d.rect(PG.m,PG.m,W,5,"F");
+  if(CFG.logo){ try{ var pr=d.getImageProperties(CFG.logo), lh=44, lw=lh*pr.width/pr.height; if(lw>90){ lw=90; lh=lw*pr.height/pr.width; } d.addImage(CFG.logo,"PNG",PG.m,PG.m+9,lw,lh); }catch(e){} }
   d.setFont("helvetica","bold"); d.setFontSize(15);
   d.text(String(CFG.shop||"").toUpperCase(), PG.w/2, PG.m+23, {align:"center"});
   d.setFontSize(8); var addr=[CFG.address||CFG.city, CFG.phone].filter(Boolean).join("    ·    ");
@@ -1494,6 +1501,7 @@ document.addEventListener("click", function(e){
   if(a=="back") back();
   else if(a=="settings") go("settings");
   else if(a=="savecfg"){ saveCfg(); back(); }
+  else if(a=="clearlogo"){ CFG.logo=""; render({keepScroll:true}); }
   else if(a=="export") go("exported");
   else if(a=="import") go("importer");
   else if(a=="copyblob"){ copy(window._blob); el.textContent="Copied"; }
@@ -1765,8 +1773,22 @@ document.addEventListener("input", function(e){
   onField(e);
 });
 document.addEventListener("change", function(e){
-  var t=e.target; if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
+  var t=e.target;
+  if(t.id=="logofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ CFG.logo=d; render({keepScroll:true}); }); return; }
+  if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
 });
+/* Shrink a chosen image to a small PNG data URL for the letterhead. */
+function readLogo(file, done){
+  var img=new Image(), url=URL.createObjectURL(file);
+  img.onload=function(){
+    var max=360, sc=Math.min(1, max/Math.max(img.width,img.height));
+    var c=document.createElement("canvas"); c.width=Math.round(img.width*sc); c.height=Math.round(img.height*sc);
+    c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+    URL.revokeObjectURL(url); done(c.toDataURL("image/png"));
+  };
+  img.onerror=function(){ URL.revokeObjectURL(url); toast("Couldn't read that image."); };
+  img.src=url;
+}
 /* Enter in a sign-in field presses the button under it */
 document.addEventListener("keydown", function(e){
   if(e.key!="Enter" || ["login","newpass","onboard"].indexOf(S.screen)<0 || e.target.tagName!="INPUT") return;
