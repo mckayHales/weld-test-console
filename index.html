@@ -145,7 +145,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    a ticket link is all they get, and Send files the record.
    ========================================================= */
 
-var VERSION="2026-09-17.4";
+var VERSION="2026-09-17.5";
 var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
 var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
 var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
@@ -207,7 +207,8 @@ function saveCfg(){
 /* ---------- sync ----------
    Reads come from the cache. Writes go to the cache first (so the
    screen updates now) and then to the server. */
-var TABLES=["companies","wps","records"];
+var TABLES=["companies","wps","records","inspections"];
+var MISSING={};   // tables the project doesn't have yet (migration not run)
 function rowToObj(row){ return Object.assign({id:row.id}, row.data); }
 function objToRow(o){ var d=Object.assign({},o); delete d.id; return { org_id:AUTH.org.id, id:o.id, data:d, updated_at:new Date().toISOString() }; }
 function loadAll(){
@@ -215,7 +216,11 @@ function loadAll(){
   var failed=false;
   return Promise.all(TABLES.map(function(t){
     return sb.from(t).select("id,data").order("updated_at",{ascending:false}).then(function(res){
-      if(res.error){ if(!failed) toast("Couldn't refresh — "+res.error.message); failed=true; return; }
+      if(res.error){
+        if(t=="inspections"&&/relation|does not exist|schema cache/i.test(res.error.message)){ MISSING.inspections=true; return; }
+        if(!failed) toast("Couldn't refresh — "+res.error.message); failed=true; return;
+      }
+      if(t=="inspections") MISSING.inspections=false;
       var list=res.data.map(rowToObj);
       if(t=="companies") list.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
       db.set(t,list);
@@ -228,7 +233,10 @@ function putRow(table,obj){
   if(i>-1) all[i]=obj; else all.unshift(obj);
   if(table=="companies") all.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
   db.set(table,all);
-  if(sb&&AUTH.org) sb.from(table).upsert(objToRow(obj)).then(chk);
+  if(sb&&AUTH.org) sb.from(table).upsert(objToRow(obj)).then(function(res){
+    if(res&&res.error&&table=="inspections"&&/relation|does not exist|schema cache/i.test(res.error.message)){ MISSING.inspections=true; toast("Saved on this phone only — run the inspections migration in Supabase to sync reports."); return; }
+    chk(res);
+  });
 }
 function delRow(table,id){
   db.set(table, db.get(table,[]).filter(function(x){return x.id!=id}));
@@ -382,6 +390,14 @@ function records(){ return db.get("records",[]); }
 function coName(id){ var c=companies().filter(function(x){return x.id==id})[0]; return c?c.name:""; }
 function wpsById(id){ return wpsAll().filter(function(p){return p.id==id})[0]; }
 function wpsOnly(){ return wpsAll().filter(function(p){return p.kind!="PQR"}); }
+function inspections(){ return db.get("inspections",[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"")}); }
+function nextReportNo(){
+  var y=String(new Date().getFullYear()), n=inspections().filter(function(i){return (i.reportNo||"").indexOf(y)==0}).length+1;
+  return y+"-"+(n<10?"00":n<100?"0":"")+n;
+}
+function blankInspection(){ return { reportNo:nextReportNo(), date:today(), project:"", client:"", clientContact:"", address:"", phone:"", vendor:"",
+  location:"", siteContact:"", inspector:CFG.inspector, cwi:CFG.cert, items:[], notes:"", result:"",
+  standards:"1. "+CFG.code+" Structural Welding Code\n2. Client / engineer standards or requirements\n3. Contract documents / specifications" }; }
 function pqrAll(){ return wpsAll().filter(function(p){return p.kind=="PQR"}); }
 function isPqr(p){ return !!(p&&p.kind=="PQR"); }
 function docLabel(p){ return (isPqr(p)?"PQR ":"")+wpsLabel(p); }
@@ -539,6 +555,7 @@ VIEWS.home = function(){
     + mi("ticket","New test ticket","Send a welder the intake link","newticket",1)
     + mi("inbox","Test records", recs.length ? (pending? pending+" waiting on results" : recs.length+" on file") : "Empty — tap to load sample data","records")
     + mi("company","Companies","Who you've qualified, and their welders","companies")
+    + mi("inbox","Inspection reports",(inspections().length?inspections().length+" report"+(inspections().length==1?"":"s")+" on file":"Job-site visual inspections"),"inspections")
     + mi("wps","Procedures",wpsOnly().length+" WPS"+(pqrAll().length?", "+pqrAll().length+" PQR"+(pqrAll().length==1?"":"s"):"")+" on file","wpslist")
     + '<button class="mi" data-act="previewwelder"><span class="ic">'+mIcon("eye")+'</span>'
     + '<span><b>Welder\'s view</b><span>Open the intake form the way they see it</span></span><span class="go">'+CHEV+'</span></button>'
@@ -711,6 +728,46 @@ VIEWS.records = function(){
 };
 
 /* ---------- companies ---------- */
+/* ---------- visual inspection reports ---------- */
+var ITEM_COLS=[{k:"item",label:"Item / weld",w:1.4,ph:"e.g. Beam B-12 flange"},{k:"finding",label:"What was found",w:2,ph:"Observation"},{k:"result",label:"Result",w:1,opts:["","Accept","Reject","Repair & re-inspect","Note"]}];
+VIEWS.inspections = function(){
+  var list=inspections();
+  var h=nav("Inspection reports");
+  if(MISSING.inspections) h+='<div class="flag"><b>One-time setup</b> — this needs a new table in the database. Run <code>supabase/migrations/2026-09-17-inspections.sql</code> in Supabase → SQL Editor, then tap Refresh. Reports you write before that stay on this phone only.</div>';
+  if(!list.length) h+='<div class="empty">No reports yet.<br>A report is a job-site visual inspection: where you went, what you looked at, what passed.</div>';
+  list.forEach(function(i){
+    var n=(i.items||[]).length, rej=(i.items||[]).filter(function(x){return /Reject|Repair/.test(x.result||"")}).length;
+    h+='<button class="sub" data-insp="'+i.id+'"><span style="flex:1"><b>'+esc(i.project||i.client||"Untitled")+'</b>'
+      +'<span>'+esc([i.reportNo, fmtDate(i.date), i.client, n?n+" item"+(n==1?"":"s"):""].filter(Boolean).join(" · "))+'</span></span>'
+      +(i.result?'<span class="pill '+(i.result=="Accepted"?"ok":i.result=="Rejected"?"no":"wait")+'">'+esc(i.result)+'</span>':(rej?'<span class="pill no">'+rej+' open</span>':''))+'</button>';
+  });
+  h+='<p class="foot"><button class="mini" data-act="refresh">Refresh</button></p>';
+  return { body:h, bar:'<button class="primary" data-act="newinsp">New report</button>' };
+};
+VIEWS.inspedit = function(){
+  var d=S.draft;
+  var h=nav(d.id?"Inspection report":"New report", d.id?'<button data-act="previewinsp">Preview PDF</button>':'');
+  h+='<div class="card"><h3>Job</h3>'
+    +'<div class="row">'+dfield("Report number","reportNo","text","")+'<div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div></div>'
+    +dfield("Project name","project","text","What the job is called")
+    +'<div class="row">'+dfield("Client","client","text","Who hired you")+dfield("Client contact","clientContact","text","")+'</div>'
+    +dfield("Address","address","text","Job site address")
+    +'<div class="row">'+dfield("Location on site","location","text","e.g. Level 2, grid C-4")+dfield("Site contact","siteContact","text","")+'</div>'
+    +'<div class="row">'+dfield("Phone","phone","tel","")+dfield("Vendor / fabricator","vendor","text","optional")+'</div></div>';
+  h+='<div class="card"><h3>Inspection</h3>'
+    +'<p style="margin:0 0 10px;font-size:.86rem;color:var(--muted)">One line per weld, member, or area you looked at. Keep it short; the notes box below is for the story.</p>'
+    +listEditor("items",ITEM_COLS,"+ Add an item")+'</div>';
+  h+='<div class="field"><label>Notes and observations</label><textarea data-d="notes" style="min-height:140px" placeholder="Conditions, what was discussed, what was agreed, anything the client needs to know">'+esc(d.notes||"")+'</textarea></div>';
+  h+='<div class="field"><label>Overall result</label>'+tiles([{v:"Accepted"},{v:"Accepted with repairs"},{v:"Rejected"},{v:"Report only"}],d.result||"",false,"d:result")+'</div>';
+  h+='<div class="card"><h3>Standards applied</h3><textarea data-d="standards" style="min-height:90px">'+esc(d.standards||"")+'</textarea></div>';
+  h+='<div class="row">'+dfield("Inspector","inspector","text",CFG.inspector)+dfield("CWI number / cert","cwi","text",CFG.cert)+'</div>';
+  h+='<button class="primary" data-act="saveinsp" style="width:100%">Save report</button>'
+    +'<p id="saveerr" class="err" style="display:none">Give the report a project or client name first.</p>';
+  var b='<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="saveinsp">Save report</button>';
+  if(d.id) b='<button class="ghost" data-act="delinsp">Delete</button><button class="primary" data-act="saveinsp">Save report</button>';
+  return { body:h, bar:b };
+};
+
 VIEWS.companies = function(){
   var cs=companies();
   var h = nav("Companies");
@@ -1321,7 +1378,7 @@ VIEWS.settings = function(){
   return { body:h, bar:'<button class="primary" data-act="savecfg">Save settings</button>' };
 };
 VIEWS.exported = function(){
-  var blob = enc({ cfg:CFG, companies:companies(), wps:wpsAll(), records:records() });
+  var blob = enc({ cfg:CFG, companies:companies(), wps:wpsAll(), records:records(), inspections:db.get("inspections",[]) });
   var h = nav("Backup");
   h+='<div class="card"><h3>Copy this somewhere safe</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Email it to yourself. Pasting it back into Import restores everything.</p>'
     +'<div class="linkbox" style="max-height:200px">'+esc(blob)+'</div>'
@@ -1580,6 +1637,34 @@ function wpqrPdf(draft){
   return d;
 }
 
+/* ---- the visual inspection report ---- */
+function inspectionPdf(i){
+  var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, half=(W-PG.gap)/2, xr=x+half+PG.gap;
+  var y=letterhead(d,"Report of Visual Inspection");
+  var lab={0:{cellWidth:78}};
+  var yl=grid(d,{x:x,w:half,y:y,col:lab,body:[["Project Name",dash(i.project)],["Client",dash(i.client)],["Address",dash(i.address)],["Location",dash(i.location)],["Contact",dash(i.clientContact)]]});
+  var yr=grid(d,{x:xr,w:half,y:y,col:lab,body:[["Report Number",dash(i.reportNo)],["Date of Report",dash(fmtDate(i.date))],["Inspector",dash(i.inspector||CFG.inspector)],["Phone",dash(i.phone)],["Vendor",dash(i.vendor)],["Site Contact",dash(i.siteContact)]]});
+  y=Math.max(yl,yr)+PG.gap;
+  y=greyBar(d,y,"Inspection Report");
+  var rows=(i.items||[]).map(function(it,n){ return [String(n+1),dash(it.item),dash(it.finding),dash(it.result)]; });
+  if(rows.length) y=grid(d,{x:x,w:W,y:y,bold:[],col:{0:{cellWidth:22,halign:"center"},1:{cellWidth:150},3:{cellWidth:78,halign:"center"}},head:["#","Item / Weld","Observation","Result"],body:rows,
+    parse:function(c){ if(c.section=="body"&&c.column.index==3){ var v=String(c.cell.raw||""); if(/Reject|Repair/.test(v)) c.cell.styles.fontStyle="bold"; } }})+PG.gap;
+  if(i.notes){
+    y=grid(d,{x:x,w:W,y:y,bold:[],body:[[{content:i.notes,styles:{halign:"left",minCellHeight:rows.length?60:160,valign:"top"}}]]})+PG.gap;
+  } else if(!rows.length){
+    y=grid(d,{x:x,w:W,y:y,bold:[],body:[[{content:" ",styles:{minCellHeight:200}}]]})+PG.gap;
+  }
+  if(i.result){ d.setFont("helvetica","bold"); d.setFontSize(9); d.text("Result: "+i.result, x, y+9); d.setFont("helvetica","normal"); y+=16; }
+  d.setFontSize(7.5); d.setFont("helvetica","bold"); d.text("Visual inspection is held to the following standards / specifications", x, y+8); d.setFont("helvetica","normal"); y+=12;
+  var std=d.splitTextToSize(String(i.standards||""), W); d.text(std, x, y+7); y+=std.length*9+14;
+  d.setLineWidth(.5); d.setDrawColor(0);
+  d.line(x,y+21,x+W*.45,y+21); d.setFont("helvetica","italic"); d.setFontSize(7); d.text("Signature of Inspector — "+String(i.inspector||CFG.inspector||""), x, y+29);
+  d.setFont("helvetica","normal"); d.setFontSize(8); d.text(String(i.cwi||CFG.cert||""), x+W*.6+4, y+18);
+  d.line(x+W*.6,y+21,x+W,y+21); d.setFont("helvetica","italic"); d.setFontSize(7); d.text("CWI Number", x+W*.6, y+29);
+  d.setFont("helvetica","normal");
+  return d;
+}
+
 /* ---- the PQR: the procedure as run, then what the coupons did ---- */
 function pqrPdf(p){
   var code=p.code||CFG.code, groove=(p.weldType||"CJP groove")!="Fillet";
@@ -1725,6 +1810,7 @@ document.addEventListener("click", function(e){
   if(el.dataset.go){ go(el.dataset.go); return; }
   if(el.dataset.rec){ openRecord(el.dataset.rec); return; }
   if(el.dataset.co){ go("company",{coId:el.dataset.co}); return; }
+  if(el.dataset.insp){ var ins=inspections().filter(function(x){return x.id==el.dataset.insp})[0]; if(ins) go("inspedit",{draft:JSON.parse(JSON.stringify(ins))}); return; }
   if(el.dataset.wps){ var p=wpsAll().filter(function(x){return x.id==el.dataset.wps})[0]; go("wpsedit",{draft:Object.assign({},p)}); return; }
   if(el.dataset.pick!==undefined){ pick(el.dataset.pick, el.dataset.group); return; }
   if(el.dataset.res){ S.r[el.dataset.res]=el.dataset.val; render({keepScroll:true}); return; }
@@ -1745,6 +1831,7 @@ document.addEventListener("click", function(e){
       (d.companies||[]).forEach(function(x){ putRow("companies",x); });
       (d.wps||[]).forEach(function(x){ putRow("wps",x); });
       (d.records||[]).forEach(function(x){ putRow("records",x); });
+      (d.inspections||[]).forEach(function(x){ putRow("inspections",x); });
       S.stack=[]; S.screen="home"; render();
     }
     else er.style.display="block";
@@ -1760,6 +1847,15 @@ document.addEventListener("click", function(e){
     if(!d.id) d.id=uid();
     putRow("companies", d); back();
   }
+  else if(a=="newinsp") go("inspedit",{draft:blankInspection()});
+  else if(a=="saveinsp"){
+    var di=S.draft;
+    if(!di.project&&!di.client){ var se3=document.getElementById("saveerr"); if(se3) se3.style.display="block"; return; }
+    if(!di.id) di.id=uid();
+    putRow("inspections", di); back();
+  }
+  else if(a=="delinsp"){ if(confirm("Delete this report?")){ delRow("inspections",S.draft.id); S.stack=[]; S.screen="inspections"; render(); } }
+  else if(a=="previewinsp"){ if(!needPdf()) return; var di2=S.draft; showPdf(inspectionPdf(di2), pdfName("Inspection "+(di2.reportNo||"")+" "+(di2.project||di2.client||"")), "Report "+(di2.reportNo||"")); }
   else if(a=="delco"){
     var n=recsFor(S.draft.id).length;
     var msg = n ? "Delete this company? Its "+n+" test record"+(n==1?"":"s")+" stay on file under the name they were filed with." : "Delete this company?";
