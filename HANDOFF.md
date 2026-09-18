@@ -41,8 +41,8 @@ what protects the data, not the key.
 | | Inspector | Welder |
 |---|---|---|
 | Entry point | opens the app, signs in | taps a link the inspector texted (`?t=<ticket>`) |
-| Sees | console: records, companies, WPS library, settings | a 5-step intake form with the WPS card on top, nothing else |
-| Produces | the printed WPQR | a record in the inspector's Test records |
+| Sees | console: records, inspection reports, companies, procedures (WPS + PQR), settings | a 5-step intake form with the WPS card on top, nothing else |
+| Produces | WPQR, WPS, PQR and inspection-report PDFs | a record in the inspector's Test records |
 
 The welder never installs anything, never sees the console, never makes an account. The
 ticket id in the link is the only credential they have, and it's a 12-character random
@@ -60,7 +60,8 @@ S = {
   screen, stack, step, w, r, recId, coId, wpsId, draft, preview,
   wps,        // WPS snapshot shown on the welder's intake
   ticket,     // the ticket row just created (inspector side)
-  ticketId    // the ticket being filled out (welder side)
+  ticketId,   // the ticket being filled out (welder side)
+  pdf         // { doc, url, name, title, note, pages } behind the pdfview screen
 }
 AUTH = { user, org, profile }    // set after sign-in; CFG is built from org + profile
 ```
@@ -70,8 +71,12 @@ AUTH = { user, org, profile }    // set after sign-in; CFG is built from org + p
 `VIEWS[name]()` returns `{ body, bar }`. Console screens:
 
 ```
-home  newticket  ticketlink  records  companies  company  editco
-wpslist  wpsedit  inspect  settings  exported  importer
+home  newticket  ticketlink  records  inspect
+inspections  inspedit                      job-site visual inspection reports
+companies  company  editco
+wpslist  wpsedit  wpsview                  WPSs and PQRs together ("Procedures"); a PQR is a
+                                           wps row with kind:"PQR"
+pdfview  settings  exported  importer
 ```
 
 Auth and welder screens:
@@ -84,8 +89,8 @@ login  onboard  loading  intake  sent  closed
 
 Views read synchronously from a localStorage cache (`db.get`), namespaced by org id.
 Writes go through `putRow(table, obj)` / `delRow(table, id)`: cache first (so the screen
-updates immediately), then an upsert/delete to Supabase. `loadAll()` refetches all three
-tables and is called on sign-in, on the Refresh button, and whenever the app comes back
+updates immediately), then an upsert/delete to Supabase. `loadAll()` refetches the four
+data tables and is called on sign-in, on the Refresh button, and whenever the app comes back
 to the foreground on a console screen — that's how new welder submissions appear.
 
 Last write wins. There's no conflict resolution; with one inspector per org that's fine.
@@ -101,20 +106,38 @@ One delegated `click` listener on `document`, dispatching on data attributes
 
 ## 4. Database
 
-Schema is in `supabase/schema.sql`. Six tables:
+Schema is in `supabase/schema.sql`. Seven tables:
 
 ```
-orgs        the tenant — one inspection company (name, city, address, phone, code edition —
-            one of EDITIONS, chosen in Settings)
+orgs        the tenant — one inspection company (name, city, address, phone, logo, code
+            edition — one of EDITIONS, chosen in Settings)
 profiles    user → org, plus the inspector's name and cert line
 companies   (org_id, id) → data jsonb       the client companies
-wps         (org_id, id) → data jsonb       the WPS library
+wps         (org_id, id) → data jsonb       WPSs, and PQRs (kind:"PQR")
 records     (org_id, id) → data jsonb       { w, r, status, updated }
+inspections (org_id, id) → data jsonb       visual inspection reports
 tickets     id → org_id, data, wps, org_info, status, submission
 ```
 
-The three data tables store the front-end object as jsonb, keyed by the short id the app
+The four data tables store the front-end object as jsonb, keyed by the short id the app
 already generates. Adding a field to a form is a front-end-only change.
+
+**Live project vs. fresh project.** `schema.sql` drops and recreates everything, so it is
+only for a new Supabase project. Changes to a live project go in
+`supabase/migrations/<date>-<what>.sql`, written to be safe to run twice, and pasted into
+the SQL Editor by hand. Both files must be kept in step: every migration's change also
+goes into `schema.sql`. The app copes with a migration that hasn't run yet — Settings
+says which file to run if address/phone or the logo won't save, and the Inspection
+reports screen says so (and keeps reports on the phone) until the `inspections` table
+exists (`MISSING.inspections`).
+
+Migrations so far, oldest first:
+
+```
+2026-09-16-org-letterhead.sql   orgs.address, orgs.phone
+2026-09-17-org-logo.sql         orgs.logo
+2026-09-17-inspections.sql      the inspections table + its RLS policy
+```
 
 Row-level security: every signed-in query is filtered by `my_org()`. The `anon` role has
 no table access at all. Welders go through two `security definer` functions:
@@ -145,26 +168,43 @@ won't come back to the app.
 
 ### The PDFs
 
-The WPQR and WPS are **built in the app with jsPDF**, not printed through the browser.
+Four documents — WPQR, WPS, PQR, inspection report — are **built in the app with jsPDF**,
+not printed through the browser.
 The browser route was tried first: iOS lays a print page out at its own width, so the
 sheet spilled off the right edge and onto a second page, and there was no way to see
 what the phone would do from a desktop. With jsPDF every box goes at a fixed spot on a
 letter page (612 × 792 pt, 30 pt margins), so it is one page on anything, and the result
-is a file. `deliverPdf()` hands it to the share sheet on a phone (Files, Messages,
-AirPrint), opens it in a tab on a desktop, or downloads it.
+is a file. `showPdf()` opens it on the `pdfview` screen (an iframe, with a Save / Share
+button); `deliverPdf()` hands it to the share sheet on a phone (Files, Messages,
+AirPrint), opens it in a tab on a desktop, or downloads it. Settings has "Preview a WPQR"
+and "Preview a WPS" that build the sample documents so the layout can be checked without
+a real record.
 
-`wpqrPdf(draft)` is the **Welder Performance Qualification Record**, laid out like Yeti
-Welding's paper form (the AWS Annex "actual values | ranges qualified" style): letterhead
-from the org's address and phone, welder block beside the test block, base metals, every
-variable as actual value beside range qualified, results with acceptance-criteria clause
-numbers, certification block, contractor and authorized-by lines, stamp box. Preview on
-an unverified record prints with a DRAFT watermark; the Save button stays disabled until
-the verify gate is ticked. WPQR and WQTR are two names for the same document; the paper
-says WPQR, so the app does too.
+Every letterhead is `letterhead()`: the org's logo top-left if one is set (Settings
+takes an image, shrinks it to a small PNG, stores it on the org row), the company name
+in the letterhead red, address · phone, the document title.
+
+`wpqrPdf(draft)` is the **Welder Performance Qualification Record**, laid out line for
+line like Yeti Welding's Excel form (the AWS Annex "actual values | ranges qualified"
+style): identity block, photo box, test block; all eight base-metal columns; every
+variable as an actual value beside its range qualified, in two boxes with a gap; results
+with acceptance-criteria clause numbers; certification block with the result as a row;
+contractor and authorized-by lines; stamp box. Preview on an unverified record carries a
+DRAFT watermark; Save stays disabled until the verify gate is ticked. WPQR and WQTR are
+two names for the same document; the paper says WPQR, so the app does too.
 
 `wpsPdf(p)` is the WPS the same way: header strip, base metals beside the thickness
 table, joint details beside the prequalified designation, a Procedure bar, process /
-electrical / gas down the left, filler / technique / preheat down the right.
+electrical / gas down the left, filler / technique / preheat down the right. `pqrPdf(p)`
+is the PQR: the procedure as run, per-pass readings, test results. `inspectionPdf(i)` is
+the Report of Visual Inspection: job and client block, one row per item with its result,
+notes, overall result, standards applied.
+
+**Which code a record is qualified to** is per record (`w.code`, defaulting to the org's
+edition; `recCode(w)`). Only D1.1 has lookup tables: for D1.3 / D1.4 `suggest()` returns
+blank ranges and the record screen says to fill them from the book — never a D1.1 number
+on a D1.3 form. Adding a code means adding its tables next to `POS_MAP` and teaching
+`suggest()` and `clauseRefs()` about it.
 
 `grid()` wraps autoTable with the house style (hairline borders, no fills, bold label
 column). Side-by-side tables are two `grid()` calls at the same `y` with different `x`
@@ -204,14 +244,20 @@ table in a web app must never be what that rests on.
 If you extend this (ASME IX, D1.5, D1.6, F-number groupings, diameter ranges), keep that
 property. Add code logic as *suggestions with an explicit verify gate*, not as answers.
 
-### The WPS card
+### The WPS card, and PQRs
 
 A WPS in the library carries every field on the shop's paper WPS form: header (number,
 rev, date, contact, prequalified or PQR + CVN), joint details with the prequalified joint
 designation (`jointDesig`, e.g. `B-U2a-GF` — it prints on the WPQR's "Qualified To"
-line), backgouging, base and welded-to metals, filler with spec and manufacturer, gas with
-nozzle and contact-tip-to-work, electrical with power source, preheat/interpass/PWHT, and
-technique with peening. Diameter and flow may be ranges (`.045" to 1/16"`, `30–40`);
+line), backgouging, base and welded-to metals, filler with spec and manufacturer (picking
+a classification fills in its AWS spec; a typed one gets it by pattern), gas with nozzle
+and contact-tip-to-work, electrical with power source and max heat input, supplemental
+filler, preheat/interpass/PWHT, and technique with peening.
+
+A **PQR** is the same editor with `kind:"PQR"`: start one from a WPS ("Qualify this procedure" on the WPS view —
+`pqrFromWps` copies the procedure over as run) or from scratch, then add the welder, the
+date, per-pass readings, and test results. A WPS "qualified by PQR" picks the PQR from
+the list. Both live under Procedures. Diameter and flow may be ranges (`.045" to 1/16"`, `30–40`);
 `prefillFromWps` only pre-picks a value that matches a tile exactly, so a range leaves
 the welder to pick the one on the machine. When a ticket names a WPS,
 the welder's intake shows the card at the top of the "What are you welding?" step, and
@@ -260,7 +306,9 @@ you set up. Set `S.screen` and call `render()` again.
   invite flow yet. Adding a coworker to the *same* company means inserting their profile
   row by hand. Separate companies just sign up separately.
 - **No welder continuity or expiration tracking** (D1.1 six-month continuity, requal).
-- **No photos.**
+- **No photos.** The WPQR has the photo box; nothing fills it.
+- **Only D1.1 ranges are drafted.** D1.3 / D1.4 records print blank ranges.
+- **Inspection reports have no photos and no per-item sketches.**
 - **No archiving of the PDF.** It goes to the share sheet and that's the copy.
 - **Offline is read-only-ish.** The cache lets the console open without signal, and
   writes go to the cache, but a write made offline is not queued for later — it's lost
@@ -275,6 +323,11 @@ you set up. Set `S.screen` and call `render()` again.
 3. **Trim the option lists** to what the shops actually stock.
 4. **Multi-process tickets** for combo qualifications.
 5. **Custom domain** for the hosted app.
+6. **A designed form as the PDF template.** The plan: the inspector lays the WPQR / WPS
+   out in Sheets, exports a blank PDF, and the app fills values into that PDF at
+   measured coordinates (pdf-lib) instead of redrawing the form — pixel-exact to the
+   design, with the logo box and letterhead lines left blank for each org to fill from
+   Settings.
 
 ---
 

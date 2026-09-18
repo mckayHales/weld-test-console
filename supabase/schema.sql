@@ -8,8 +8,9 @@
 drop function if exists submit_ticket(text, jsonb);
 drop function if exists get_ticket(text);
 drop function if exists create_org(text, text, text, text, text);
-drop table if exists tickets   cascade;
-drop table if exists records   cascade;
+drop table if exists tickets     cascade;
+drop table if exists inspections cascade;
+drop table if exists records     cascade;
 drop table if exists wps       cascade;
 drop table if exists companies cascade;
 drop table if exists profiles  cascade;
@@ -27,6 +28,7 @@ create table orgs (
   city        text not null default '',
   address     text not null default '',   -- letterhead line on printed records
   phone       text not null default '',
+  logo        text,                       -- small PNG data URL for the letterhead
   code        text not null default 'AWS D1.1:2025',
   created_at  timestamptz not null default now()
 );
@@ -75,6 +77,16 @@ create table records (
   primary key (org_id, id)
 );
 
+-- Visual inspection reports: job-site inspections, separate from
+-- welder qualification. Same shape as the other data tables.
+create table inspections (
+  org_id      uuid not null references orgs on delete cascade,
+  id          text not null,
+  data        jsonb not null default '{}',
+  updated_at  timestamptz not null default now(),
+  primary key (org_id, id)
+);
+
 -- A ticket is what the inspector texts to a welder. Its id is the
 -- whole secret: long, random, and the only thing the welder's link
 -- carries. It snapshots the WPS and the shop header at creation so the
@@ -102,6 +114,7 @@ alter table profiles  enable row level security;
 alter table companies enable row level security;
 alter table wps       enable row level security;
 alter table records   enable row level security;
+alter table inspections enable row level security;
 alter table tickets   enable row level security;
 
 create policy "own org"     on orgs     for select to authenticated using (id = my_org());
@@ -113,6 +126,7 @@ create policy "edit profile" on profiles for update to authenticated using (user
 create policy "org rows" on companies for all to authenticated using (org_id = my_org()) with check (org_id = my_org());
 create policy "org rows" on wps       for all to authenticated using (org_id = my_org()) with check (org_id = my_org());
 create policy "org rows" on records   for all to authenticated using (org_id = my_org()) with check (org_id = my_org());
+create policy "org rows" on inspections for all to authenticated using (org_id = my_org()) with check (org_id = my_org());
 create policy "org rows" on tickets   for all to authenticated using (org_id = my_org()) with check (org_id = my_org());
 
 -- ---------------------------------------------------------------
