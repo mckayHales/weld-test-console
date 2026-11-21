@@ -166,7 +166,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.12";
+var VERSION="2026-11-21.13";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -743,18 +743,28 @@ function starterWps(){
   var joint={ weldType:"CJP groove", jointType:"Butt", jointDesig:"B-U2a", groove:"Single V", angle:"45°", rootOpening:'1/4"', rootFace:"0",
     backing:"With backing", backingMat:"Steel", backgouge:"None", base:"A36", baseTo:"A36", thickRange:'1/8" to 3/4"', diaRange:"Plate",
     positions:"All", progression:"Uphill", bead:"Either", passes:"Multiple pass", cleaning:"Chip, wire brush, grind", peening:"None",
-    preheat:"32 °F min", basis:"Prequalified", rev:"0", date:today(), starter:true };
+    preheat:"32 °F min", pwhtTemp:"None", basis:"Prequalified", rev:"0", date:today(), starter:true };
   return [
     Object.assign({ id:"starter-smaw-38", no:"WPS-SMAW-38", title:'3/8" plate test, single V with backing — stick (E7018)',
       process:"SMAW", filler:"E7018", fillerSpec:"A5.1", fillerDia:'1/8"', polarity:"DCEP", powerSource:"CC",
       amps:"110–140", volts:"21–25", travel:"3–6", gas:"", notes:"Starter WPS. Check every value against the shop's own WPS before a welder tests to it." }, joint),
     Object.assign({ id:"starter-fcaw-38", no:"WPS-FCAW-38", title:'3/8" plate test, single V with backing — dual shield (E71T-1C/1M)',
       process:"FCAW-G", filler:"E71T-1C", fillerSpec:"A5.20", fillerDia:'.045"', gas:"75% Ar / 25% CO2", flow:"35", nozzle:'5/8"', ctwd:'3/4" to 1"',
-      polarity:"DCEP", powerSource:"CV", amps:"160–200", volts:"22–25", wfs:"250–350", travel:"5–9",
+      polarity:"DCEP", powerSource:"CV", amps:"170–200", volts:"22–25", wfs:"270–330", travel:"6–9",
       notes:"Starter WPS. E71T-1C wire run on 75/25 should be dual classified -1C/-1M — check the box label. Check every value against the shop's own WPS before a welder tests to it." }, joint)
   ];
 }
-function addStarters(){ starterWps().forEach(function(p){ if(!getRow("wps",p.id)) putRow("wps",p); }); raw.set(ns("starters"),"1"); }
+function addStarters(){ starterWps().forEach(function(p){ if(!getRow("wps",p.id)) putRow("wps",p); }); raw.set(ns("starters"),"2"); }
+/* The first starters had ranges wider than D1.1 Table 5.5 allows. Bring a
+   stored starter in line — only the values nobody has changed. */
+function fixStarters(){
+  if(raw.get(ns("starters"))!="1") return;
+  var was={ amps:"160–200", wfs:"250–350", travel:"5–9" }, now=starterWps()[1];
+  var f=getRow("wps","starter-fcaw-38");
+  if(f){ Object.keys(was).forEach(function(k){ if(f[k]==was[k]) f[k]=now[k]; }); if(!f.pwhtTemp) f.pwhtTemp="None"; putRow("wps",f); }
+  var sm=getRow("wps","starter-smaw-38"); if(sm&&!sm.pwhtTemp){ sm.pwhtTemp="None"; putRow("wps",sm); }
+  raw.set(ns("starters"),"2");
+}
 function startersMissing(){ return starterWps().some(function(p){ return !getRow("wps",p.id); }); }
 
 /* ---------- sample data for testing ---------- */
@@ -1203,7 +1213,8 @@ VIEWS.wpslist = function(){
   if(!ps.length) h += '<div class="empty">No WPS on file yet.</div>';
   ps.forEach(function(p){
     h += swipe("wps",p.id,'<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(p.no)+(p.rev?" Rev "+esc(p.rev):"")+'</b>'
-      + '<span>'+esc([coName(p.companyId),p.process,p.base,p.positions,p.thickRange].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>');
+      + '<span>'+esc([coName(p.companyId),p.process,p.base,p.positions,p.thickRange].filter(Boolean).join(" · "))+'</span></span>'
+      + (wpsChecks(p).length?'<span class="pill wait">Check</span>':'<span class="go">'+CHEV+'</span>')+'</button>');
   });
   h += '<h2 class="step" style="margin-top:22px">PQR</h2><p class="hint">Procedure qualification records — the test that proves a WPS. Start one from a WPS, or from scratch.</p>';
   if(!qs.length) h += '<div class="empty">No PQRs on file.</div>';
@@ -1246,6 +1257,71 @@ function pqrFromWps(p){
   d.kind="PQR"; d.no=""; d.rev="0"; d.date=today(); d.wpsQualId=p.id; d.wpsQual=wpsLabel(p);
   d.testedBy=CFG.inspector; d.results=defaultResults(); d.passes=[{no:"1",process:p.process||"",size:p.fillerDia||"",polarity:p.polarity||"",amps:"",volts:"",wfs:"",travel:""}];
   return d;
+}
+
+/* ---------- D1.1 Clause 5: is this prequalified WPS within the rules? ----------
+   Table 5.5 (D1.1:2025) lists what a prequalified WPS must state and how
+   far the welding variables may range. 5.2.1: a range on the WPS has to
+   sit inside the tolerance around one value, so 160–200 A is ±11% about
+   180 — wider than the ±10% allowed. The check only speaks when something
+   is off, and every finding is advice: the inspector decides. */
+var TOL55={ amps:{t:.10,label:"Amperage",item:22}, volts:{t:.15,label:"Voltage",item:23}, wfs:{t:.10,label:"Wire feed speed",item:24},
+  travel:{t:.25,label:"Travel speed",item:25} };
+function numRange(v){
+  var m=String(v||"").replace(/,/g,"").match(/(\d+(?:\.\d+)?)\s*(?:–|—|-|to)\s*(\d+(?:\.\d+)?)/);
+  if(m){ var a=+m[1], b=+m[2]; return { lo:Math.min(a,b), hi:Math.max(a,b), dec:/\./.test(m[1]+m[2]) }; }
+  var one=String(v||"").match(/^\s*(\d+(?:\.\d+)?)\s*$/); return one ? { lo:+one[1], hi:+one[1], dec:/\./.test(one[1]) } : null;
+}
+function fmtNum(v,dec){ return dec ? (Math.round(v*10)/10).toString() : String(Math.round(v)); }
+/* The widest range Table 5.5 allows about this range's middle, rounded
+   inward so it stays inside. */
+function tolFix(r,t){
+  var mid=(r.lo+r.hi)/2, step=r.dec?.1:1;
+  var lo=Math.ceil(mid*(1-t)/step)*step, hi=Math.floor(mid*(1+t)/step)*step;
+  return fmtNum(lo,r.dec)+"–"+fmtNum(hi,r.dec);
+}
+function wireOrGas(proc){ return proc=="GMAW"||proc=="FCAW-G"||proc=="FCAW-S"; }
+function wpsChecks(p){
+  if(isPqr(p)||p.basis!="Prequalified"||!isD11(p.code||CFG.code)) return [];
+  var out=[], proc=p.process, wire=wireOrGas(proc), gas=proc=="GMAW"||proc=="FCAW-G";
+  var groove=(p.weldType||"CJP groove")!="Fillet";
+  // Ranges, Table 5.5 items 22–26.
+  Object.keys(TOL55).forEach(function(k){
+    var T=TOL55[k]; if(!wire) return;   // 22–25 apply to SAW, FCAW, GMAW
+    var r=numRange(p[k]); if(!r||r.lo==r.hi) return;
+    var mid=(r.lo+r.hi)/2, half=(r.hi-r.lo)/2/mid;
+    if(half>T.t+1e-9) out.push({ msg:T.label+" "+p[k]+" is ±"+Math.round(half*100)+"% about "+fmtNum(mid,r.dec)+". Table 5.5 ("+T.item+") allows ±"+Math.round(T.t*100)+"%.",
+      fix:{ key:k, val:tolFix(r,T.t) } });
+  });
+  if(gas){ var g=numRange(p.flow);
+    if(g&&g.lo!=g.hi&&g.hi>g.lo*2+1e-9) out.push({ msg:"Gas flow "+p.flow+" is wider than Table 5.5 (26) allows: +50% / −25% about one value.", fix:{ key:"flow", val:fmtNum(g.lo,g.dec)+"–"+fmtNum(g.lo*2,g.dec) } }); }
+  // What a prequalified WPS has to say, Table 5.5 items 1–21.
+  var need=[["process","welding process"],["positions","positions"],["preheat","preheat (category, Table 5.11)"],
+    ["filler","filler classification"],["fillerDia","electrode diameter"],["polarity","current and polarity"],["travel","travel speed"],
+    ["weldType","weld type"],["pwhtTemp","PWHT (write None if none)"]];
+  if(wire) need.push(["amps","amperage"],["volts","voltage"],["wfs","wire feed speed"]);
+  if(proc=="GMAW") need.push(["transfer","mode of transfer"]);
+  if(gas) need.push(["gas","shielding gas"],["flow","gas flow rate"]);
+  if(groove) need.push(["groove","groove type"],["angle","groove angle"],["rootOpening","root opening"]);
+  var miss=need.filter(function(n){ return !String(p[n[0]]||"").trim(); }).map(function(n){ return n[1]; });
+  if(miss.length) out.push({ msg:"Table 5.5 says a prequalified WPS must state: "+miss.join(", ")+"." });
+  if(p.base&&!METAL_GROUP[p.base]) out.push({ msg:"Base metal "+p.base+" must be one listed in Table 5.6 (5.3). Check it's there." });
+  // 5.8.1.1 — vertical is uphill, except tubulars.
+  var tub=/pipe|tube|tubular|"/i.test(p.diaRange||"")&&!/^plate$/i.test(p.diaRange||"");
+  if(p.progression=="Downhill"&&/All|V/.test(p.positions||"")&&!tub) out.push({ msg:"Vertical welding on a prequalified WPS must progress upward (5.8.1.1). Downhill is only for undercut repair, or tubulars.", fix:{ key:"progression", val:"Uphill" } });
+  // 5.4.1.2 / 5.4.1.3 — one-sided CJP.
+  if((p.weldType||"CJP groove")=="CJP groove"){
+    var gouged=p.backgouge&&p.backgouge!="None";
+    if(p.backing=="No backing"&&!gouged) out.push({ msg:"A CJP groove welded from one side needs steel backing to be prequalified (5.4.1.2) — or backgouge and backweld." });
+    if(p.backing=="With backing"&&p.backingMat&&p.backingMat!="Steel"&&!gouged) out.push({ msg:"Backing other than steel is prequalified only when it's removed and the root is backgouged and backwelded (5.4.1.3)." });
+  }
+  return out;
+}
+function wpsCheckCard(p){
+  var c=wpsChecks(p); if(!c.length) return "";
+  return '<div class="flag"><b>Not prequalified as written — D1.1 Clause 5</b><ul style="margin:8px 0 0;padding-left:18px">'
+    +c.map(function(x,i){ return '<li style="margin:0 0 6px">'+esc(x.msg)+(x.fix?' <button class="mini" data-act="wpsfix" data-i="'+i+'" style="padding:0">Make it '+esc(x.fix.val)+'</button>':'')+'</li>'; }).join("")
+    +'</ul></div>';
 }
 
 /* WPS option lists. Tiles for what's usually one of a few values; a
@@ -1356,6 +1432,7 @@ VIEWS.wpsedit = function(){
     }
   }
   h += dfield("Title / description","title","text","CJP butt, 45° single V, backed");
+  h += wpsCheckCard(d);
 
   h += '<div class="card"><h3>Joint design</h3>'
     + '<div class="field"><label>Weld type</label>'+dtiles("weldType",WPS_WELD)+'</div>'
@@ -2710,6 +2787,7 @@ document.addEventListener("click", function(e){
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
   else if(a=="addstarters"){ addStarters(); render({keepScroll:true}); }
+  else if(a=="wpsfix"){ var fx=(wpsChecks(S.draft)[+el.dataset.i]||{}).fix; if(fx){ S.draft[fx.key]=fx.val; render({keepScroll:true}); } }
   else if(a=="wpsforco") go("wpscopy");
   else if(a=="newwpsco"){ var nc=getRow("companies",S.coId); go("wpsedit",{draft:{basis:"Prequalified",companyId:S.coId,contact:nc&&nc.contact||"",date:today()}}); }
   else if(a=="copywps"){ var src=wpsById(el.dataset.wpsId), co=getRow("companies",S.coId); if(src&&co){ S.screen="wpsedit"; S.draft=wpsCopyFor(src,co); render(); } }
@@ -3047,6 +3125,7 @@ document.addEventListener("change", function(e){
   if(t.id=="impfile"&&t.files&&t.files[0]){ var fr=new FileReader(); fr.onload=function(){ if(!importBackup(readBackup(fr.result))) document.getElementById("imperr").style.display="block"; }; fr.readAsText(t.files[0]); return; }
   if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; logoColor(d).then(function(col){ S.draft.lhLogoColor=col; render({keepScroll:true}); }); }); return; }
   if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
+  else if(S.screen=="wpsedit"&&t.dataset.d&&/^(amps|volts|wfs|travel|flow|preheat|base|positions|pwhtTemp|filler|fillerDia|gas|angle|rootOpening)$/.test(t.dataset.d)) render({keepScroll:true});
 });
 /* Shrink a chosen image to a small PNG data URL for the letterhead. */
 function readLogo(file, done){
@@ -3154,7 +3233,7 @@ function refreshBar(){
     S.landed={ link:link }; S.screen="landed"; render(); return;
   }
   if(!setUp()){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
-  if(!raw.get(ns("starters"))) addStarters();
+  if(!raw.get(ns("starters"))) addStarters(); else fixStarters();
   myKeys().catch(function(){});
   setTimeout(checkForUpdate,1500);
   fillLogoColors();

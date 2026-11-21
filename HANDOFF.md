@@ -390,12 +390,39 @@ pickers label each one with its owner (`wpsPick()`) and list the client's own fi
 (`wpsFor(coId)`). A new inspection report can fill client, contact and phone from a
 company (`#inspco`).
 
+### The Clause 5 check on a prequalified WPS
+
+From D1.1:2025 Clause 5 (photos of 5.2, 5.3, 5.4.1, 5.8, Table 5.5 supplied by McKay):
+5.2.1 says the Table 5.5 variables shall be on the written WPS and, where they have
+limits, within them. `wpsChecks(p)` runs on WPSs with basis "Prequalified" under a D1.1
+edition and returns findings; `wpsCheckCard()` shows them at the top of the editor only
+when there are any, and Procedures marks such a WPS **Check**.
+
+```
+Table 5.5 tolerances   amps ±10% (22) · volts ±15% (23) · WFS ±10% (24) · travel ±25% (25)
+                        — SAW/FCAW/GMAW only. A range lo–hi fits when (hi−lo)/2 ≤ t × mid.
+                        gas flow (26) +50% / −25% about one value → hi ≤ 2 × lo.
+must be stated         Table 5.5 items 1–21: process, positions, preheat, filler, diameter,
+                        current/polarity, travel, weld type, PWHT; amps/volts/WFS on wire;
+                        transfer on GMAW; gas and flow on GMAW/FCAW-G; groove, angle, root.
+5.3                    base metal in Table 5.6 (the app only knows the few in METAL_GROUP,
+                        so anything else is "check it's there").
+5.8.1.1                vertical progression upward, except undercut repair and tubulars.
+5.4.1.2 / 5.4.1.3      one-sided CJP needs steel backing, or backgouge and backweld.
+```
+
+A range finding offers **Make it …**: the widest range Table 5.5 allows about the same
+middle, rounded inward (`tolFix()`). 5.4.1.5 lets SMAW groove details (B-U2a, all
+positions) be used for GMAW/FCAW, so the dual-shield starter's "All" positions stand.
+PQR-qualified WPSs are judged against their PQR (Clause 6), not this.
+
 ### Starter procedures
 
 `starterWps()`: WPS-SMAW-38 (E7018 1/8", DCEP, CC) and WPS-FCAW-38 (E71T-1C .045",
-75/25, DCEP, CV), both 3/8" A36 plate, single V, 45°, 1/4" root, steel backing, B-U2a,
+75/25, DCEP, CV; 170–200 A, 22–25 V, 270–330 ipm, 6–9 ipm travel — inside Table 5.5), both 3/8" A36 plate, single V, 45°, 1/4" root, steel backing, B-U2a,
 uphill. `addStarters()` puts them in the library once (flag `wq.local.starters`) on first
-run; deleted ones stay deleted, and Procedures offers to put them back. They carry
+run (flag "2"; `fixStarters()` brings a stored first-version starter's too-wide ranges in
+line, touching only values nobody changed); deleted ones stay deleted, and Procedures offers to put them back. They carry
 `starter:true` and a note to check them against the shop's own WPS — starting points,
 not qualified procedures.
 
