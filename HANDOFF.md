@@ -404,6 +404,18 @@ submit button in the body as well.
 
 **Silent returns.** Failed validation must show a message, never just return.
 
+**Phone and address fields format themselves.** Every `type="tel"` input runs
+`reformat(t, e, fmtPhone)` on input: 801-555-0142, a leading 1 dropped, extra digits as
+" x123"; the caret goes back after the same number of digits, and backspacing over a dash
+deletes the digit before it (otherwise the dash comes straight back). Phones stored
+before this print through `prPhone()`, which only reshapes a value that is clearly a
+number. Addresses are street / city / state / ZIP fields (`addrFields(prefix, label)`),
+kept on the draft under a prefix (`a` settings, `lha` a client's letterhead, `ja` an
+inspection's job site); `addrCompose()` writes the one-line forms the PDFs print
+("1680 W 1600 S, Springville, UT 84663") into the old fields (`ADDR` says which), and
+`parseAddress()` splits an older one-line address into parts the first time a form
+opens. ZIP formats as 84663 or 84663-1234.
+
 **iOS date inputs have a built-in minimum width.** In a two-up `.row` the Date box pushed
 into the field beside it on the WPS editor. Fixed with `min-width:0` on row children and
 `-webkit-appearance:none` on `input[type=date]`; Chrome never showed it.

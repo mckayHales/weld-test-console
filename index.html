@@ -165,7 +165,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.7";
+var VERSION="2026-11-21.8";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -311,14 +311,14 @@ function carryOver(){
    which one to use. The certification block always names the org as
    the tester, whichever letterhead is on top. */
 var BRAND_RED="#C8102E";
-function orgBrand(){ return { name:CFG.shop, address:CFG.address||CFG.city, phone:CFG.phone, logo:CFG.logo, color:BRAND_RED, own:true }; }
+function orgBrand(){ return { name:CFG.shop, address:CFG.address||CFG.city, phone:prPhone(CFG.phone), logo:CFG.logo, color:BRAND_RED, own:true }; }
 /* A client's name prints in the color they picked, else the main color
    of their logo, else black — never the inspection company's red. */
 /* The color box used to start on the inspection company's red, so a
    saved red that is exactly that default was never really picked. */
 function pickedColor(c){ var v=String(c.lhColor||""); return v&&v.toLowerCase()!=BRAND_RED.toLowerCase() ? v : ""; }
 function companyColor(c){ return pickedColor(c) || c.lhLogoColor || "#000000"; }
-function companyBrand(c){ return { name:c.lhName||c.name, address:c.lhAddress||"", phone:c.lhPhone||c.phone||"", logo:c.logo||"", color:companyColor(c), own:false }; }
+function companyBrand(c){ return { name:c.lhName||c.name, address:c.lhAddress||"", phone:prPhone(c.lhPhone||c.phone||""), logo:c.logo||"", color:companyColor(c), own:false }; }
 /* The main color in a logo: the commonest saturated color, ignoring
    white, black and greys. "" when the logo has hardly any color. */
 function logoColor(dataUrl){
@@ -452,6 +452,90 @@ var CHEV='<svg width="9" height="15" viewBox="0 0 9 15" fill="none" stroke="curr
    tomorrow every evening in Utah. */
 function ymd(d){ var z=function(n){return (n<10?"0":"")+n}; return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
 function today(){ return ymd(new Date()); }
+/* Phone numbers the way the shop writes them: 801-555-0142, a leading 1
+   dropped, anything past ten digits as an extension. */
+function fmtPhone(v){
+  var d=String(v||"").replace(/\D/g,""); if(d.length==11&&d.charAt(0)=="1") d=d.slice(1);
+  var x=""; if(d.length>10){ x=" x"+d.slice(10); d=d.slice(0,10); }
+  if(d.length<4) return d+x;
+  if(d.length<7) return d.slice(0,3)+"-"+d.slice(3)+x;
+  return d.slice(0,3)+"-"+d.slice(3,6)+"-"+d.slice(6)+x;
+}
+/* For printing a phone typed before the formatting existed: only a value
+   that is clearly a number gets reshaped; "see office" prints as typed. */
+function prPhone(v){ var t=String(v||""), n=t.replace(/\D/g,"").length; return n>=10&&!/[a-wyz]/i.test(t.replace(/ext/i,"")) ? fmtPhone(t) : t; }
+function fmtZip(v){ var d=String(v||"").replace(/\D/g,"").slice(0,9); return d.length>5 ? d.slice(0,5)+"-"+d.slice(5) : d; }
+/* Reformat a field as it's typed and put the caret back after the same
+   number of digits. Backspacing over a dash deletes the digit before it,
+   or the dash would just come back. */
+function reformat(t,e,fn){
+  var old=t.dataset.prev||"", v=t.value, pos=t.selectionStart==null?v.length:t.selectionStart;
+  if(e&&e.inputType=="deleteContentBackward"&&v.replace(/\D/g,"")==old.replace(/\D/g,"")&&v.length<old.length){
+    var before=v.slice(0,pos).replace(/\D/g,"").length;
+    var digits=v.replace(/\D/g,""); digits=digits.slice(0,Math.max(0,before-1))+digits.slice(before);
+    v=digits; pos=Math.max(0,before-1);
+  } else pos=v.slice(0,pos).replace(/\D/g,"").length;
+  var out=fn(v); t.value=out; t.dataset.prev=out;
+  var i=0, seen=0; while(i<out.length&&seen<pos){ if(/\d/.test(out.charAt(i))) seen++; i++; }
+  try{ if(document.activeElement===t) t.setSelectionRange(i,i); }catch(er){}
+}
+
+/* ---------- addresses ----------
+   Street, city, state and ZIP as their own fields; the one-line forms the
+   PDFs print are put together from them: "1680 W 1600 S, Springville,
+   UT 84663". Each address block names where its parts live (a prefix on
+   the draft) and which old fields it fills. Older single-line addresses
+   are split into parts the first time the form opens. */
+var STATES=["AL","AK","AZ","AR","CA","CO","CT","DE","DC","FL","GA","HI","ID","IL","IN","IA","KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ","NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT","VA","WA","WV","WI","WY"];
+var STATE_NAMES={alabama:"AL",alaska:"AK",arizona:"AZ",arkansas:"AR",california:"CA",colorado:"CO",connecticut:"CT",delaware:"DE",florida:"FL",georgia:"GA",hawaii:"HI",idaho:"ID",illinois:"IL",indiana:"IN",iowa:"IA",kansas:"KS",kentucky:"KY",louisiana:"LA",maine:"ME",maryland:"MD",massachusetts:"MA",michigan:"MI",minnesota:"MN",mississippi:"MS",missouri:"MO",montana:"MT",nebraska:"NE",nevada:"NV","new hampshire":"NH","new jersey":"NJ","new mexico":"NM","new york":"NY","north carolina":"NC","north dakota":"ND",ohio:"OH",oklahoma:"OK",oregon:"OR",pennsylvania:"PA","rhode island":"RI","south carolina":"SC","south dakota":"SD",tennessee:"TN",texas:"TX",utah:"UT",vermont:"VT",virginia:"VA",washington:"WA","west virginia":"WV",wisconsin:"WI",wyoming:"WY"};
+var ADDR={
+  a:  { line:"address", cityLine:"city" },    // settings: the shop's letterhead
+  lha:{ line:"lhAddress" },                    // a client's letterhead
+  ja: { street:"address", line2:"address2" }   // an inspection report's job site
+};
+function cityStateZip(c,st,z){ return [c,[st,z].filter(Boolean).join(" ")].filter(Boolean).join(", "); }
+/* Best-effort split of "1680 W 1600 S - Springville Utah 84663" or
+   "Street, City, ST ZIP" into parts. */
+function parseAddress(str){
+  var out={Street:"",City:"",State:"",Zip:""}, t=String(str||"").trim(); if(!t) return out;
+  var z=t.match(/\b(\d{5})(?:-(\d{4}))?\s*$/); if(z){ out.Zip=z[1]+(z[2]?"-"+z[2]:""); t=t.slice(0,z.index).trim().replace(/,$/,""); }
+  var low=t.toLowerCase(), names=Object.keys(STATE_NAMES).sort(function(a,b){return b.length-a.length});
+  for(var i=0;i<names.length;i++){ var n=names[i]; if(low.slice(-n.length)==n&&(low.length==n.length||/[\s,]/.test(low.charAt(low.length-n.length-1)))){ out.State=STATE_NAMES[n]; t=t.slice(0,t.length-n.length).trim(); break; } }
+  if(!out.State){ var m=t.match(/[\s,]([A-Za-z]{2})$/); if(m&&STATES.indexOf(m[1].toUpperCase())>-1){ out.State=m[1].toUpperCase(); t=t.slice(0,m.index).trim(); } }
+  t=t.replace(/[,\-–]\s*$/,"").trim();
+  var parts=t.split(/\s*(?:,|\s[-–]\s)\s*/).filter(Boolean);
+  if(parts.length>=2){ out.City=parts.pop(); out.Street=parts.join(", "); }
+  else if(out.State&&!/\d/.test(t)) out.City=t; else out.Street=t;
+  return out;
+}
+function addrInit(pre){
+  var d=S.draft, cf=ADDR[pre]; if(d[pre+"Init"]) return;
+  d[pre+"Init"]=1;
+  if(d[pre+"Street"]||d[pre+"City"]||d[pre+"Zip"]) return;
+  var parts;
+  if(cf.street){ parts=parseAddress(d[cf.line2]||""); parts.Street=d[cf.street]||""; }
+  else { parts=parseAddress(d[cf.line]||""); if(cf.cityLine&&!parts.City&&d[cf.cityLine]){ var c=parseAddress(d[cf.cityLine]); parts.City=c.City||c.Street; parts.State=parts.State||c.State; } }
+  ["Street","City","State","Zip"].forEach(function(k){ d[pre+k]=parts[k]||""; });
+  if(!d[pre+"State"]) d[pre+"State"]=(parseAddress(CFG.city).State)||"UT";
+}
+/* Put the one-line forms back together after any part changes. */
+function addrCompose(pre){
+  var d=S.draft, cf=ADDR[pre], st=(d[pre+"Street"]||"").trim(), c=(d[pre+"City"]||"").trim(), state=d[pre+"State"]||"", z=d[pre+"Zip"]||"";
+  var line2=cityStateZip(c, (c||z)?state:"", z);
+  if(cf.street){ d[cf.street]=st; d[cf.line2]=line2; }
+  else d[cf.line]=[st,line2].filter(Boolean).join(", ");
+  if(cf.cityLine) d[cf.cityLine]=cityStateZip(c,c?state:"","");
+}
+function addrFields(pre,label){
+  addrInit(pre);
+  var d=S.draft, v=function(k){ return esc(d[pre+k]||""); };
+  return '<div class="field"><label>'+esc(label)+'</label><input type="text" data-ad="'+pre+':Street" value="'+v("Street")+'" placeholder="Street address" autocapitalize="words" autocomplete="street-address"></div>'
+    +'<div class="row"><div class="field" style="flex:2.2"><label>City</label><input type="text" data-ad="'+pre+':City" value="'+v("City")+'" autocapitalize="words" autocomplete="address-level2"></div>'
+    +'<div class="field" style="flex:1"><label>State</label><select data-ad="'+pre+':State" autocomplete="address-level1"><option value=""></option>'
+    +STATES.map(function(x){ return '<option '+(d[pre+"State"]==x?"selected":"")+'>'+x+'</option>'; }).join("")+'</select></div>'
+    +'<div class="field" style="flex:1.5"><label>ZIP</label><input type="text" inputmode="numeric" data-ad="'+pre+':Zip" value="'+v("Zip")+'" autocomplete="postal-code" placeholder="84663"></div></div>';
+}
+
 function isVertical(pos){ return /3G|5G|6G|3F/.test(pos||""); }
 function fmtDate(s){ if(!s)return ""; var p=String(s).split("-"); return p.length==3?p[1]+"/"+p[2]+"/"+p[0]:s; }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
@@ -960,8 +1044,7 @@ VIEWS.inspedit = function(){
   h+='<div class="card"><h3>Job</h3>'
     +dfield("Project name","project","text","e.g. 6777 White Dove Way")
     +dfield("Client","client","text","Who hired you")
-    +dfield("Address","address","text","Street")
-    +dfield("City, state","address2","text","e.g. Park City, UT")
+    +addrFields("ja","Job site address")
     +'<div class="row">'+dfield("Client contact","clientContact","text","Name")+dfield("Their phone","phone","tel","")+'</div>'
     +'<div class="row" style="margin-bottom:-18px">'+dfield("Site contact","siteContact","text","e.g. Jase Lawson - Foreman")+dfield("Site phone","sitePhone","tel","")+'</div></div>';
   h+='<div class="card"><h3>Inspection</h3>'
@@ -1018,13 +1101,13 @@ VIEWS.editco = function(){
   var h = nav(d.id?"Edit company":"New company");
   h += '<div class="field"><label>Company name <span class="req">*</span></label><input type="text" data-d="name" value="'+esc(d.name||"")+'"></div>'
     + '<div class="field"><label>Contact</label><input type="text" data-d="contact" value="'+esc(d.contact||"")+'"></div>'
-    + '<div class="field"><label>Phone</label><input type="tel" data-d="phone" value="'+esc(d.phone||"")+'"></div>'
+    + '<div class="field"><label>Phone</label><input type="tel" autocomplete="tel" data-d="phone" value="'+esc(prPhone(d.phone))+'" placeholder="801-555-0142"></div>'
     + '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>';
   h += '<div class="card"><h3>Their letterhead</h3>'
     + '<p style="margin:0 0 12px;font-size:.86rem;color:var(--muted)">Some clients want their records in their own binder under their own name. Set that up here; the certification block still says who tested.</p>'
     + '<div class="field"><label>Print their records on</label>'+dtiles("letterhead",[{v:"org",d:CFG.shop||"our letterhead"},{v:"company",d:"their own"}])+'</div>'
     + '<div class="field"><label>Name on the letterhead</label><input type="text" data-d="lhName" value="'+esc(d.lhName||"")+'" placeholder="'+esc(d.name||"Same as the company name")+'"></div>'
-    + '<div class="row">'+dfield("Address","lhAddress","text","Street, City, State")+dfield("Phone","lhPhone","tel","")+'</div>'
+    + addrFields("lha","Address on their letterhead")+dfield("Phone on their letterhead","lhPhone","tel","801-555-0142")
     + '<div class="row"><div class="field" style="margin:0"><label>Name color</label><input type="color" data-d="lhColor" value="'+esc(companyColor(d))+'" style="height:50px;padding:4px">'
     + '<p style="margin:6px 0 0;font-size:.8rem;color:var(--muted)">'+(pickedColor(d) ? 'You picked this. <button class="mini" data-act="lhcolorauto" style="padding:0">Use the logo\'s color</button>' : d.lhLogoColor ? 'From their logo.' : d.logo ? 'Their logo has no color, so black.' : 'Black until they have a logo.')+'</p></div>'
     + '<div class="field" style="margin:0"><label>Logo</label>'
@@ -1114,7 +1197,8 @@ function dtext(key,ph,label){
   return '<input type="text" data-d="'+key+'" value="'+esc(S.draft[key]||"")+'" placeholder="'+esc(ph||"")+'" style="margin-top:8px;font-size:15px;padding:10px 12px"'+(label?' aria-label="'+esc(label)+'"':'')+'>';
 }
 function dfield(label,key,type,ph){
-  return '<div class="field"><label>'+esc(label)+'</label><input type="'+(type||"text")+'" data-d="'+key+'" value="'+esc(S.draft[key]||"")+'" placeholder="'+esc(ph||"")+'"></div>';
+  var v=S.draft[key]||""; if(type=="tel") v=prPhone(v);
+  return '<div class="field"><label>'+esc(label)+'</label><input type="'+(type||"text")+'" data-d="'+key+'" value="'+esc(v)+'" placeholder="'+esc(ph||(type=="tel"?"801-555-0142":""))+'"'+(type=="tel"?' autocomplete="tel"':'')+'></div>';
 }
 function wireProc(p){ return p=="GMAW"||p=="FCAW-G"||p=="FCAW-S"; }
 /* Wire feed speed → amps on a CV machine. Points are [ipm, amps] read
@@ -1413,7 +1497,7 @@ function stepWelder(){
   return '<h2 class="step">Who is testing?</h2><p class="hint">This goes on the certificate exactly as you type it.</p>'
     + fld("Full legal name","name","text","First M. Last",1)
     + (w.companyId? '<div class="field"><label>Employer</label><input type="text" value="'+esc(w.company)+'" data-k="company"></div>' : fld("Employer","company","text","Company on the certificate"))
-    + '<div class="row"><div class="field"><label>Phone</label><input type="tel" value="'+esc(w.phone)+'" data-k="phone"></div>'
+    + '<div class="row"><div class="field"><label>Phone</label><input type="tel" autocomplete="tel" value="'+esc(prPhone(w.phone))+'" data-k="phone" placeholder="801-555-0142"></div>'
     + '<div class="field"><label>Test date</label><input type="date" value="'+esc(w.date)+'" data-k="date"></div></div>'
     + fld("Welder ID or stamp you use","stamp","text","Leave blank if we assign one");
 }
@@ -1770,9 +1854,8 @@ VIEWS.settings = function(){
   var c=S.draft, h = nav("Settings");
   h+='<p class="hint">Your inspection company. It is the letterhead on every WPQR and WPS you print, and the "test conducted by" line. The welder\'s employer is entered per record.</p>'
     +'<div class="field"><label>Inspection company</label><input type="text" data-c="shop" value="'+esc(c.shop)+'"></div>'
-    +'<div class="field"><label>City</label><input type="text" data-c="city" value="'+esc(c.city)+'"></div>'
-    +'<div class="field"><label>Street address, for the letterhead</label><input type="text" data-c="address" value="'+esc(c.address)+'" placeholder="Street address, City, State"></div>'
-    +'<div class="field"><label>Phone</label><input type="tel" data-c="phone" value="'+esc(c.phone)+'"></div>'
+    +addrFields("a","Address, for the letterhead")
+    +'<div class="field"><label>Phone</label><input type="tel" autocomplete="tel" data-c="phone" value="'+esc(c.phone)+'" placeholder="801-555-0142"></div>'
     +'<div class="field"><label>Logo, top-left of the letterhead</label>'
     +(c.logo?'<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px"><img src="'+c.logo+'" alt="" style="height:64px;background:#fff;border-radius:6px;padding:4px"><button class="mini" data-act="clearlogo">Remove</button></div>':'')
     +'<input type="file" id="logofile" accept="image/*" style="font-size:14px"></div>'
@@ -2202,8 +2285,8 @@ function inspectionPdf(i){
   // Job block: label right-aligned to the rule, value on the rule.
   d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
   var rows=[199.4,212.2,225.0,237.8,250.6,263.3];
-  var left=[["Project Name:",i.project],["Client:",i.client],["Address:",i.address],["",i.address2],["Contact:",i.clientContact],["",i.phone]];
-  var right=[["Inspector:",i.inspector||CFG.inspector],["",""],["Phone:",i.inspectorPhone||CFG.phone],["",""],["Site Contact:",i.siteContact],["Phone:",i.sitePhone]];
+  var left=[["Project Name:",i.project],["Client:",i.client],["Address:",i.address],["",i.address2],["Contact:",i.clientContact],["",prPhone(i.phone)]];
+  var right=[["Inspector:",i.inspector||CFG.inspector],["",""],["Phone:",prPhone(i.inspectorPhone||CFG.phone)],["",""],["Site Contact:",i.siteContact],["Phone:",prPhone(i.sitePhone)]];
   rows.forEach(function(y,k){
     if(left[k][0]) d.text(left[k][0],152.0,y,{align:"right"}); fitText(d,left[k][1],156.3,y,150,IR.FS);
     if(right[k][0]) d.text(right[k][0],409.4,y,{align:"right"}); fitText(d,right[k][1],413.7,y,110,IR.FS);
@@ -2832,6 +2915,7 @@ function showAmps(){
 }
 function onField(e){
   var t=e.target;
+  if(t.dataset.ad){ var ap=t.dataset.ad.split(":"); S.draft[ap[0]+ap[1]]=t.value; addrCompose(ap[0]); return; }
   if(t.dataset.k){ coupled(t.dataset.k, t.value); autosave(); if(t.dataset.k=="wfs"||t.dataset.k=="amps") showAmps(); if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.r){ S.r[t.dataset.r]=(t.type=="checkbox")?t.checked:t.value; autosave(); if(t.type=="checkbox"||t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); }
@@ -2841,6 +2925,8 @@ function onField(e){
 /* Safari on iOS fires only "change" for select and checkbox, never "input" */
 document.addEventListener("input", function(e){
   var t=e.target; if(t.tagName=="SELECT"||t.type=="checkbox") return;
+  if(t.type=="tel") reformat(t,e,fmtPhone);
+  else if(/:Zip$/.test(t.dataset.ad||"")) reformat(t,e,fmtZip);
   onField(e);
 });
 document.addEventListener("change", function(e){
