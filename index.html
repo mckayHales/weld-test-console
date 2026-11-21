@@ -142,6 +142,14 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .lrow{display:flex;gap:6px;margin-bottom:6px;align-items:center}
 .lrow input,.lrow select{padding:8px 6px;font-size:14px;min-width:0;flex:1}
 .pdfframe{width:100%;height:calc(100vh - 230px);height:calc(100dvh - 230px);min-height:420px;border:1px solid var(--line);border-radius:8px;background:#fff}
+/* The PDF preview: every page drawn to the screen's width, whole page in
+   view; zoom widens the pages and the box scrolls both ways. */
+.pdfzoom{display:flex;gap:6px;justify-content:center;margin:0 0 10px}
+.pdfzoom button{background:var(--panel2);border:1px solid var(--line);color:var(--paper);border-radius:6px;padding:7px 14px;font:inherit;font-size:.9rem;cursor:pointer}
+.pdfzoom button[aria-pressed=true]{border-color:var(--arc);color:var(--arc)}
+.pdfpages{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:8px;background:#55606b;padding:8px}
+.pdfpages canvas{display:block;background:#fff;margin:0 auto 8px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
+.pdfpages canvas:last-child{margin-bottom:0}
 
 </style>
 </head>
@@ -157,7 +165,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.3";
+var VERSION="2026-11-21.4";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -433,9 +441,21 @@ function nextReportNo(){
   var y=String(new Date().getFullYear()), n=inspections().filter(function(i){return (i.reportNo||"").indexOf(y)==0}).length+1;
   return y+"-"+(n<10?"00":n<100?"0":"")+n;
 }
-function blankInspection(){ return { reportNo:nextReportNo(), date:today(), project:"", client:"", clientContact:"", address:"", phone:"", vendor:"",
-  location:"", siteContact:"", inspector:CFG.inspector, cwi:CFG.cert, items:[], notes:"", result:"",
-  standards:"1. "+CFG.code+" Structural Welding Code\n2. Client / engineer standards or requirements\n3. Contract documents / specifications" }; }
+/* A report on the shop's form: job block, three yes/no questions, re-work,
+   remarks one per line. "phone" is the client contact's phone. */
+function blankInspection(){ return { reportNo:nextReportNo(), date:today(), project:"", client:"", clientContact:"", address:"", address2:"", phone:"",
+  siteContact:"", sitePhone:"", inspector:CFG.inspector, inspectorPhone:CFG.phone, cwi:CFG.cert, code:CFG.code,
+  meetsVisual:"", workmanship:"", rework:"", reworkNote:"", notes:"", items:[],
+  standards:"1. "+CFG.code.split(":")[0]+" Structural Welding Code - Steel: "+(CFG.code.split(":")[1]||"")+", API, ASTM, and ASME standards\n2. Client/Engineer standards or requirements\n3. Contract documents/specifications" }; }
+/* Where a report stands, for the list: the questions decide it; reports
+   from before the questions keep their old result. */
+function inspStatus(i){
+  if(i.meetsVisual=="No"||i.workmanship=="No") return {t:"Not acceptable",c:"no"};
+  if(i.rework=="Yes") return {t:"Re-work",c:"wait"};
+  if(i.meetsVisual=="Yes") return {t:"Acceptable",c:"ok"};
+  if(i.result) return {t:i.result,c:i.result=="Accepted"?"ok":i.result=="Rejected"?"no":"wait"};
+  return null;
+}
 function pqrAll(){ return wpsAll().filter(function(p){return p.kind=="PQR"}); }
 function isPqr(p){ return !!(p&&p.kind=="PQR"); }
 function docLabel(p){ return (isPqr(p)?"PQR ":"")+wpsLabel(p); }
@@ -554,14 +574,11 @@ function demoData(){
   return { co:co, ps:ps, recs:recs };
 }
 function sampleInspection(){
-  return Object.assign(blankInspection(), { reportNo:new Date().getFullYear()+"-001", project:"Hangar 3 mezzanine", client:"Wasatch Steel Fabrication",
-    clientContact:"Ray Alder", address:"1200 N Airport Rd, Provo, UT", phone:"801-555-0142", vendor:"Wasatch Steel Fabrication",
-    location:"Level 2, grid C-4 to C-7", siteContact:"Jared Moss", result:"Accepted with repairs",
-    items:[{item:"Beam B-12 to column C-4, flange CJP",finding:"Full fusion, profile acceptable",result:"Accept"},
-      {item:"Beam B-12 to column C-4, web fillets",finding:'5/16" fillets, size verified both sides',result:"Accept"},
-      {item:"Beam B-13 to column C-5, flange CJP",finding:'Undercut 1/16" deep x 2" long at toe, top flange',result:"Repair & re-inspect"},
-      {item:"Brace BR-3 gusset fillets",finding:"Profile and size acceptable",result:"Accept"}],
-    notes:"Repair at B-13 top flange marked in paint stick. Fabricator to grind and re-weld; re-inspect before decking." });
+  return Object.assign(blankInspection(), { reportNo:"079", project:"Hangar 3 mezzanine", client:"Wasatch Steel Fabrication",
+    clientContact:"Ray Alder", phone:"801-555-0142", address:"1200 N Airport Rd", address2:"Provo, UT",
+    siteContact:"Jared Moss - Foreman", sitePhone:"801-555-0199",
+    meetsVisual:"Yes", workmanship:"Yes", rework:"Yes", reworkNote:'Undercut 1/16" x 2" at B-13 top flange toe; grind and re-weld, re-inspect before decking.',
+    notes:"Met with Jared on site, inspected welds on beams, plates, and columns\nWelds completed with applicable 7018 low hydrogen electrodes\nWelds showed adequate fusion and appropriate leg length and size\nNo visible porosity, cracks, or overlap" });
 }
 function seedDemo(){
   var d=demoData();
@@ -807,31 +824,42 @@ VIEWS.inspections = function(){
   var h=nav("Inspection reports");
   if(!list.length) h+='<div class="empty">No reports yet.<br>A report is a job-site visual inspection: where you went, what you looked at, what passed.</div>';
   list.forEach(function(i){
-    var n=(i.items||[]).length, rej=(i.items||[]).filter(function(x){return /Reject|Repair/.test(x.result||"")}).length;
+    var st=inspStatus(i);
     h+=swipe("inspections",i.id,'<button class="sub" data-insp="'+i.id+'"><span style="flex:1"><b>'+esc(i.project||i.client||"Untitled")+'</b>'
-      +'<span>'+esc([i.reportNo, fmtDate(i.date), i.client, n?n+" item"+(n==1?"":"s"):""].filter(Boolean).join(" · "))+'</span></span>'
-      +(i.result?'<span class="pill '+(i.result=="Accepted"?"ok":i.result=="Rejected"?"no":"wait")+'">'+esc(i.result)+'</span>':(rej?'<span class="pill no">'+rej+' open</span>':''))+'</button>');
+      +'<span>'+esc([i.reportNo, fmtDate(i.date), i.client].filter(Boolean).join(" · "))+'</span></span>'
+      +(st?'<span class="pill '+st.c+'">'+esc(st.t)+'</span>':'')+'</button>');
   });
   if(list.length) h+='<p class="foot">Swipe a report left to delete it.</p>';
   return { body:h, bar:'<button class="primary" data-act="newinsp">New report</button>' };
 };
+/* The questions on the shop's form. Tap the same answer again to clear it. */
+function ynField(label,key,opts){
+  return '<div class="field"><label>'+esc(label)+'</label>'+tiles(opts.map(function(o){return {v:o}}),S.draft[key]||"",false,"d:"+key)+'</div>';
+}
 VIEWS.inspedit = function(){
-  var d=S.draft;
-  var h=nav(d.id?"Inspection report":"New report", d.id?'<button data-act="previewinsp">Preview PDF</button>':'');
+  var d=S.draft, bk=String(d.code||CFG.code).split(":")[0];
+  var h=nav(d.id?"Inspection report":"New report", '<button data-act="previewinsp">Preview PDF</button>');
+  h+='<div class="card"><h3>Report</h3>'
+    +'<div class="row">'+dfield("Report number","reportNo","text","")+'<div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div></div></div>';
   h+='<div class="card"><h3>Job</h3>'
-    +'<div class="row">'+dfield("Report number","reportNo","text","")+'<div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div></div>'
-    +dfield("Project name","project","text","What the job is called")
-    +'<div class="row">'+dfield("Client","client","text","Who hired you")+dfield("Client contact","clientContact","text","")+'</div>'
-    +dfield("Address","address","text","Job site address")
-    +'<div class="row">'+dfield("Location on site","location","text","e.g. Level 2, grid C-4")+dfield("Site contact","siteContact","text","")+'</div>'
-    +'<div class="row">'+dfield("Phone","phone","tel","")+dfield("Vendor / fabricator","vendor","text","optional")+'</div></div>';
+    +dfield("Project name","project","text","e.g. 6777 White Dove Way")
+    +dfield("Client","client","text","Who hired you")
+    +dfield("Address","address","text","Street")
+    +dfield("City, state","address2","text","e.g. Park City, UT")
+    +'<div class="row">'+dfield("Client contact","clientContact","text","Name")+dfield("Their phone","phone","tel","")+'</div>'
+    +'<div class="row" style="margin-bottom:-18px">'+dfield("Site contact","siteContact","text","e.g. Jase Lawson - Foreman")+dfield("Site phone","sitePhone","tel","")+'</div></div>';
   h+='<div class="card"><h3>Inspection</h3>'
-    +'<p style="margin:0 0 10px;font-size:.86rem;color:var(--muted)">One line per weld, member, or area you looked at. Keep it short; the notes box below is for the story.</p>'
-    +listEditor("items",ITEM_COLS,"+ Add an item")+'</div>';
-  h+='<div class="field"><label>Notes and observations</label><textarea data-d="notes" style="min-height:140px" placeholder="Conditions, what was discussed, what was agreed, anything the client needs to know">'+esc(d.notes||"")+'</textarea></div>';
-  h+='<div class="field"><label>Overall result</label>'+tiles([{v:"Accepted"},{v:"Accepted with repairs"},{v:"Rejected"},{v:"Report only"}],d.result||"",false,"d:result")+'</div>';
+    +ynField("Finished welds meet the visual acceptance criteria of "+bk+" Table 8.1 (or 10.15)","meetsVisual",["Yes","No"])
+    +ynField("Welding and workmanship reflect the plans as designated by the engineer / client","workmanship",["Yes","No"])
+    +ynField("Repairs or re-work, if necessary, were communicated to the contractor","rework",["Yes","Not Necessary"])
+    +(d.rework=="Yes"?'<div class="field"><label>Re-work needed</label><textarea data-d="reworkNote" placeholder="What has to be fixed, and where">'+esc(d.reworkNote||"")+'</textarea></div>':'')
+    +'<div class="field" style="margin:0"><label>Remarks — one per line</label><textarea data-d="notes" style="min-height:150px" placeholder="Met with Jace on site, inspected welds on beams, plates, and columns&#10;Welds completed with 7018 low hydrogen electrodes&#10;No visible porosity, cracks, or overlap">'+esc(d.notes||"")+'</textarea>'
+    +'<p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">Each line prints as its own "- " remark. Five fit on the form; more close up the lines.</p></div>'
+    +((d.items||[]).length?'<div style="margin-top:14px"><label style="font-size:.9rem;color:#C6D2DB">Items from before (print as remarks)</label>'+listEditor("items",ITEM_COLS,"+ Add an item")+'</div>':'')
+    +'</div>';
   h+='<div class="card"><h3>Standards applied</h3><textarea data-d="standards" style="min-height:90px">'+esc(d.standards||"")+'</textarea></div>';
-  h+='<div class="row">'+dfield("Inspector","inspector","text",CFG.inspector)+dfield("CWI number / cert","cwi","text",CFG.cert)+'</div>';
+  h+='<div class="card"><h3>Inspector</h3><div class="row">'+dfield("Inspector","inspector","text",CFG.inspector)+dfield("Phone","inspectorPhone","tel",CFG.phone)+'</div>'
+    +'<div class="row" style="margin-bottom:-18px">'+dfield("CWI number","cwi","text",CFG.cert)+'<div></div></div></div>';
   h+='<button class="primary" data-act="saveinsp" style="width:100%">Save report</button>'
     +'<p id="saveerr" class="err" style="display:none">Give the report a project or client name first.</p>';
   var b='<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="saveinsp">Save report</button>';
@@ -1097,13 +1125,53 @@ function wpsSections(p){
 }
 /* A PDF shown inside the app before it's saved or sent. */
 VIEWS.pdfview = function(){
-  var v=S.pdf||{};
+  var v=S.pdf||{}, z=v.zoom||1;
   var h=nav(v.title||"Preview");
   if(v.note) h+='<div class="flag" style="margin-bottom:10px"><b>'+esc(v.note)+'</b></div>';
-  h+='<iframe class="pdfframe" src="'+esc(v.url)+'#toolbar=0&view=FitH" title="PDF preview"></iframe>';
-  h+='<p class="foot">'+(v.pages>1?v.pages+' pages — ':'')+'If only the first page shows here, Save and open it in Files to see the rest.</p>';
+  h+='<div class="pdfzoom">'+[[1,"Whole page"],[1.6,"Zoom"],[2.4,"Zoom more"]].map(function(o){
+      return '<button type="button" data-act="pdfzoom" data-z="'+o[0]+'" aria-pressed="'+(z==o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>';
+  h+='<div class="pdfpages" id="pdfpages"><div class="empty" style="color:#dde">Drawing the page…</div></div>';
+  h+='<p class="foot">'+(v.pages>1?v.pages+' pages. ':'')+'Pinch to zoom in on any part, too.</p>';
+  setTimeout(drawPdfPages,0);
   return { body:h, bar:'<button class="ghost" data-act="back">Back</button><button class="primary" data-act="pdfsave">Save / Share</button>' };
 };
+/* Pages are drawn with pdf.js, fetched the first time a preview opens.
+   Without signal it falls back to the browser's own viewer. */
+var PDFJS_SRC="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js";
+var PDFJS_WORKER="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js";
+var pdfjsLoading=null;
+function loadPdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(pdfjsLoading) return pdfjsLoading;
+  pdfjsLoading=new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src=PDFJS_SRC;
+    sc.onload=function(){ window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; ok(window.pdfjsLib); };
+    sc.onerror=function(){ pdfjsLoading=null; no(new Error("pdf.js")); }; document.head.appendChild(sc); });
+  return pdfjsLoading;
+}
+function drawPdfPages(){
+  var box=document.getElementById("pdfpages"), v=S.pdf; if(!box||!v) return;
+  var z=v.zoom||1, token=v.drawn=(v.drawn||0)+1;
+  loadPdfJs().then(function(lib){
+    if(!v.bytes) v.bytes=new Uint8Array(v.doc.output("arraybuffer"));
+    return lib.getDocument({data:v.bytes.slice()}).promise;
+  }).then(function(pdf){
+    if(v.drawn!=token||!document.getElementById("pdfpages")) return;
+    box.innerHTML="";
+    var cssW=(box.clientWidth-16)*z, dpr=Math.min(window.devicePixelRatio||1,3);
+    var chain=Promise.resolve();
+    for(var n=1;n<=pdf.numPages;n++) (function(n){ chain=chain.then(function(){ return pdf.getPage(n); }).then(function(pg){
+      var base=pg.getViewport({scale:1}), sc=cssW/base.width, vp=pg.getViewport({scale:sc*dpr});
+      var c=document.createElement("canvas"); c.width=Math.floor(vp.width); c.height=Math.floor(vp.height);
+      c.style.width=Math.floor(cssW)+"px"; c.style.height=Math.floor(base.height*sc)+"px";
+      box.appendChild(c);
+      return pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
+    }); })(n);
+    return chain;
+  }).catch(function(){
+    if(!document.getElementById("pdfpages")) return;
+    box.innerHTML='<iframe class="pdfframe" src="'+esc(v.url)+'#view=FitH" title="PDF preview"></iframe>';
+  });
+}
 function showPdf(doc,name,title,note){
   var url=URL.createObjectURL(doc.output("blob"));
   go("pdfview",{ pdf:{ doc:doc, name:name, url:url, title:title, note:note, pages:doc.internal.getNumberOfPages() } });
@@ -1905,31 +1973,112 @@ function wpqrPdf(draft){
   return d;
 }
 
-/* ---- the visual inspection report ---- */
+/* ---- the visual inspection report ----
+   Drawn to the shop's own Report of Visual Inspection (Matt's form),
+   rule for rule: positions measured off it. Three yes/no questions,
+   re-work, remarks on dotted lines, standards, signature row. */
+var IR={ L:77.2, R:526.3, X:118, FS:8.7, DOT:17.64, GREY:153 };
+function shortDate(s){ var p=String(s||"").split("-"); return p.length==3 ? (+p[1])+"-"+(+p[2])+"-"+p[0].slice(2) : String(s||""); }
+/* Text that must stay on one line: shrink it down to 80% before it
+   would run past maxW. */
+function fitText(d,t,x,y,maxW,size,opt){
+  t=String(t||""); var fs=size; d.setFontSize(fs);
+  while(fs>size*.8&&d.getTextWidth(t)>maxW){ fs-=.2; d.setFontSize(fs); }
+  d.text(t,x,y,opt||{}); d.setFontSize(size);
+}
+function checkBox(d,x,y,on){
+  d.setDrawColor(128); d.setLineWidth(.9); d.roundedRect(x+.5,y+.5,9.7,9.7,1.2,1.2,"S");
+  if(on){ d.setFillColor(128); d.roundedRect(x,y,10.7,10.7,1.2,1.2,"F");
+    d.setDrawColor(255); d.setLineWidth(1.3); d.line(x+2.4,y+5.6,x+4.4,y+7.8); d.line(x+4.4,y+7.8,x+8.4,y+3); }
+  d.setDrawColor(0);
+}
+/* Remarks as the shop writes them: one per line, each starting "- ". */
+function remarkLines(i){
+  var out=String(i.notes||"").split(/\n+/).map(function(x){ return x.trim(); }).filter(Boolean)
+    .map(function(x){ return /^[-•*]/.test(x) ? "- "+x.replace(/^[-•*]\s*/,"") : "- "+x; });
+  (i.items||[]).forEach(function(it){ if(it.item||it.finding) out.push("- "+[it.item,it.finding].filter(Boolean).join(": ")+(it.result?" ("+it.result+")":"")); });
+  if(i.location) out.unshift("- Location: "+i.location);
+  return out;
+}
 function inspectionPdf(i){
-  var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, half=(W-PG.gap)/2, xr=x+half+PG.gap;
-  var y=letterhead(d,"Report of Visual Inspection");
-  var lab={0:{cellWidth:78}};
-  var yl=grid(d,{x:x,w:half,y:y,col:lab,body:[["Project Name",dash(i.project)],["Client",dash(i.client)],["Address",dash(i.address)],["Location",dash(i.location)],["Contact",dash(i.clientContact)]]});
-  var yr=grid(d,{x:xr,w:half,y:y,col:lab,body:[["Report Number",dash(i.reportNo)],["Date of Report",dash(fmtDate(i.date))],["Inspector",dash(i.inspector||CFG.inspector)],["Phone",dash(i.phone)],["Vendor",dash(i.vendor)],["Site Contact",dash(i.siteContact)]]});
-  y=Math.max(yl,yr)+PG.gap;
-  y=greyBar(d,y,"Inspection Report");
-  var rows=(i.items||[]).map(function(it,n){ return [String(n+1),dash(it.item),dash(it.finding),dash(it.result)]; });
-  if(rows.length) y=grid(d,{x:x,w:W,y:y,bold:[],col:{0:{cellWidth:22,halign:"center"},1:{cellWidth:150},3:{cellWidth:78,halign:"center"}},head:["#","Item / Weld","Observation","Result"],body:rows,
-    parse:function(c){ if(c.section=="body"&&c.column.index==3){ var v=String(c.cell.raw||""); if(/Reject|Repair/.test(v)) c.cell.styles.fontStyle="bold"; } }})+PG.gap;
-  if(i.notes){
-    y=grid(d,{x:x,w:W,y:y,bold:[],body:[[{content:i.notes,styles:{halign:"left",minCellHeight:rows.length?60:160,valign:"top"}}]]})+PG.gap;
-  } else if(!rows.length){
-    y=grid(d,{x:x,w:W,y:y,bold:[],body:[[{content:" ",styles:{minCellHeight:200}}]]})+PG.gap;
-  }
-  if(i.result){ d.setFont("helvetica","bold"); d.setFontSize(9); d.text("Result: "+i.result, x, y+9); d.setFont("helvetica","normal"); y+=16; }
-  d.setFontSize(7.5); d.setFont("helvetica","bold"); d.text("Visual inspection is held to the following standards / specifications", x, y+8); d.setFont("helvetica","normal"); y+=12;
-  var std=d.splitTextToSize(String(i.standards||""), W); d.text(std, x, y+7); y+=std.length*9+14;
-  d.setLineWidth(.5); d.setDrawColor(0);
-  d.line(x,y+21,x+W*.45,y+21); d.setFont("helvetica","italic"); d.setFontSize(7); d.text("Signature of Inspector — "+String(i.inspector||CFG.inspector||""), x, y+29);
-  d.setFont("helvetica","normal"); d.setFontSize(8); d.text(String(i.cwi||CFG.cert||""), x+W*.6+4, y+18);
-  d.line(x+W*.6,y+21,x+W,y+21); d.setFont("helvetica","italic"); d.setFontSize(7); d.text("CWI Number", x+W*.6, y+29);
+  var d=pdfDoc(), b=orgBrand(), rgb=hexRgb(b.color), L=IR.L, R=IR.R, cx=301.9;
+  d.setFillColor(IR.GREY); d.rect(49.8,53.4,512.4,13.4,"F"); d.rect(49.8,676.6,512.4,13.4,"F");
+  var nameW=b.logo?310:440;
+  if(b.logo){ try{ var pr=d.getImageProperties(b.logo), sc=Math.min(70/pr.width,70/pr.height);
+    d.addImage(b.logo,"PNG",L+(70-pr.width*sc)/2,72+(70-pr.height*sc)/2,pr.width*sc,pr.height*sc); }catch(e){} }
+  d.setFont("helvetica","bold"); d.setTextColor(rgb[0],rgb[1],rgb[2]);
+  fitText(d,b.name,cx,96.1,nameW,16.61,{align:"center"});
+  d.setTextColor(0); d.setFontSize(IR.FS);
+  if(b.address) d.text(String(b.address),cx,110.6,{align:"center"});
+  if(b.phone) d.text(String(b.phone),cx,123.4,{align:"center"});
+
+  // The box: heavy rules, report number corner, title band.
+  d.setLineWidth(1.22); d.setDrawColor(0);
+  d.line(372.9,125.8,372.9,165.4); d.line(372.3,126.4,526.9,126.4); d.line(R,125.8,R,664.4); d.line(L,164.2,L,664.4);
+  [164.8,184.2,279.2,292.0,574.3,625.4,663.8].forEach(function(y){ d.line(76.6,y,526.9,y); });
+  d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
+  d.text("Report Number:",447.8,136.1,{align:"right"}); d.text("Date of Report:",447.8,148.9,{align:"right"});
+  d.text(String(i.reportNo||""),487.6,136.1,{align:"center"}); d.text(shortDate(i.date),487.6,148.9,{align:"center"});
+  d.setLineWidth(.61); d.line(449.6,139.5,525.7,139.5); d.line(449.6,152.3,525.7,152.3);
+  d.setFont("helvetica","bold"); d.setFontSize(11.87); d.text("Report of Visual Inspection",cx,179.3,{align:"center"});
+
+  // Job block: label right-aligned to the rule, value on the rule.
+  d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
+  var rows=[199.4,212.2,225.0,237.8,250.6,263.3];
+  var left=[["Project Name:",i.project],["Client:",i.client],["Address:",i.address],["",i.address2],["Contact:",i.clientContact],["",i.phone]];
+  var right=[["Inspector:",i.inspector||CFG.inspector],["",""],["Phone:",i.inspectorPhone||CFG.phone],["",""],["Site Contact:",i.siteContact],["Phone:",i.sitePhone]];
+  rows.forEach(function(y,k){
+    if(left[k][0]) d.text(left[k][0],152.0,y,{align:"right"}); fitText(d,left[k][1],156.3,y,150,IR.FS);
+    if(right[k][0]) d.text(right[k][0],409.4,y,{align:"right"}); fitText(d,right[k][1],413.7,y,110,IR.FS);
+    d.line(153.9,y+3.4,307.8,y+3.4); d.line(411.3,y+3.4,525.7,y+3.4);
+  });
+  d.setFont("helvetica","bold"); d.setFontSize(7.91); d.text("Inspection Report",IR.X,287.8);
+
+  // Questions on the dotted lines.
+  var lines=[309.9]; for(var k=1;k<15;k++) lines.push(+(309.9+k*IR.DOT).toFixed(1));
+  var slot=function(n){ return lines[n]-3.4; };     // baseline in the slot above dotted line n
+  var bk=String(i.code||CFG.code||"AWS D1.1").split(":")[0];
+  d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
+  var yn=function(y,a,b2,bx,val,yes,no){ d.text("Yes",176.2,y); d.text(no,b2,y); checkBox(d,206.5,y-7.6,val==yes); checkBox(d,bx,y-7.6,val!=""&&val!=null&&val!=yes); };
+  fitText(d,"Finished welds meet the visual inspection acceptance criteria of "+bk+" Table 8.1 (or 10.15 for tubulars)",IR.X,slot(1),R-IR.X-4,IR.FS);
+  yn(slot(2),0,255.9,283.2,i.meetsVisual,"Yes","No");
+  fitText(d,"Welding and workmanship reflect the plans as designated by the engineer / client",IR.X,slot(3),R-IR.X-4,IR.FS);
+  yn(slot(4),0,255.9,283.2,i.workmanship,"Yes","No");
+  fitText(d,"Repairs or re-work, if necessary, were communicated to the contractor",IR.X,slot(5),R-IR.X-4,IR.FS);
+  yn(slot(6),0,248.3,335.2,i.rework,"Yes","Not Necessary");
+  d.text("If Yes, explain re-work needed:",156.3,slot(7));
+  var rw=d.splitTextToSize(String(i.reworkNote||""),R-282);
+  if(rw[0]) d.text(rw[0],282,slot(7));
+  if(rw.length>1) fitText(d,rw.slice(1).join(" "),156.3,slot(8),R-160,IR.FS);
+  d.text("Remarks:",IR.X,slot(9));
+
+  // Remarks: five dotted lines on the form, plus the blank one under them.
+  // More than that and the lines close up; past eleven they go to page 2.
+  var rem=[]; remarkLines(i).forEach(function(r){ d.splitTextToSize(r,R-IR.X-6).forEach(function(x,n){ rem.push(n?"   "+x:x); }); });
+  var top=lines[9], room=574.3-top, fit=Math.min(rem.length,11), step=Math.min(IR.DOT,room/Math.max(6,fit));
+  d.setLineWidth(.61); d.setLineDashPattern([1.22,1.22],0);
+  lines.slice(0,10).forEach(function(y){ d.line(77.8,y,525.7,y); });
+  for(var n=1;n*step<room-1;n++) d.line(77.8,top+n*step,525.7,top+n*step);
+  d.setLineDashPattern([],0);
+  var fsR=step>=IR.DOT-.1?IR.FS:Math.max(7,IR.FS*step/IR.DOT); d.setFontSize(fsR);
+  rem.slice(0,fit).forEach(function(r,n){ d.text(r,IR.X,top+(n+1)*step-3.4); });
+  d.setFontSize(IR.FS);
+
+  // Standards.
+  d.setFont("helvetica","italic"); d.setFontSize(7.12); d.text("Visual inspection is held to the following standards/specifications",79.6,584.4);
   d.setFont("helvetica","normal");
+  String(i.standards||"").split("\n").filter(Boolean).slice(0,3).forEach(function(t,n){ fitText(d,t,79.6,597.2+n*12.2,R-84,7.12); });
+
+  // Signature row.
+  d.setFontSize(IR.FS); d.text(String(i.cwi||CFG.cert||"").replace(/^.*?#\s*/,""),339.9,647.9,{align:"center"}); d.text(shortDate(i.date),413.7,647.9);
+  d.setLineWidth(.61); d.line(77.8,651.3,525.7,651.3);
+  d.setFontSize(7.91); d.text("Signature of Inspector",173,659.7,{align:"center"}); d.text("CWI Number",339.8,659.7,{align:"center"}); d.text("Date",413.7,659.7);
+
+  if(rem.length>fit){
+    d.addPage(); d.setFont("helvetica","bold"); d.setFontSize(11); d.text("Report "+(i.reportNo||"")+" — remarks, continued",L,72);
+    d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
+    rem.slice(fit).forEach(function(r,n){ d.text(r,L,94+n*14); });
+  }
   return d;
 }
 
@@ -2272,6 +2421,7 @@ document.addEventListener("click", function(e){
     showPdf(wpqrPdf(!fin), pdfName(recNo(S.w,S.r)), "WPQR preview", fin?"":"Marked DRAFT until you verify the ranges and pick a result.");
   }
   else if(a=="pdfsave"){ if(S.pdf&&S.pdf.doc) deliverPdf(S.pdf.doc, S.pdf.name); }
+  else if(a=="pdfzoom"){ S.pdf.zoom=+el.dataset.z; render({keepScroll:true}); }
   else if(a=="samplewpqr"){
     if(!needPdf()) return;
     var dd=demoData(); var doc=withRecord(dd.recs[1], function(){ return wpqrPdf(false); });
@@ -2393,13 +2543,41 @@ function readReturn(txt){
   var d=m?dec(m[1]):null;
   return d&&d.w&&typeof d.w=="object" ? d : null;
 }
+/* Company names as people type them: no case, punctuation or "LLC". */
+function coKey(s){ return String(s||"").toLowerCase().replace(/&/g," and ").replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g,"").replace(/[^a-z0-9]+/g,""); }
+/* The company a typed name means, if it's one on file: the same name, or
+   one name starting the other ("Weld West" for "Weld West Fabrication"). */
+function matchCompany(name){
+  var k=coKey(name); if(k.length<3) return null;
+  var cs=companies(), hit=cs.filter(function(c){ return coKey(c.name)==k||coKey(c.lhName)==k; })[0];
+  if(hit) return hit;
+  var near=cs.filter(function(c){ var ck=coKey(c.name); return ck.length>=4&&(ck.indexOf(k)==0||k.indexOf(ck)==0); });
+  return near.length==1 ? near[0] : null;
+}
+/* A welder's link fills in what the inspector already knows: the company
+   on file their typed employer means, and their stamp and division from
+   their last test with that company. Only on this phone — the welder's
+   link never carries the client list. */
+function recognize(w){
+  var said=[];
+  if(!w.companyId&&w.company){ var c=matchCompany(w.company); if(c){ w.companyId=c.id; w.company=c.name; said.push(c.name); } }
+  var nk=coKey(w.name);
+  var prev=nk ? records().filter(function(r){ return coKey(r.w.name)==nk&&(!w.companyId||r.w.companyId==w.companyId); })
+    .sort(function(a,b){ return (b.updated||0)-(a.updated||0); })[0] : null;
+  if(prev){
+    if(!w.stamp&&prev.w.stamp){ w.stamp=prev.w.stamp; said.push("stamp "+prev.w.stamp); }
+    if(!w.division&&prev.w.division) w.division=prev.w.division;
+  }
+  return said;
+}
 /* File a welder's answers. Returns false if there's no test in it. */
 function takeReturn(txt){
   var d=readReturn(txt); if(!d) return false;
   var id=d.tid?"t"+d.tid:uid(), old=records().filter(function(x){return x.id==id})[0];
   if(old){ toast("Already on file — opened it."); openRecord(id); return true; }
-  putRow("records",{ id:id, w:Object.assign(blankW(),d.w), r:blankR(), status:"Awaiting test", updated:Date.now() });
-  toast("Filed under Test records.");
+  var w=Object.assign(blankW(),d.w), said=recognize(w);
+  putRow("records",{ id:id, w:w, r:blankR(), status:"Awaiting test", updated:Date.now() });
+  toast("Filed under Test records"+(said.length?" — matched "+said.join(", "):"")+".");
   S.stack=[]; S.screen="records"; openRecord(id);
   return true;
 }
@@ -2437,6 +2615,7 @@ function coupled(k,v){
   if(k=="weldType"||k=="product") w.position="";
   if(k=="process"){ w.filler=""; w.fillerOther=""; w.gas=(GASES[v]||[])[0]=="None"?"None":""; w.transfer=""; w.fillerDia=""; w.flow=""; }
   if(k=="wpsId"){ var p=wpsById(v); w.wps=p?wpsLabel(p):""; if(p&&S.screen=="inspect") prefillFromWps(p); }
+  if(k=="companyId"){ var c=getRow("companies",v); if(c) w.company=c.name; }
 }
 function onField(e){
   var t=e.target;

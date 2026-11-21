@@ -224,8 +224,21 @@ on the paper — not scanned from the code book (AWS's figures are copyrighted, 
 drawing follows the numbers anyway). Butt joints show two plates in line; T, corner, lap
 and edge joints show a base plate and a member; fillets show the legs. `pqrPdf(p)`
 is the PQR: the procedure as run, per-pass readings, test results. `inspectionPdf(i)` is
-the Report of Visual Inspection: job and client block, one row per item with its result,
-notes, overall result, standards applied.
+the Report of Visual Inspection, drawn rule for rule to Matt's own report (measured the
+same way as the WPQR; geometry in `IR`): grey bars top and bottom, report number and date
+in the corner box, the job block as label-and-rule pairs, then three yes/no questions with
+checkboxes (`meetsVisual`, `workmanship`, `rework` — "Yes" / "Not Necessary"), the re-work
+line (`reworkNote`), remarks on the dotted lines (`notes`, one per line, printed "- …";
+five fit, more close the lines up, past eleven they continue on page 2), standards, and
+the signature / CWI number / date row. Reports from before the questions keep their
+`items` and print them as remarks.
+
+**Previewing.** `pdfview` no longer shows the PDF in an iframe — iOS draws an iframe'd
+PDF at full size and clips it. `drawPdfPages()` renders each page with pdf.js
+(jsDelivr, fetched the first time a preview opens) onto canvases the width of the
+screen, so the whole page shows; Whole page / Zoom / Zoom more widen them and the box
+scrolls both ways, and pinch zoom works on top. No signal → falls back to the iframe.
+Every document is US letter portrait.
 
 **Which code a record is qualified to** is per record (`w.code`, defaulting to the org's
 edition; `recCode(w)`). Only D1.1 has lookup tables: for D1.3 / D1.4 `suggest()` returns
@@ -305,6 +318,15 @@ the welder's intake shows the card at the top of the "What are you welding?" ste
 flow, base metal. Anything without an exact tile match stays blank for the welder to
 pick; the card still shows it. The ticket stores a snapshot of the WPS at creation, so a
 later edit to the library doesn't change what a welder already saw.
+
+### Recognizing a company and a returning welder
+
+A welder types their employer; their phone has no client list (it would be every
+client's name in every link). When the link comes back, `recognize(w)` matches the typed
+name against Companies (`matchCompany()`: case, punctuation and LLC/Inc ignored; an exact
+match, or one name starting the other when only one company fits) and files the record
+under it, and fills the welder's stamp and division from their latest earlier test with
+that company. The toast says what it matched.
 
 ### Entering a test by hand
 
