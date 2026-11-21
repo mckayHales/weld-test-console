@@ -203,7 +203,7 @@ name in the brand color, address · phone, the document title.
 records in their own binder under their own name gets branding on their company row
 (`letterhead:"company"`, `lhName`, `lhAddress`, `lhPhone`, `lhColor`, `logo` — the
 "Their letterhead" card on the company screen). A record follows the company's setting
-unless `w.letterhead` overrides it (the select under Company on the record screen); a WPS
+unless `w.letterhead` overrides it. A client's name prints in the color picked on its company row, else the main color of its logo (`logoColor()`: the commonest saturated color, ignoring white, black and grey; read when the logo is added, and once at boot for older logos into `lhLogoColor`), else black. A saved `lhColor` equal to the old red default counts as not picked (the select under Company on the record screen); a WPS
 or PQR prints on the letterhead of the company it belongs to (`p.companyId`, "Whose
 procedure" in the editor), or the org's for library procedures. `recordBrand(w)` and
 `wpsBrand(p)` resolve it. Whichever letterhead is on top, the certification block names

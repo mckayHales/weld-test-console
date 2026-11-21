@@ -165,7 +165,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.6";
+var VERSION="2026-11-21.7";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -312,7 +312,46 @@ function carryOver(){
    the tester, whichever letterhead is on top. */
 var BRAND_RED="#C8102E";
 function orgBrand(){ return { name:CFG.shop, address:CFG.address||CFG.city, phone:CFG.phone, logo:CFG.logo, color:BRAND_RED, own:true }; }
-function companyBrand(c){ return { name:c.lhName||c.name, address:c.lhAddress||"", phone:c.lhPhone||c.phone||"", logo:c.logo||"", color:c.lhColor||BRAND_RED, own:false }; }
+/* A client's name prints in the color they picked, else the main color
+   of their logo, else black — never the inspection company's red. */
+/* The color box used to start on the inspection company's red, so a
+   saved red that is exactly that default was never really picked. */
+function pickedColor(c){ var v=String(c.lhColor||""); return v&&v.toLowerCase()!=BRAND_RED.toLowerCase() ? v : ""; }
+function companyColor(c){ return pickedColor(c) || c.lhLogoColor || "#000000"; }
+function companyBrand(c){ return { name:c.lhName||c.name, address:c.lhAddress||"", phone:c.lhPhone||c.phone||"", logo:c.logo||"", color:companyColor(c), own:false }; }
+/* The main color in a logo: the commonest saturated color, ignoring
+   white, black and greys. "" when the logo has hardly any color. */
+function logoColor(dataUrl){
+  return new Promise(function(ok){
+    if(!dataUrl){ ok(""); return; }
+    var img=new Image();
+    img.onload=function(){
+      var n=64, sc=Math.min(1,n/Math.max(img.width,img.height)), cv=document.createElement("canvas");
+      cv.width=Math.max(1,Math.round(img.width*sc)); cv.height=Math.max(1,Math.round(img.height*sc));
+      var cx=cv.getContext("2d"); cx.drawImage(img,0,0,cv.width,cv.height);
+      var px=cx.getImageData(0,0,cv.width,cv.height).data, ink=0, bins={};
+      for(var i=0;i<px.length;i+=4){
+        var r=px[i],g=px[i+1],b=px[i+2],a=px[i+3]; if(a<128) continue;
+        var mx=Math.max(r,g,b), mn=Math.min(r,g,b); if(mx>240&&mn>240) continue;   // paper
+        ink++;
+        if(mx<40||(mx-mn)<40) continue;                                            // black, grey
+        var k=(r>>5)+","+(g>>5)+","+(b>>5), e=bins[k]||(bins[k]={n:0,r:0,g:0,b:0}); e.n++; e.r+=r; e.g+=g; e.b+=b;
+      }
+      var best=null; Object.keys(bins).forEach(function(k){ if(!best||bins[k].n>best.n) best=bins[k]; });
+      if(!best||best.n<Math.max(4,ink*.04)){ ok(""); return; }
+      var hx=function(v){ v=Math.round(v/best.n); return (v<16?"0":"")+v.toString(16); };
+      ok(("#"+hx(best.r)+hx(best.g)+hx(best.b)).toUpperCase());
+    };
+    img.onerror=function(){ ok(""); };
+    img.src=dataUrl;
+  });
+}
+/* Companies whose logo came in before the color was read: read it once. */
+function fillLogoColors(){
+  companies().filter(function(c){ return c.logo&&c.lhLogoColor===undefined; }).forEach(function(c){
+    logoColor(c.logo).then(function(col){ var now=getRow("companies",c.id); if(now){ now.lhLogoColor=col; putRow("companies",now); } });
+  });
+}
 function companyById(id){ return id ? companies().filter(function(x){return x.id==id})[0] : null; }
 function recordBrand(w){
   var c=companyById(w.companyId);
@@ -986,7 +1025,8 @@ VIEWS.editco = function(){
     + '<div class="field"><label>Print their records on</label>'+dtiles("letterhead",[{v:"org",d:CFG.shop||"our letterhead"},{v:"company",d:"their own"}])+'</div>'
     + '<div class="field"><label>Name on the letterhead</label><input type="text" data-d="lhName" value="'+esc(d.lhName||"")+'" placeholder="'+esc(d.name||"Same as the company name")+'"></div>'
     + '<div class="row">'+dfield("Address","lhAddress","text","Street, City, State")+dfield("Phone","lhPhone","tel","")+'</div>'
-    + '<div class="row"><div class="field" style="margin:0"><label>Name color</label><input type="color" data-d="lhColor" value="'+esc(d.lhColor||BRAND_RED)+'" style="height:50px;padding:4px"></div>'
+    + '<div class="row"><div class="field" style="margin:0"><label>Name color</label><input type="color" data-d="lhColor" value="'+esc(companyColor(d))+'" style="height:50px;padding:4px">'
+    + '<p style="margin:6px 0 0;font-size:.8rem;color:var(--muted)">'+(pickedColor(d) ? 'You picked this. <button class="mini" data-act="lhcolorauto" style="padding:0">Use the logo\'s color</button>' : d.lhLogoColor ? 'From their logo.' : d.logo ? 'Their logo has no color, so black.' : 'Black until they have a logo.')+'</p></div>'
     + '<div class="field" style="margin:0"><label>Logo</label>'
     + (d.logo?'<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><img src="'+d.logo+'" alt="" style="height:44px;background:#fff;border-radius:6px;padding:3px"><button class="mini" data-act="cleardraftlogo">Remove</button></div>':'')
     + '<input type="file" id="cologofile" accept="image/*" style="font-size:14px"></div></div></div>';
@@ -2464,7 +2504,8 @@ document.addEventListener("click", function(e){
   else if(a=="settings") go("settings",{draft:Object.assign({},CFG)});
   else if(a=="savecfg"){ CFG=Object.assign({},CFG,S.draft); saveCfg(); back(); }
   else if(a=="clearlogo"){ S.draft.logo=""; render({keepScroll:true}); }
-  else if(a=="cleardraftlogo"){ S.draft.logo=""; render({keepScroll:true}); }
+  else if(a=="cleardraftlogo"){ S.draft.logo=""; S.draft.lhLogoColor=""; render({keepScroll:true}); }
+  else if(a=="lhcolorauto"){ delete S.draft.lhColor; render({keepScroll:true}); }
   else if(a=="export") go("exported");
   else if(a=="import") go("importer");
   else if(a=="copyblob"){ copy(window._blob); el.textContent="Copied"; }
@@ -2806,7 +2847,7 @@ document.addEventListener("change", function(e){
   var t=e.target;
   if(t.id=="logofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; render({keepScroll:true}); }); return; }
   if(t.id=="impfile"&&t.files&&t.files[0]){ var fr=new FileReader(); fr.onload=function(){ if(!importBackup(readBackup(fr.result))) document.getElementById("imperr").style.display="block"; }; fr.readAsText(t.files[0]); return; }
-  if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; render({keepScroll:true}); }); return; }
+  if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; logoColor(d).then(function(col){ S.draft.lhLogoColor=col; render({keepScroll:true}); }); }); return; }
   if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
 });
 /* Shrink a chosen image to a small PNG data URL for the letterhead. */
@@ -2892,6 +2933,7 @@ function refreshBar(){
   if(!setUp()){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
   if(!raw.get(ns("starters"))) addStarters();
   myKeys().catch(function(){});
+  fillLogoColors();
   render();
 })();
 </script>
