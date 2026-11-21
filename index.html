@@ -159,7 +159,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
   html,body{height:auto!important;overflow:visible!important;display:block!important;background:#fff!important}
   body>*{display:none!important}
   #printpages{display:block!important}
-  #printpages img{display:block;width:8.5in;height:11in;object-fit:contain;break-after:page;page-break-after:always}
+  #printpages img{display:block;width:100%;height:auto;max-height:10.4in;object-fit:contain;margin:0 auto;break-after:page;page-break-after:always}
   #printpages img:last-child{break-after:auto;page-break-after:auto}
 }
 
@@ -178,7 +178,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.15";
+var VERSION="2026-11-21.16";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -1656,11 +1656,38 @@ function loadPdfJs(){
     sc.onerror=function(){ pdfjsLoading=null; no(new Error("pdf.js")); }; document.head.appendChild(sc); });
   return pdfjsLoading;
 }
-/* Print what's on the preview: every page drawn at 200 dpi into an
-   image, the images handed to the browser's print (AirPrint on an
-   iPhone). Printing the PDF file itself is unreliable on phones; a page
-   image prints the same everywhere. */
+/* Print the PDF itself, so the sheet is the document and nothing else.
+   A web page printed on an iPhone gets the site's address and page
+   numbers added at the bottom and its margins push the page onto a
+   second sheet; iOS won't let a page turn that off. So:
+   - phone: the share sheet with the PDF file — its Print prints the PDF
+     clean, one letter sheet a page;
+   - computer: the PDF in a hidden frame, printed by the browser's own
+     PDF printer;
+   - neither works: page images through window.print() (printImages). */
+function isPhone(){ return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent)||(navigator.platform=="MacIntel"&&navigator.maxTouchPoints>1); }
 function printPdf(btn){
+  var v=S.pdf; if(!v||!v.doc) return;
+  var blob=v.doc.output("blob"), file=null;
+  try{ file=new File([blob],v.name||"document.pdf",{type:"application/pdf"}); }catch(e){}
+  if(isPhone()){
+    if(file&&navigator.canShare&&navigator.canShare({files:[file]})){
+      toast("Tap Print in the menu — it prints the PDF clean, one page a sheet.");
+      navigator.share({files:[file],title:v.name}).catch(function(){});
+      return;
+    }
+    printImages(btn); return;
+  }
+  var url=URL.createObjectURL(blob), fr=document.createElement("iframe");
+  fr.style.cssText="position:fixed;right:0;bottom:0;width:1px;height:1px;border:0;opacity:0";
+  fr.src=url; document.body.appendChild(fr);
+  fr.onload=function(){
+    try{ fr.contentWindow.focus(); fr.contentWindow.print(); }
+    catch(e){ fr.remove(); URL.revokeObjectURL(url); printImages(btn); return; }
+    setTimeout(function(){ fr.remove(); URL.revokeObjectURL(url); },60000);
+  };
+}
+function printImages(btn){
   var v=S.pdf; if(!v) return;
   var box=document.getElementById("printpages"), label=btn?btn.textContent:"";
   if(btn){ btn.disabled=true; btn.textContent="Getting it ready…"; }

@@ -258,12 +258,15 @@ screen, so the whole page shows; Whole page / Zoom / Zoom more widen them and th
 scrolls both ways, and pinch zoom works on top. No signal → falls back to the iframe.
 Every document is US letter portrait.
 
-**Printing.** The preview's **Print** button (`printPdf()`) draws each page with pdf.js at
-200 dpi into a PNG, puts the images in `#printpages`, and calls `window.print()`; the
-`@media print` rules hide the app and print those images one per sheet, 8.5 × 11 in, no
-margins (`@page`). Printing the PDF file itself is unreliable on phones; an image of the
-page prints the same everywhere (AirPrint on an iPhone). Save / Share → Print is the
-fallback. A record outside its WPS and not settled previews — and so prints — as DRAFT.
+**Printing.** The preview's **Print** button (`printPdf()`) prints the PDF itself. A web
+page printed on an iPhone gets the site address and page numbers stamped at the bottom,
+and its margins push a letter page onto a second sheet; iOS gives a page no way to turn
+that off. So on a phone (`isPhone()`) Print opens the share sheet with the PDF file and a
+toast says to tap Print there — that prints the document clean, one sheet a page. On a
+computer the PDF goes into a hidden iframe and the browser's PDF printer prints it. If
+neither is possible, `printImages()` draws each page at 200 dpi and prints the images
+through `window.print()` (`#printpages`, `@media print`), sized to fit inside the
+printer's margins. Save / Share → Print stays the manual fallback. A record outside its WPS and not settled previews — and so prints — as DRAFT.
 
 **Which code a record is qualified to** is per record (`w.code`, defaulting to the org's
 edition; `recCode(w)`). Only D1.1 has lookup tables: for D1.3 / D1.4 `suggest()` returns
