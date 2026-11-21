@@ -165,7 +165,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.4";
+var VERSION="2026-11-21.5";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -181,6 +181,85 @@ var db={
 };
 function hosted(){ return /^https?:/.test(location.origin||""); }
 function linkBase(){ return hosted() ? location.origin+location.pathname : ""; }
+/* The folder the app is served from; the two link pages sit beside it. */
+function linkDir(){ return hosted() ? location.origin+location.pathname.replace(/[^\/]*$/,"") : ""; }
+
+/* ---------- the link codec ----------
+   A link carries its data after the #, which never leaves the phone that
+   opens it (browsers don't send it to the server). Both links are
+   deflated so they run about half as long. The finished ticket is also
+   sealed to the inspector's key: ECDH P-256 with a one-time key from the
+   welder's phone, AES-GCM over the data. Only the inspector's phone —
+   or a backup of it — can open it. */
+function b64u(u8){ var s=""; for(var i=0;i<u8.length;i++) s+=String.fromCharCode(u8[i]); return btoa(s).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+function unb64u(str){ var b=String(str).replace(/-/g,"+").replace(/_/g,"/"); while(b.length%4) b+="="; var r=atob(b), u=new Uint8Array(r.length); for(var i=0;i<r.length;i++) u[i]=r.charCodeAt(i); return u; }
+function joinBytes(list){ var n=0; list.forEach(function(a){ n+=a.length; }); var u=new Uint8Array(n), o=0; list.forEach(function(a){ u.set(a,o); o+=a.length; }); return u; }
+/* Older phones (iOS before 16.4) lack the built-in compressor; they get
+   pako from the CDN instead. */
+var pakoLoading=null;
+function loadPako(){
+  if(window.pako) return Promise.resolve(window.pako);
+  if(pakoLoading) return pakoLoading;
+  pakoLoading=new Promise(function(ok,no){ var sc=document.createElement("script"); sc.src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js";
+    sc.onload=function(){ ok(window.pako); }; sc.onerror=function(){ pakoLoading=null; no(new Error("pako")); }; document.head.appendChild(sc); });
+  return pakoLoading;
+}
+function streamThrough(u8,ts){ var w=ts.writable.getWriter(); w.write(u8); w.close(); return new Response(ts.readable).arrayBuffer().then(function(b){ return new Uint8Array(b); }); }
+function deflate(str){
+  var u8=new TextEncoder().encode(str);
+  if(window.CompressionStream){ try{ return streamThrough(u8,new CompressionStream("deflate-raw")); }catch(e){} }
+  return loadPako().then(function(pk){ return pk.deflateRaw(u8); });
+}
+function inflate(u8){
+  var done=function(b){ return new TextDecoder().decode(b); };
+  if(window.DecompressionStream){ try{ return streamThrough(u8,new DecompressionStream("deflate-raw")).then(done); }catch(e){} }
+  return loadPako().then(function(pk){ return done(pk.inflateRaw(u8)); });
+}
+function packLink(obj){ return deflate(JSON.stringify(obj)).then(b64u); }
+function unpackLink(str){ return Promise.resolve().then(function(){ return inflate(unb64u(str)); }).then(JSON.parse); }
+
+/* The inspector's key pair, made once and kept with the data (and in
+   backups). Older pairs are kept too, so a backup restored over a newer
+   phone still opens tickets sealed to either. */
+var EC={ name:"ECDH", namedCurve:"P-256" };
+function keyRing(){ try{ return JSON.parse(raw.get(ns("keys"))||"[]"); }catch(e){ return []; } }
+var keysReady=null;
+function myKeys(){
+  if(keysReady) return keysReady;
+  var ring=keyRing();
+  keysReady = ring.length ? Promise.resolve(ring[0]) : crypto.subtle.generateKey(EC,true,["deriveKey"]).then(function(kp){
+    return Promise.all([crypto.subtle.exportKey("raw",kp.publicKey),crypto.subtle.exportKey("jwk",kp.privateKey)]);
+  }).then(function(x){
+    var k={ pub:b64u(new Uint8Array(x[0])), priv:x[1], made:Date.now() };
+    raw.set(ns("keys"),JSON.stringify([k].concat(keyRing()))); return k;
+  });
+  keysReady.catch(function(){ keysReady=null; });
+  return keysReady;
+}
+function aesFrom(priv,pubRaw){
+  return crypto.subtle.importKey("raw",pubRaw,EC,false,[]).then(function(pub){
+    return crypto.subtle.deriveKey({name:"ECDH",public:pub},priv,{name:"AES-GCM",length:256},false,["encrypt","decrypt"]);
+  });
+}
+function seal(obj,pubB64){
+  var eph, ephRaw, iv=crypto.getRandomValues(new Uint8Array(12));
+  return crypto.subtle.generateKey(EC,true,["deriveKey"]).then(function(kp){ eph=kp; return crypto.subtle.exportKey("raw",kp.publicKey); })
+    .then(function(r){ ephRaw=new Uint8Array(r); return aesFrom(eph.privateKey,unb64u(pubB64)); })
+    .then(function(key){ return deflate(JSON.stringify(obj)).then(function(z){ return crypto.subtle.encrypt({name:"AES-GCM",iv:iv},key,z); }); })
+    .then(function(ct){ return b64u(joinBytes([ephRaw,iv,new Uint8Array(ct)])); });
+}
+function unseal(str){
+  var u=unb64u(str), ephRaw=u.slice(0,65), iv=u.slice(65,77), ct=u.slice(77);
+  var ring=keyRing();
+  function tryKey(n){
+    if(n>=ring.length) return Promise.reject(new Error("no key opens it"));
+    return crypto.subtle.importKey("jwk",ring[n].priv,EC,false,["deriveKey"])
+      .then(function(priv){ return aesFrom(priv,ephRaw); })
+      .then(function(key){ return crypto.subtle.decrypt({name:"AES-GCM",iv:iv},key,ct); })
+      .catch(function(){ return tryKey(n+1); });
+  }
+  return tryKey(0).then(function(z){ return inflate(new Uint8Array(z)); }).then(JSON.parse);
+}
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function token(){ var a=new Uint8Array(12); (window.crypto||window.msCrypto).getRandomValues(a);
   var s=""; for(var i=0;i<a.length;i++) s+=(a[i]%36).toString(36); return s; }
@@ -765,14 +844,12 @@ function wpsCard(p, title){
 
 VIEWS.ticketlink = function(){
   var t=S.ticket||{}, pre=t.data||{};
-  var link=linkBase()+"#new="+enc(t);
-  window._link=link;
-  window._msg="Weld test intake — "+CFG.shop+"\nFill this out before your test, then text me back the link it gives you:\n"+link;
+  window._link=t.link; window._msg=t.link; window._smsTo="";
   var h=nav("Send to welder");
-  h+='<div class="card"><h3>Ticket ready</h3>'
-    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Text this to the welder. When they tap Send they get a link to text back to you. Tap it, or paste it into Test records, and the test is on file.</p>'
-    +'<div class="linkbox">'+esc(link)+'</div>'
-    +'<button class="mini" data-act="copy">Copy link</button> &nbsp; <button class="mini" data-act="sms">Text it</button> &nbsp; <button class="mini" data-act="share">Share</button></div>';
+  h+='<div class="card"><h3>Weld Ticket ready</h3>'
+    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Send it on its own and it shows up in Messages as a card that says <b>Weld Ticket</b>. When they tap Send, they get a <b>Finished Ticket</b> to text back to you. Tap that, or paste it into Test records, and the test is on file.</p>'
+    +'<button class="primary" data-act="share" style="width:100%;margin-bottom:10px">Send the Weld Ticket</button>'
+    +'<button class="mini" data-act="sms">Text it</button> &nbsp; <button class="mini" data-act="copy">Copy link</button></div>';
   h+='<div class="card"><h3>On the ticket</h3><dl class="kv">'
     +(pre.company?'<dt>Company</dt><dd>'+esc(pre.company)+'</dd>':'')
     +(pre.name?'<dt>Welder</dt><dd>'+esc(pre.name)+'</dd>':'')
@@ -1376,18 +1453,25 @@ function missing(){
   if((GASES[w.process]||[])[0]!="None" && !w.gas)m.push("shielding gas");
   return m;
 }
-/* The welder's answers go back the way the ticket came: as a link. */
-function returnLink(){ return linkBase()+"#t="+enc({ tid:S.ticketId||"", w:S.w }); }
-function returnMsg(link){ return "Weld test — "+[S.w.name||"welder", S.w.position, S.w.process].filter(Boolean).join(" · ")+"\n"+link; }
+/* The welder's answers go back the way the ticket came: as a link,
+   sealed to the inspector's key when the ticket brought one. Built when
+   the welder taps Send (sealing is async), kept in S.returnLink. */
+function buildReturn(){
+  var payload={ tid:S.ticketId||"", w:S.w }, t=S.wticket||{};
+  var pk=t.pk ? Promise.resolve(t.pk) : (S.preview ? myKeys().then(function(k){ return k.pub; }) : Promise.resolve(null));
+  return pk.then(function(key){
+    return key ? seal(payload,key).then(function(c){ return linkDir()+"done.html#f="+c; })
+               : linkBase()+"#t="+enc(payload);
+  }).then(function(link){ S.returnLink=link; return link; });
+}
 function sendBack(){
-  var link=returnLink();
-  window._link=link; window._msg=returnMsg(link);
+  var link=S.returnLink||"";
+  window._link=link; window._msg=link;
   window._smsTo=String(CFG.phone||"").replace(/[^\d+]/g,"");
-  return '<div class="card"><h3>Text this back to '+esc(CFG.inspector||"the inspector")+'</h3>'
-    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Nothing is sent until you send this link. It is your whole test record.</p>'
+  return '<div class="card"><h3>Text the Finished Ticket to '+esc(CFG.inspector||"the inspector")+'</h3>'
+    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Nothing is sent until you send this. It is your whole test record, locked so only your inspector can open it.</p>'
     +'<button class="primary" data-act="sms" style="width:100%;margin-bottom:10px">Text it'+(CFG.inspector?' to '+esc(CFG.inspector):'')+'</button>'
-    +'<div class="linkbox">'+esc(link)+'</div>'
-    +'<button class="mini" data-act="copy">Copy link</button> &nbsp; <button class="mini" data-act="share">Share</button></div>';
+    +'<button class="mini" data-act="share">Send another way</button> &nbsp; <button class="mini" data-act="copy">Copy link</button></div>';
 }
 VIEWS.sent = function(){
   var h=previewBar()+'<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+'</div>'
@@ -1427,10 +1511,9 @@ VIEWS.closed = function(){
 /* A welder's link tapped somewhere with none of the inspector's data —
    on an iPhone, Safari, since Messages doesn't open home-screen apps. */
 VIEWS.landed = function(){
-  var w=(S.landed&&S.landed.w)||{};
   window._link=S.landed&&S.landed.link;
   var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">Weld Sync</div>'
-    +'<h1>A welder\'s test<span>'+esc([w.name,w.position,w.process].filter(Boolean).join(" · ")||"Test record")+'</span></h1></div></div></div>';
+    +'<h1>Finished Ticket<span>A welder\'s test, locked for your Weld Sync app.</span></h1></div></div></div>';
   h+='<div class="card"><h3>This goes in your Weld Sync app</h3>'
     +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Your records are in the app on your home screen, not in this browser. Copy the link, open Weld Sync, go to Test records and tap Paste it.</p>'
     +'<button class="primary" data-act="copy" style="width:100%">Copy the link</button></div>';
@@ -1614,7 +1697,7 @@ VIEWS.settings = function(){
     +'<button class="mini" data-act="export">Export everything</button> &nbsp; <button class="mini" data-act="import">Import a backup</button></div>';
   return { body:h, bar:'<button class="primary" data-act="savecfg">Save settings</button>' };
 };
-function backupData(){ return { app:"weld-sync", saved:new Date().toISOString(), cfg:CFG, companies:companies(), wps:wpsAll(), records:records(), inspections:db.get("inspections",[]) }; }
+function backupData(){ return { app:"weld-sync", saved:new Date().toISOString(), cfg:CFG, keys:keyRing(), companies:companies(), wps:wpsAll(), records:records(), inspections:db.get("inspections",[]) }; }
 VIEWS.exported = function(){
   var blob = enc(backupData());
   var h = nav("Backup");
@@ -2385,10 +2468,10 @@ document.addEventListener("click", function(e){
   else if(a=="homeclear"){ S.stack=[]; S.screen="home"; S.draft={}; render(); }
   else if(a=="startblank"){ S.w=Object.assign(blankW(),{code:CFG.code}); S.r=blankR(); S.recId=null; S.couponOpen=true; go("inspect"); }
   else if(a=="pasteclip"){
-    navigator.clipboard.readText().then(function(txt){ if(!takeReturn(txt)) document.getElementById("pasteerr").style.display="block"; })
+    navigator.clipboard.readText().then(takeReturn).then(function(ok){ var pe=document.getElementById("pasteerr"); if(!ok&&pe) pe.style.display="block"; })
       .catch(function(){ toast("Couldn't read the clipboard — paste it in the box instead."); });
   }
-  else if(a=="paste"){ var pb=document.getElementById("pastebox"); if(!takeReturn(pb&&pb.value)) document.getElementById("pasteerr").style.display="block"; }
+  else if(a=="paste"){ var pb=document.getElementById("pastebox"); takeReturn(pb&&pb.value).then(function(ok){ var pe=document.getElementById("pasteerr"); if(!ok&&pe) pe.style.display="block"; }); }
   else if(a=="saverec"){ upsertRecord(); el.textContent="Saved"; }
   else if(a=="delrec"){ clearTimeout(saveT); if(S.recId) removeRow("records",S.recId); S.recId=null; S.stack=[]; S.screen="records"; render(); }
   else if(a=="archive"){ upsertRecord(); setArchived(S.recId,true); S.stack=[]; S.screen="records"; render(); }
@@ -2437,7 +2520,7 @@ document.addEventListener("click", function(e){
   }
   else if(a=="copy"){ copy(window._link); el.textContent="Copied"; }
   else if(a=="sms"){ var to=(S.screen=="sent"||S.screen=="myticket")?(window._smsTo||""):""; location.href="sms:"+to+"?&body="+encodeURIComponent(window._msg); }
-  else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}).catch(function(){}); else { copy(window._link); el.textContent="Copied"; } }
+  else if(a=="share"){ if(navigator.share) navigator.share({url:window._link}).catch(function(){}); else { copy(window._link); el.textContent="Copied"; } }
 });
 /* Clipboard, with the old select-and-copy for browsers that refuse the API. */
 function copy(t){
@@ -2462,6 +2545,11 @@ function importBackup(d){
   if(!d) return false;
   if(!setUp()&&d.cfg){ CFG=Object.assign({},CFG,d.cfg); saveCfg(); }
   TABLES.forEach(function(t){ (d[t]||[]).forEach(function(x){ if(x&&x.id) putRow(t,x); }); });
+  if(Array.isArray(d.keys)&&d.keys.length){
+    var ring=keyRing(), have=ring.map(function(k){ return k.pub; });
+    ring=ring.concat(d.keys.filter(function(k){ return k&&k.pub&&have.indexOf(k.pub)<0; }));
+    raw.set(ns("keys"),JSON.stringify(ring)); keysReady=null;
+  }
   toast("Backup imported — "+d.records.length+" record"+(d.records.length==1?"":"s")+".");
   S.stack=[]; S.screen="home"; S.draft={}; render();
   return true;
@@ -2517,31 +2605,48 @@ function lean(o){
     var v=o[k]; if(k=="_demo"||v===""||v==null||(Array.isArray(v)&&!v.length)) return; out[k]=v; });
   return out;
 }
-function createTicket(){
+/* The ticket carries the inspector's public key, so the welder's phone
+   can seal the finished ticket to it. */
+function createTicket(btn){
   var d=S.draft, p=wpsById(d.wpsId);
-  S.ticket={ id:token(),
+  var t={ id:token(),
     data:lean({ companyId:d.companyId, company:coName(d.companyId), name:d.name,
                 wpsId:d.wpsId, wps:wpsLabel(p), position:d.position, process:d.process }),
     wps: p ? Object.assign(lean(p), { brand:lean(Object.assign({}, wpsBrand(p), { logo:"" })) }) : null,
     org: lean({ shop:CFG.shop, city:CFG.city, inspector:CFG.inspector, phone:CFG.phone, code:CFG.code }) };
-  go("ticketlink");
+  if(btn){ btn.disabled=true; btn.textContent="Making the ticket…"; }
+  myKeys().then(function(k){ t.pk=k.pub; return packLink(t); }).then(function(code){
+    t.link=linkDir()+"ticket.html#k="+code; S.ticket=t; go("ticketlink");
+  }).catch(function(e){
+    if(btn){ btn.disabled=false; btn.textContent="Create link"; }
+    toast("Couldn't make the ticket — "+(e&&e.message||e),{bad:1});
+  });
 }
-function sendIntake(){
+function sendIntake(btn){
   if(!S.preview&&S.ticketId) raw.set("wq.sent."+S.ticketId, JSON.stringify(S.w));
-  S.screen="sent"; render();
+  if(btn){ btn.disabled=true; btn.textContent="Locking it up…"; }
+  buildReturn().then(function(){ S.screen="sent"; render(); }).catch(function(e){
+    if(btn){ btn.disabled=false; btn.textContent="Send to inspector"; }
+    var er=document.getElementById("senderr"); if(er){ er.textContent="Couldn't finish the ticket — "+(e&&e.message||e)+". Check your signal and try again."; er.style.display="block"; }
+  });
 }
 function welderBoot(t){
   if(!t||!t.id){ S.screen="closed"; S.draft={title:"This link is cut off",msg:"Part of it didn't come through. Ask the inspector to text it again."}; render(); return; }
   CFG=Object.assign({},CFG,t.org||{});   // for this visit only — never saved
-  S.welder=true; S.ticketId=t.id;
+  S.welder=true; S.ticketId=t.id; S.wticket=t;
   var done=null; try{ done=JSON.parse(raw.get("wq.sent."+t.id)||"null"); }catch(e){}
-  if(done){ S.w=Object.assign(blankW(),done); S.wps=t.wps||null; S.screen="myticket"; render(); return; }
+  if(done){ S.w=Object.assign(blankW(),done); S.wps=t.wps||null; buildReturn().then(function(){ S.screen="myticket"; render(); }); return; }
   startIntake(t.data||{}, false, t.wps||null);
 }
+/* Is there a finished ticket in this text? (#f= sealed, #t= the older
+   open kind.) Cheap and sync, so a phone without the key can still tell. */
+function isReturn(txt){ return /[#&](f|t)=[A-Za-z0-9\-_]{20,}/.test(String(txt||"")); }
+/* Open one: resolves to { tid, w } or null. */
 function readReturn(txt){
-  var m=String(txt||"").match(/[#&]t=([A-Za-z0-9\-_]+)/);
-  var d=m?dec(m[1]):null;
-  return d&&d.w&&typeof d.w=="object" ? d : null;
+  var m=String(txt||"").match(/[#&](f|t)=([A-Za-z0-9\-_]+)/);
+  if(!m) return Promise.resolve(null);
+  var p=m[1]=="f" ? unseal(m[2]).catch(function(){ return "locked"; }) : Promise.resolve(dec(m[2]));
+  return p.then(function(d){ return d=="locked" ? d : (d&&d.w&&typeof d.w=="object" ? d : null); });
 }
 /* Company names as people type them: no case, punctuation or "LLC". */
 function coKey(s){ return String(s||"").toLowerCase().replace(/&/g," and ").replace(/\b(llc|inc|co|corp|company|ltd)\b\.?/g,"").replace(/[^a-z0-9]+/g,""); }
@@ -2570,16 +2675,20 @@ function recognize(w){
   }
   return said;
 }
-/* File a welder's answers. Returns false if there's no test in it. */
+/* File a welder's answers. Resolves true when it filed (or found) one,
+   false when there's no test in the text. */
 function takeReturn(txt){
-  var d=readReturn(txt); if(!d) return false;
-  var id=d.tid?"t"+d.tid:uid(), old=records().filter(function(x){return x.id==id})[0];
-  if(old){ toast("Already on file — opened it."); openRecord(id); return true; }
-  var w=Object.assign(blankW(),d.w), said=recognize(w);
-  putRow("records",{ id:id, w:w, r:blankR(), status:"Awaiting test", updated:Date.now() });
-  toast("Filed under Test records"+(said.length?" — matched "+said.join(", "):"")+".");
-  S.stack=[]; S.screen="records"; openRecord(id);
-  return true;
+  return readReturn(txt).then(function(d){
+    if(!d) return false;
+    if(d=="locked"){ toast("That Finished Ticket was locked to a different phone's key. Open it on the phone that sent the Weld Ticket, or import that phone's backup here.",{bad:1}); return true; }
+    var id=d.tid?"t"+d.tid:uid(), old=records().filter(function(x){return x.id==id})[0];
+    if(old){ toast("Already on file — opened it."); openRecord(id); return true; }
+    var w=Object.assign(blankW(),d.w), said=recognize(w);
+    putRow("records",{ id:id, w:w, r:blankR(), status:"Awaiting test", updated:Date.now() });
+    toast("Filed under Test records"+(said.length?" — matched "+said.join(", "):"")+".");
+    S.stack=[]; S.screen="records"; openRecord(id);
+    return true;
+  });
 }
 function authErr(msg){ var e=document.getElementById("autherr"); if(e){ e.textContent=msg; e.style.display="block"; } }
 function finishOnboard(){
@@ -2702,23 +2811,24 @@ function refreshBar(){
 }
 
 /* ---------- boot ----------
-   #new=…  → a welder opened their ticket. No console.
-   #t=…    → a welder's answers. File them if this is where the
-             records are; otherwise say where they go.
+   #k=…    → a welder opened their Weld Ticket (#new=, the older kind).
+   #f=…    → a Finished Ticket (#t=, the older kind). File it if this
+             is where the records are; otherwise say where it goes.
    neither → the console, or first-run setup. */
 (function(){
   loadPdfLib().catch(function(){});
   carryOver();
-  var hn=location.hash.match(/[#&]new=([A-Za-z0-9\-_]+)/);
-  if(hn){ welderBoot(dec(hn[1])); return; }
-  if(readReturn(location.hash)){
+  var hk=location.hash.match(/[#&](k|new)=([A-Za-z0-9\-_]+)/);
+  if(hk){ (hk[1]=="k" ? unpackLink(hk[2]) : Promise.resolve(dec(hk[2]))).then(welderBoot,function(){ welderBoot(null); }); return; }
+  if(isReturn(location.hash)){
     var link=location.href;
     history.replaceState(null,"",location.pathname);
-    if(setUp()){ takeReturn(link); return; }
-    S.landed={ link:link, w:readReturn(link).w }; S.screen="landed"; render(); return;
+    if(setUp()){ takeReturn(link).then(function(ok){ if(!ok) render(); }); return; }
+    S.landed={ link:link }; S.screen="landed"; render(); return;
   }
   if(!setUp()){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
   if(!raw.get(ns("starters"))) addStarters();
+  myKeys().catch(function(){});
   render();
 })();
 </script>

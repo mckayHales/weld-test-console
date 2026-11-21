@@ -52,29 +52,47 @@ The welder never installs anything, never sees the console, never makes an accou
 
 ### The two links
 
-Both are `index.html` with a base64url JSON blob in the hash (`enc()` / `dec()`). The
-hash never reaches the server.
+Both carry their data after the `#`, which browsers never send to the server.
 
 ```
-#new=<ticket>   inspector → welder
-                { id, data: prefill, wps: WPS snapshot, org: { shop, city, inspector, phone, code } }
-#t=<answers>    welder → inspector
-                { tid: ticket id, w: everything the welder filled in }
+ticket.html#k=<ticket>   Weld Ticket, inspector → welder. Deflated JSON:
+                         { id, data: prefill, wps: WPS snapshot, org: shop header,
+                           pk: the inspector's public key }
+done.html#f=<sealed>     Finished Ticket, welder → inspector. { tid, w } deflated and
+                         sealed to pk: a one-time ECDH P-256 key on the welder's phone,
+                         AES-GCM. Bytes: 65 ephemeral public key | 12 IV | ciphertext.
 ```
 
-`lean()` drops empty fields so the ticket link stays short (~1.3 KB with a typical WPS).
-The logo isn't sent; the welder's header is text only.
+`ticket.html` and `done.html` are one-line pages with Open Graph tags ("Weld Ticket",
+"Finished Ticket", the app icon) that `location.replace()` into the app with the hash.
+Messages reads those tags, so a link **sent on its own** shows as a card with that title
+instead of a wall of characters — which is why Send / Text it put only the URL in the
+message. Android SMS (green bubbles) has no cards and shows the URL.
 
-The record id is `"t" + tid`, so pasting the same return link twice opens the one record.
-The welder's phone remembers a sent ticket (`wq.sent.<tid>`), so reopening the original
-link shows "Your test ticket" with the WPS and the return link again instead of a blank form.
+Deflate is `CompressionStream("deflate-raw")`, with pako from jsDelivr on phones without
+it (iOS before 16.4). A ticket runs ~1.3 KB with a WPS, a finished ticket ~650 bytes.
+
+The inspector's key pair is made on first run (`myKeys()`) and kept in `wq.local.keys`, a
+ring so older pairs still open old tickets. **Backups carry the ring**; a new phone that
+imports one opens tickets sealed to the old phone. A finished ticket no key in the ring
+opens says so instead of filing anything. The record id is `"t" + tid`, so the same link
+opened twice opens one record. The older open kinds (`#new=`, `#t=`) still work.
+
+What this protects: someone who sees the Finished Ticket can't read the welder's name,
+company or answers. The Weld Ticket is only deflated, not secret — it holds nothing the
+welder isn't shown, and the welder has to be able to open it. Anyone holding a Weld Ticket
+could send back a made-up Finished Ticket; the inspector witnesses the test anyway. The
+domain (github.io) still shows; a custom domain is the fix for that.
+
+The welder's phone remembers a sent ticket (`wq.sent.<tid>`), so reopening the Weld
+Ticket shows "Your test ticket" with the WPS and the Finished Ticket again.
 
 **The iPhone catch.** A link tapped in Messages opens in Safari, not the home-screen app,
 and iOS gives the two separate storage. So `#t=` opened somewhere with no setup shows the
 `landed` screen: "Copy the link, open Weld Sync, Test records → Paste it." In the app,
 "Paste it" uses `navigator.clipboard.readText()` (one tap on iOS's Paste bubble), with a
 textarea fallback. Where the records *are* (a desktop browser, an Android PWA that captures
-its links), `#t=` files the record straight away.
+its links), it files the record straight away.
 
 ---
 
