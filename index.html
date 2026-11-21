@@ -166,7 +166,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.9";
+var VERSION="2026-11-21.10";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -358,6 +358,23 @@ function recordBrand(w){
   var c=companyById(w.companyId);
   var mode=w.letterhead||(c&&c.letterhead=="company"?"company":"org");
   return mode=="company"&&c ? companyBrand(c) : orgBrand();
+}
+/* A WPS's name in a picker says whose it is. */
+function wpsPick(p){ return wpsLabel(p)+(p.companyId&&coName(p.companyId)?" — "+coName(p.companyId):""); }
+/* WPSs for a picker, the given company's own first, then the library,
+   then everyone else's. */
+function wpsFor(coId){
+  var rank=function(p){ return coId&&p.companyId==coId ? 0 : !p.companyId ? 1 : 2; };
+  return wpsOnly().slice().sort(function(a,b){ return rank(a)-rank(b) || wpsLabel(a).localeCompare(wpsLabel(b)); });
+}
+/* A client's own copy of a WPS: everything the same, filed under them,
+   so it prints on their letterhead. The library one stays as it was. */
+function wpsCopyFor(p,c){
+  var d=JSON.parse(JSON.stringify(p));
+  if(p.starter) d.notes="";            // the starter's "check this" note is for the inspector, not the client's paper
+  delete d.id; delete d._demo; delete d.starter; delete d.brand;
+  d.companyId=c.id; d.date=today(); d.contact=c.contact||d.contact||"";
+  return d;
 }
 function wpsBrand(p){ if(p.brand) return p.brand; var c=companyById(p.companyId); return c ? companyBrand(c) : orgBrand(); }
 function hexRgb(h){ var m=/^#?([0-9a-f]{6})$/i.exec(h||""); if(!m) return hexRgb(BRAND_RED); var n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; }
@@ -799,7 +816,7 @@ function hasDemo(){ return records().some(function(r){return r._demo}) || compan
 /* ---------- nav ---------- */
 /* Each frame keeps everything its screen reads, so coming back to a
    half-filled form finds it as it was left. */
-var FRAME=["screen","coId","wpsId","recId","step","draft","viewWps","pdf"];
+var FRAME=["screen","coId","wpsId","recId","step","draft","viewWps","pdf","copySrc"];
 function go(screen, opts){
   flushSave();
   var f={}; FRAME.forEach(function(k){ f[k]=S[k]; }); S.stack.push(f);
@@ -926,7 +943,7 @@ VIEWS.newticket = function(){
   }
   h += '<div class="field"><label>Welder name, if you know it</label><input type="text" data-d="name" value="'+esc(d.name||"")+'" placeholder="Leave blank and they type it"></div>';
   h += '<div class="field"><label>WPS they weld to</label><select data-d="wpsId"><option value="">— None / welder\'s own —</option>'
-    + wpsOnly().map(function(p){return '<option value="'+p.id+'" '+(d.wpsId==p.id?"selected":"")+'>'+esc(wpsLabel(p))+'</option>';}).join("")
+    + wpsFor(d.companyId).map(function(p){return '<option value="'+p.id+'" '+(d.wpsId==p.id?"selected":"")+'>'+esc(wpsPick(p))+'</option>';}).join("")
     + '</select>'
     + (d.wpsId ? '' : '<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">Pick one and the welder sees its requirements on their ticket, with the filler and gas already selected.</p>')
     + '</div>';
@@ -1042,7 +1059,10 @@ VIEWS.inspedit = function(){
   var h=nav(d.id?"Inspection report":"New report", '<button data-act="previewinsp">Preview PDF</button>');
   h+='<div class="card"><h3>Report</h3>'
     +'<div class="row">'+dfield("Report number","reportNo","text","")+'<div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div></div></div>';
+  var cs=companies();
   h+='<div class="card"><h3>Job</h3>'
+    +(cs.length?'<div class="field"><label>Fill the client from a company</label><select id="inspco"><option value="">— Pick to fill client, contact and phone —</option>'
+      +cs.map(function(c){ return '<option value="'+esc(c.id)+'" '+(d.clientCoId==c.id?"selected":"")+'>'+esc(c.name)+'</option>'; }).join("")+'</select></div>':'')
     +dfield("Project name","project","text","e.g. 6777 White Dove Way")
     +dfield("Client","client","text","Who hired you")
     +addrFields("ja","Job site address")
@@ -1094,7 +1114,40 @@ VIEWS.company = function(){
   if(!rs.length) h += '<p style="margin:0;color:var(--muted);font-size:.9rem">No tests recorded yet.</p>';
   rs.forEach(function(r){ h += recRow(r,1); });
   h += '</div>';
+  var own=wpsAll().filter(function(p){ return p.companyId==c.id; });
+  h += '<div class="card"><h3>Their procedures</h3>'
+    + '<p style="margin:-4px 0 12px;font-size:.86rem;color:var(--muted)">WPSs and PQRs that are theirs. They print on '+esc(c.lhName||c.name)+'\'s letterhead'+(c.logo?' with their logo':'')+'.</p>';
+  own.forEach(function(p){
+    h += swipe("wps",p.id,'<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(docLabel(p))+'</b>'
+      + '<span>'+esc([p.title,p.process].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>');
+  });
+  h += '<button class="mini" data-act="wpsforco">+ Give them a WPS from your library</button> &nbsp; <button class="mini" data-act="newwpsco">+ Start a blank one</button></div>';
   return { body:h, bar:'<button class="primary" data-act="ticketfor">New ticket for '+esc(c.name)+'</button>' };
+};
+
+/* Pick which library WPS a company gets a copy of. */
+VIEWS.wpscopy = function(){
+  var c=getRow("companies",S.coId), lib=wpsOnly().filter(function(p){ return !p.companyId; });
+  var h=nav("WPS for "+(c?c.name:"company"));
+  h+='<p class="hint">Pick one from your library. '+esc(c?c.name:"They")+' get their own copy to edit; yours stays as it is.</p>';
+  if(!lib.length) h+='<div class="empty">Your library has no WPSs yet.</div>';
+  lib.forEach(function(p){
+    h+='<button class="sub" data-act="copywps" data-wps-id="'+esc(p.id)+'"><span style="flex:1"><b>'+esc(wpsLabel(p))+'</b>'
+      +'<span>'+esc([p.title,p.process].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>';
+  });
+  return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button>' };
+};
+/* Pick which company gets a copy of the WPS being edited. */
+VIEWS.wpscopyto = function(){
+  var p=S.copySrc, cs=companies();
+  var h=nav("Copy "+(p?wpsLabel(p):"WPS"));
+  h+='<p class="hint">Which company is this for? They get their own copy, on their letterhead. Yours stays in your library.</p>';
+  if(!cs.length) h+='<div class="empty">No companies yet. Add one in Companies first.</div>';
+  cs.forEach(function(c){
+    h+='<button class="sub" data-act="copywpsto" data-co-id="'+esc(c.id)+'"><span style="flex:1"><b>'+esc(c.name)+'</b>'
+      +'<span>'+(c.logo?"Logo on file":"No logo yet")+'</span></span><span class="go">'+CHEV+'</span></button>';
+  });
+  return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button>' };
 };
 
 VIEWS.editco = function(){
@@ -1259,7 +1312,8 @@ VIEWS.wpsedit = function(){
     + '<div class="field"><label>Rev</label><input type="text" data-d="rev" value="'+esc(d.rev||"")+'" placeholder="0"></div></div>';
   h += '<div class="field"><label>Whose procedure</label><select data-d="companyId"><option value="">'+esc(CFG.shop||"Ours")+' — our library</option>'
     + companies().map(function(c){return '<option value="'+c.id+'" '+(d.companyId==c.id?"selected":"")+'>'+esc(c.name)+'</option>';}).join("")+'</select>'
-    + (d.companyId?'<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">Prints on their letterhead, with their name in the Company box.</p>':'')+'</div>';
+    + (d.companyId?'<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">Theirs: prints on their letterhead'+(getRow("companies",d.companyId)&&getRow("companies",d.companyId).logo?' with their logo':'')+', with their name in the Company Name box.</p>'
+       :'<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">Yours: prints on your letterhead. To give a company their own, use <b>Copy for a company</b> at the bottom.</p>')+'</div>';
   h += '<div class="row"><div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div>'
     + '<div class="field"><label>Company contact</label><input type="text" data-d="contact" value="'+esc(d.contact||"")+'" placeholder="Who to ask about it"></div></div>';
   if(pq){
@@ -1350,7 +1404,8 @@ VIEWS.wpsedit = function(){
   }
   h += '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
     + '<button class="primary" data-act="savewps" style="width:100%">Save '+kindName+'</button>'
-    + '<p id="saveerr" class="err" style="display:none">Give the '+kindName+' a number first.</p>';
+    + '<p id="saveerr" class="err" style="display:none">Give the '+kindName+' a number first.</p>'
+    + (!pq&&d.id?'<p class="foot"><button class="mini" data-act="wpscopyto">Copy for a company</button></p>':'');
   var b = '<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="savewps">Save '+kindName+'</button>';
   if(d.id) b = '<button class="ghost" data-act="delwps">Delete</button><button class="primary" data-act="savewps">Save '+kindName+'</button>';
   return { body:h, bar:b };
@@ -1827,7 +1882,7 @@ function couponCard(){
   var posList=(w.weldType=="fillet"?FILLET_POS:w.product=="pipe"?GROOVE_PIPE:GROOVE_PLATE).map(function(o){ return {v:o.v,d:o.v+" — "+o.d}; });
   var gs=GASES[w.process]||[];
   h+='<p style="margin:-4px 0 12px;font-size:.86rem;color:var(--muted)">Pick a WPS and it fills in what it calls for. Change anything that doesn\'t match the coupon.</p>'
-    +'<div class="row">'+txtK("Test date","date","","date")+selK("WPS","wpsId",wpsOnly().map(function(p){ return {v:p.id,d:wpsLabel(p)}; }))+'</div>'
+    +'<div class="row">'+txtK("Test date","date","","date")+selK("WPS","wpsId",wpsFor(S.w.companyId).map(function(p){ return {v:p.id,d:wpsPick(p)}; }))+'</div>'
     +'<div class="row">'+selK("Weld type","weldType",[{v:"groove",d:"Groove"},{v:"fillet",d:"Fillet"}])+selK("Plate or pipe","product",[{v:"plate",d:"Plate"},{v:"pipe",d:"Pipe / tube"}])+'</div>'
     +'<div class="row">'+selK("Process","process",PROCESSES.map(function(o){ return {v:o.v,d:o.v+" — "+o.d}; }))+selK("Position","position",posList)+'</div>'
     +((w.process=="GMAW"||isVertical(w.position))?'<div class="row">'
@@ -2622,6 +2677,11 @@ document.addEventListener("click", function(e){
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
   else if(a=="addstarters"){ addStarters(); render({keepScroll:true}); }
+  else if(a=="wpsforco") go("wpscopy");
+  else if(a=="newwpsco"){ var nc=getRow("companies",S.coId); go("wpsedit",{draft:{basis:"Prequalified",companyId:S.coId,contact:nc&&nc.contact||"",date:today()}}); }
+  else if(a=="copywps"){ var src=wpsById(el.dataset.wpsId), co=getRow("companies",S.coId); if(src&&co){ S.screen="wpsedit"; S.draft=wpsCopyFor(src,co); render(); } }
+  else if(a=="wpscopyto"){ var cur=Object.assign({},S.draft); go("wpscopyto",{copySrc:cur}); }
+  else if(a=="copywpsto"){ var co2=getRow("companies",el.dataset.coId); if(co2&&S.copySrc){ S.stack.pop(); S.screen="wpsedit"; S.draft=wpsCopyFor(S.copySrc,co2); S.copySrc=null; render(); } }
   else if(a=="togglecoupon"){ S.couponOpen=!S.couponOpen; render({keepScroll:true}); }
   else if(a=="savewps"){
     var d=S.draft;
@@ -2932,6 +2992,7 @@ document.addEventListener("input", function(e){
 });
 document.addEventListener("change", function(e){
   var t=e.target;
+  if(t.id=="inspco"){ var ic=getRow("companies",t.value); if(ic){ S.draft.clientCoId=ic.id; S.draft.client=ic.name; if(ic.contact) S.draft.clientContact=ic.contact; if(ic.phone) S.draft.phone=fmtPhone(ic.phone); render({keepScroll:true}); } return; }
   if(t.id=="logofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; render({keepScroll:true}); }); return; }
   if(t.id=="impfile"&&t.files&&t.files[0]){ var fr=new FileReader(); fr.onload=function(){ if(!importBackup(readBackup(fr.result))) document.getElementById("imperr").style.display="block"; }; fr.readAsText(t.files[0]); return; }
   if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; logoColor(d).then(function(col){ S.draft.lhLogoColor=col; render({keepScroll:true}); }); }); return; }

@@ -357,6 +357,19 @@ clears what depended on a changed field (new process → filler and gas cleared)
 same as the welder's tiles. On a record that came from a welder the card starts closed
 as a one-line summary, and Edit opens it, so the inspector can fix a welder's mistake.
 
+### A client's own WPS
+
+A WPS with `companyId` belongs to that client and prints on their letterhead (`wpsBrand()`
+→ `companyBrand()`: logo, name in their color, address, phone; their name in the
+Company Name box). The client's company screen lists **Their procedures** with
+**Give them a WPS from your library** (`wpscopy` picker) and **Start a blank one**; the
+WPS editor has **Copy for a company** (`wpscopyto`). Both make a copy with
+`wpsCopyFor(p, c)`: same procedure, new id, `companyId` set, contact from the company,
+starter flag and the starter's note dropped — the library WPS stays untouched. WPS
+pickers label each one with its owner (`wpsPick()`) and list the client's own first
+(`wpsFor(coId)`). A new inspection report can fill client, contact and phone from a
+company (`#inspco`).
+
 ### Starter procedures
 
 `starterWps()`: WPS-SMAW-38 (E7018 1/8", DCEP, CC) and WPS-FCAW-38 (E71T-1C .045",
