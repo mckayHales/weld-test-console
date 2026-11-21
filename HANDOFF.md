@@ -458,6 +458,15 @@ links in the same browser. Welder mode overrides `CFG` in memory only and never 
 
 ## 9. Design
 
+**The app icon** is drawn by `tools/make_icon.py` (Pillow): a single-V joint in section
+with a gold bead and an arc-blue spark on the dark steel gradient, drawn at 4096 px and
+shrunk with Lanczos to `icon-512.png`, `icon-192.png`, `apple-touch-icon.png` (180, what
+iOS uses for the home screen) and `favicon-32.png`. Full-bleed square, no rounded corners
+baked in (iOS and Android round them), everything inside the middle 80% for Android's
+maskable crop. Run `python tools/make_icon.py .` from the repo root to redraw.
+iOS never refreshes the icon of an app already on the home screen.
+
+
 Shop-floor instrument, not SaaS. Dark steel panels, arc blue for selection, safety yellow
 for attention and verification gates, oxide red for fails. Large tap targets sized for
 gloved hands. The intake is framed as a torn job ticket because that matches what a
