@@ -366,6 +366,16 @@ run; deleted ones stay deleted, and Procedures offers to put them back. They car
 `starter:true` and a note to check them against the shop's own WPS — starting points,
 not qualified procedures.
 
+### Wire feed speed → amps
+
+On CV the welder sets wire feed speed; amps follow it. For GMAW / FCAW-G / FCAW-S the
+record screen asks **Wire feed speed (ipm)** and fills **Amps** from `AMP_CHART`: [ipm, amps]
+points per process and wire diameter, read off typical carbon-steel wire charts at normal
+stickout, interpolated straight-line and rounded to 5 A (`ampsFromWfs()`). It is marked
+"≈ from wire speed" with a note that brand, stickout and gas move it 10–20%. Typing amps
+takes over (`w.ampsAuto=false`); clearing the box hands it back to the chart. A wire size
+with no chart says to type the amps from the machine. Stick and TIG keep a plain Amps box.
+
 ### Who enters what
 
 The welder is only asked things the inspector can't already know: position, thickness,

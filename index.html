@@ -165,7 +165,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.5";
+var VERSION="2026-11-21.6";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -501,7 +501,7 @@ function fillerRange(f){
 function blankW(){ return { code:"",name:"",company:"",companyId:"",letterhead:"",phone:"",stamp:"",division:"",date:today(),
   weldType:"groove",product:"plate",process:"",transfer:"",position:"",backing:"with",progression:"",
   base:"",thickness:"",thicknessCustom:"",pipeOD:"",pipeWall:"",filler:"",fillerOther:"",fillerDia:"",
-  gas:"",gasOther:"",flow:"",amps:"",volts:"",polarity:"DCEP",preheat:"",wps:"",wpsId:"",notes:"" }; }
+  gas:"",gasOther:"",flow:"",amps:"",ampsAuto:false,wfs:"",volts:"",polarity:"DCEP",preheat:"",wps:"",wpsId:"",notes:"" }; }
 function blankR(){ return { method:"bend",visual:"",bendRootFace1:"",bendRootFace2:"",bendSide1:"",bendSide2:"",
   bendSide3:"",bendSide4:"",bendRoot2:"",bendFace2:"",bendSet:"",macro:"",rt:"",remarks:"",testNo:"",verified:false,result:"" }; }
 
@@ -1077,6 +1077,54 @@ function dfield(label,key,type,ph){
   return '<div class="field"><label>'+esc(label)+'</label><input type="'+(type||"text")+'" data-d="'+key+'" value="'+esc(S.draft[key]||"")+'" placeholder="'+esc(ph||"")+'"></div>';
 }
 function wireProc(p){ return p=="GMAW"||p=="FCAW-G"||p=="FCAW-S"; }
+/* Wire feed speed → amps on a CV machine. Points are [ipm, amps] read
+   off typical carbon-steel wire charts at normal stickout (solid ER70S
+   on Ar/CO2; E71T-1/-9 dual shield; E71T-8/-11 self-shielded). Brand,
+   stickout and gas move it 10–20%, so it is an estimate the inspector
+   can overwrite, and the screen says so. */
+var AMP_CHART={
+  "GMAW":{ '.030"':[[100,50],[200,85],[300,120],[400,145],[500,165]],
+           '.035"':[[100,60],[200,115],[300,155],[400,180],[500,200]],
+           '.045"':[[100,105],[200,190],[300,250],[400,295],[500,325]],
+           '.052"':[[100,130],[200,230],[300,290],[400,330]],
+           '1/16"':[[100,170],[200,280],[300,350]] },
+  "FCAW-G":{ '.035"':[[200,110],[300,145],[400,170],[500,190]],
+           '.045"':[[150,145],[200,170],[250,190],[300,210],[400,245],[500,275]],
+           '.052"':[[150,180],[200,215],[300,265],[400,305]],
+           '1/16"':[[100,190],[150,240],[200,280],[250,315]],
+           '5/64"':[[100,250],[150,310],[200,360]] },
+  "FCAW-S":{ '.045"':[[70,90],[100,115],[150,150],[200,175]],
+           '.052"':[[70,105],[100,135],[150,170],[200,200]],
+           '.068"':[[100,165],[150,210],[200,250],[250,280]],
+           '.072"':[[100,175],[150,220],[200,260]],
+           '5/64"':[[100,190],[150,235],[200,275]],
+           '3/32"':[[100,230],[150,285]] } };
+/* Straight-line between chart points; past either end, the nearest
+   segment's slope carries on. Rounded to 5 A. null when there's no chart
+   for the wire or no usable speed. */
+function ampsFromWfs(w){
+  var pts=(AMP_CHART[w.process]||{})[w.fillerDia], v=parseFloat(w.wfs);
+  if(!pts||isNaN(v)||v<=0) return null;
+  var i=1; while(i<pts.length-1&&v>pts[i][0]) i++;
+  var a=pts[i-1], b=pts[i], amps=a[1]+(v-a[0])*(b[1]-a[1])/(b[0]-a[0]);
+  return Math.max(5,Math.round(amps/5)*5);
+}
+/* Recompute amps from wire speed unless the inspector typed their own. */
+function syncAmps(w){
+  if(!wireProc(w.process)) return;
+  if(w.amps&&!w.ampsAuto) return;
+  var est=ampsFromWfs(w);
+  if(est!=null){ w.amps=String(est); w.ampsAuto=true; }
+  else if(w.ampsAuto){ w.amps=""; }
+}
+function ampsNote(w){
+  if(!wireProc(w.process)) return "";
+  var est=ampsFromWfs(w);
+  if(!w.wfs) return "Enter the wire feed speed and the amps fill in.";
+  if(est==null) return w.fillerDia ? "No chart for "+w.fillerDia+" "+w.process+" wire — type the amps off the machine." : "Pick the wire diameter in Test coupon and the amps fill in.";
+  if(!w.ampsAuto) return "About "+est+" A is typical for "+w.wfs+" ipm. You typed your own.";
+  return "About "+est+" A is typical for "+w.wfs+" ipm of "+w.fillerDia+" "+w.process+" wire. Your wire's chart, stickout and gas can move it 10–20% — change it if the meter says different.";
+}
 
 VIEWS.wpsedit = function(){
   var d=S.draft, groove=(d.weldType||"CJP groove")!="Fillet";
@@ -1574,8 +1622,14 @@ VIEWS.inspect = function(){
   if(wp) h+=wpsCard(wp, "Tested to");
   h+='<div class="card"><h3>Welding variables</h3>'
     +'<p style="margin:0 0 12px;font-size:.86rem;color:var(--muted)">What you read off the machine, or what the WPS calls for. The welder is not asked these.</p>'
-    +'<div class="row"><div class="field"><label>Amps</label><input type="number" data-k="amps" value="'+esc(w.amps)+'" placeholder="210"></div>'
-    +'<div class="field"><label>Volts</label><input type="number" step="0.1" data-k="volts" value="'+esc(w.volts)+'" placeholder="24"></div></div>'
+    +(wireProc(w.process)
+      ? '<div class="row"><div class="field"><label>Wire feed speed (ipm)</label><input type="number" inputmode="numeric" data-k="wfs" value="'+esc(w.wfs)+'" placeholder="300"></div>'
+        +'<div class="field"><label>Volts</label><input type="number" step="0.1" inputmode="decimal" data-k="volts" value="'+esc(w.volts)+'" placeholder="24"></div></div>'
+        +'<div class="field"><label>Amps <span id="ampsrc" style="color:var(--gold);font-weight:400">'+(w.ampsAuto?"≈ from wire speed":"")+'</span></label>'
+        +'<input type="number" inputmode="numeric" data-k="amps" value="'+esc(w.amps)+'" placeholder="From wire speed">'
+        +'<p id="ampnote" style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">'+esc(ampsNote(w))+'</p></div>'
+      : '<div class="row"><div class="field"><label>Amps</label><input type="number" inputmode="numeric" data-k="amps" value="'+esc(w.amps)+'" placeholder="210"></div>'
+        +'<div class="field"><label>Volts</label><input type="number" step="0.1" inputmode="decimal" data-k="volts" value="'+esc(w.volts)+'" placeholder="24"></div></div>')
     +'<div class="row"><div class="field" style="margin:0"><label>Polarity</label><select data-k="polarity">'
     +["DCEP","DCEN","AC"].map(function(p){return '<option '+(w.polarity==p?"selected":"")+'>'+p+'</option>'}).join("")
     +'</select></div><div class="field" style="margin:0"><label>Preheat (°F)</label><input type="number" data-k="preheat" value="'+esc(w.preheat)+'" placeholder="Ambient"></div></div>'
@@ -2725,10 +2779,19 @@ function coupled(k,v){
   if(k=="process"){ w.filler=""; w.fillerOther=""; w.gas=(GASES[v]||[])[0]=="None"?"None":""; w.transfer=""; w.fillerDia=""; w.flow=""; }
   if(k=="wpsId"){ var p=wpsById(v); w.wps=p?wpsLabel(p):""; if(p&&S.screen=="inspect") prefillFromWps(p); }
   if(k=="companyId"){ var c=getRow("companies",v); if(c) w.company=c.name; }
+  if(k=="amps") w.ampsAuto=false;
+  if(k=="amps"&&v==="") { w.ampsAuto=true; syncAmps(w); }
+  if(k=="wfs"||k=="fillerDia"||k=="process"||k=="wpsId") syncAmps(w);
+}
+function showAmps(){
+  var a=app.querySelector('[data-k="amps"]'), n=document.getElementById("ampnote"), src=document.getElementById("ampsrc");
+  if(a&&document.activeElement!==a) a.value=S.w.amps;
+  if(n) n.textContent=ampsNote(S.w);
+  if(src) src.textContent=S.w.ampsAuto?"≈ from wire speed":"";
 }
 function onField(e){
   var t=e.target;
-  if(t.dataset.k){ coupled(t.dataset.k, t.value); autosave(); if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
+  if(t.dataset.k){ coupled(t.dataset.k, t.value); autosave(); if(t.dataset.k=="wfs"||t.dataset.k=="amps") showAmps(); if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.r){ S.r[t.dataset.r]=(t.type=="checkbox")?t.checked:t.value; autosave(); if(t.type=="checkbox"||t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); }
   else if(t.dataset.li){ var lp=t.dataset.li.split(":"); var arr=S.draft[lp[0]]||(S.draft[lp[0]]=[]); (arr[+lp[1]]||(arr[+lp[1]]={}))[lp[2]]=t.value; }
