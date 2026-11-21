@@ -166,7 +166,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.13";
+var VERSION="2026-11-21.14";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -1317,6 +1317,99 @@ function wpsChecks(p){
   }
   return out;
 }
+/* ---------- a test record against its WPS ----------
+   A test is run to a WPS; a reading or a coupon detail outside it makes a
+   record that doesn't match its own procedure. wpsDiffs() lists every
+   place the record leaves the WPS it names. A single value on a
+   prequalified WPS carries its Table 5.5 tolerance; a range is taken as
+   written. Each difference offers what to do: correct a typo, switch to a
+   WPS that covers the record, or keep it as tested (the inspector's call). */
+var POS_NEEDS={ "1G":["F"],"2G":["H"],"3G":["V"],"4G":["OH"],"5G":["F","V","OH"],"6G":["F","H","V","OH"],"2G+5G":["F","H","V","OH"],
+  "3G+4G":["V","OH"],"1F":["F"],"2F":["H"],"3F":["V"],"4F":["OH"],"3F+4F":["V","OH"] };
+/* Inches from "3/4", "1 1/4", ".375" or "1"; Infinity for "unlimited". */
+function inchVal(t){
+  t=String(t||"").trim().toLowerCase(); if(/unlim/.test(t)) return Infinity;
+  var m=t.match(/(\d+)\s+(\d+)\/(\d+)/); if(m) return +m[1]+ +m[2]/ +m[3];
+  m=t.match(/(\d+)\/(\d+)/); if(m) return +m[1]/ +m[2];
+  m=t.match(/\d*\.?\d+/); return m ? parseFloat(m[0]) : NaN;
+}
+function inchRange(spec){
+  var parts=String(spec||"").split(/\s*(?:\bto\b|–|—)\s*|\s+-\s+/i).filter(Boolean);
+  if(parts.length<2) return null;
+  var lo=inchVal(parts[0]), hi=inchVal(parts[1]); return isNaN(lo)||isNaN(hi) ? null : {lo:lo,hi:hi};
+}
+function sameText(a,b){ return String(a||"").replace(/[\s"]/g,"").toLowerCase()==String(b||"").replace(/[\s"]/g,"").toLowerCase(); }
+function wpsDiffs(w,p){
+  p=p||wpsById(w.wpsId); if(!p) return [];
+  var out=[], pre=p.basis=="Prequalified";
+  // Machine readings against the WPS's ranges.
+  function num(key,label,spec,tol,unit,fixKey){
+    var v=parseFloat(w[key]), r=numRange(spec); if(isNaN(v)||!r) return;
+    var lo=r.lo, hi=r.hi;
+    if(lo==hi&&pre&&tol){ lo=r.lo*(1-tol[0]); hi=r.hi*(1+tol[1]); }
+    if(v>=lo-1e-9&&v<=hi+1e-9) return;
+    var st=r.dec?.1:1, inLo=Math.ceil(lo/st-1e-9)*st, inHi=Math.floor(hi/st+1e-9)*st;   // rounded inward, so the fix is inside
+    var want=lo==hi?fmtNum(lo,r.dec):fmtNum(inLo,r.dec)+"–"+fmtNum(inHi,r.dec), to=fmtNum(v<lo?inLo:inHi,r.dec);
+    out.push({ key:key, label:label, have:w[key]+(unit?" "+unit:""), want:want+(unit?" "+unit:""), fix:{ k:fixKey||key, v:to } });
+  }
+  num("wfs","Wire feed speed",p.wfs,[.10,.10],"ipm");
+  // Amps worked out from wire speed follow the wire speed; only amps typed off the meter are judged.
+  if(!w.ampsAuto) num("amps","Amperage",p.amps,[.10,.10],"A");
+  num("volts","Voltage",p.volts,[.15,.15],"V");
+  num("flow","Gas flow",p.flow,[.25,.50],"CFH");
+  // What was welded against what the WPS calls for.
+  function pick(key,label,want,have,fix){ if(want&&have&&!sameText(want,have)) out.push({ key:key, label:label, have:have, want:want, fix:fix }); }
+  pick("process","Process",p.process,w.process);
+  var filler=w.filler=="Other"?w.fillerOther:w.filler;
+  pick("filler","Filler",p.filler,filler,(FILLERS[w.process]||[]).indexOf(p.filler)>-1?{k:"filler",v:p.filler}:null);
+  if(p.fillerDia&&w.fillerDia&&!sameText(p.fillerDia,w.fillerDia)){
+    var dr=inchRange(p.fillerDia), dv=inchVal(w.fillerDia);
+    if(!(dr&&dv>=dr.lo-1e-6&&dv<=dr.hi+1e-6)) out.push({ key:"fillerDia", label:DIAM_LABEL[w.process]||"Diameter", have:w.fillerDia, want:p.fillerDia,
+      fix:(DIAMS[w.process]||[]).some(function(d){return d.v==p.fillerDia}) ? {k:"fillerDia",v:p.fillerDia} : null });
+  }
+  var gas=w.gas=="Other"?w.gasOther:w.gas;
+  if(p.gas&&gas&&gas!="None") pick("gas","Shielding gas",p.gas,gas,(GASES[w.process]||[]).indexOf(p.gas)>-1?{k:"gas",v:p.gas}:null);
+  if(p.polarity&&w.polarity&&p.polarity!=w.polarity) out.push({ key:"polarity", label:"Polarity", have:w.polarity, want:p.polarity, fix:{k:"polarity",v:p.polarity} });
+  if(w.process=="GMAW"&&p.transfer&&w.transfer&&!sameText(p.transfer,w.transfer)) out.push({ key:"transfer", label:"Transfer mode", have:w.transfer, want:p.transfer, fix:{k:"transfer",v:p.transfer} });
+  if(p.base&&w.base&&!sameText(p.base,w.base)) out.push({ key:"base", label:"Base metal", have:w.base, want:p.base });
+  var tr=inchRange(p.thickRange), t=tVal(w);
+  if(tr&&!isNaN(t)&&(t<tr.lo-1e-6||t>tr.hi+1e-6)) out.push({ key:"thickness", label:"Thickness", have:frac(t), want:p.thickRange });
+  if(w.position&&p.positions&&!/all/i.test(p.positions)){
+    var has=String(p.positions).toUpperCase().split(/[^A-Z]+/), need=POS_NEEDS[w.position]||[];
+    var lack=need.filter(function(x){ return has.indexOf(x)<0; });
+    if(lack.length) out.push({ key:"position", label:"Position", have:w.position+" ("+need.join(", ")+")", want:p.positions });
+  }
+  if(isVertical(w.position)&&p.progression&&w.progression&&p.progression!=w.progression) out.push({ key:"progression", label:"Progression", have:w.progression, want:p.progression, fix:{k:"progression",v:p.progression} });
+  if(w.weldType!="fillet"&&p.backing&&w.backing){
+    var wb=w.backing=="with"?"With backing":"No backing";
+    if((p.backing=="With backing")!=(w.backing=="with")) out.push({ key:"backing", label:"Backing", have:wb, want:p.backing, fix:{k:"backing",v:p.backing=="With backing"?"with":"without"} });
+  }
+  return out;
+}
+function diffSig(ds){ return ds.map(function(d){ return d.key+"="+d.have; }).join("|"); }
+/* Other WPSs this record fits as it stands. */
+function wpsThatFit(w){ return wpsOnly().filter(function(q){ return q.id!=w.wpsId&&!wpsDiffs(w,q).length; }).slice(0,3); }
+function wpsDiffCard(){
+  var w=S.w, p=wpsById(w.wpsId); if(!p) return "";
+  var ds=wpsDiffs(w,p); if(!ds.length) return "";
+  if(S.r.wpsAck==diffSig(ds)) return '<p class="foot" style="margin:-4px 0 14px;text-align:left">Kept as tested, outside '+esc(wpsLabel(p))+': '
+    +esc(ds.map(function(d){ return d.label.toLowerCase()+" "+d.have; }).join(", "))+'. <button class="mini" data-act="wpsunack">Check again</button></p>';
+  var fits=wpsThatFit(w);
+  var h='<div class="flag" style="border-color:var(--slag);background:rgba(192,83,58,.1)"><b style="color:#E9876F">Outside '+esc(wpsLabel(p))+'</b>'
+    +'<p style="margin:6px 0 8px;font-size:.86rem">This record says it was welded to '+esc(wpsLabel(p))+', but:</p><ul style="margin:0 0 10px;padding-left:18px">';
+  ds.forEach(function(d,i){
+    h+='<li style="margin:0 0 8px"><b style="color:var(--paper)">'+esc(d.label)+'</b> is '+esc(d.have)+' — the WPS says '+esc(d.want)+'.'
+      +(d.fix?'<br><button class="mini" data-act="wpsdifffix" data-i="'+i+'" style="padding:2px 0">It was a typo — set to '+esc(d.fix.v=="with"?"with backing":d.fix.v=="without"?"no backing":d.fix.v)+'</button>':'')+'</li>';
+  });
+  h+='</ul>';
+  if(fits.length) h+='<p style="margin:0 0 6px;font-size:.86rem">Or it was welded to a different WPS:</p>'
+    +fits.map(function(q){ return '<button class="mini" data-act="wpsswitch" data-wps-id="'+esc(q.id)+'" style="padding:2px 0;display:block">Switch to '+esc(wpsPick(q))+'</button>'; }).join("");
+  h+='<p style="margin:8px 0 0"><button class="mini" data-act="wpsack">Keep it as tested</button> <span style="font-size:.8rem;color:var(--muted)">— the readings stay as entered</span></p></div>';
+  // Outline the boxes that are off.
+  h+='<style>'+ds.map(function(d){ return '[data-k="'+d.key+'"]'; }).join(",")+'{border-color:var(--slag)!important;box-shadow:inset 0 0 0 1px var(--slag)}</style>';
+  return h;
+}
+
 function wpsCheckCard(p){
   var c=wpsChecks(p); if(!c.length) return "";
   return '<div class="flag"><b>Not prequalified as written — D1.1 Clause 5</b><ul style="margin:8px 0 0;padding-left:18px">'
@@ -1899,6 +1992,7 @@ VIEWS.inspect = function(){
   if(sibs.length) h+='<div class="card"><h3>Same test, other plate'+(sibs.length>1?'s':'')+'</h3>'
     +sibs.map(function(x){ return '<button class="sub" data-rec="'+x.id+'"><span style="flex:1"><b>'+esc(x.w.position||"No position yet")+'</b><span>'+esc(x.r.result||"Awaiting test")+'</span></span><span class="go">'+CHEV+'</span></button>'; }).join("")+'</div>';
   h+=couponCard();
+  h+='<div id="wpsdiff">'+wpsDiffCard()+'</div>';
   h+='<div class="card"><h3>Record number and method</h3>'
     +'<div class="field"><label>Qualified to</label>'+editionSelect('data-k="code"', recCode(w))+'</div><div class="row">'
     +'<div class="field" style="margin:0"><label>Record no.</label><input type="text" data-r="testNo" value="'+esc(r.testNo)+'" placeholder="'+esc(recNo(w,{}))+'"></div>'
@@ -2787,6 +2881,10 @@ document.addEventListener("click", function(e){
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
   else if(a=="addstarters"){ addStarters(); render({keepScroll:true}); }
+  else if(a=="wpsdifffix"){ var df=(wpsDiffs(S.w)[+el.dataset.i]||{}).fix; if(df){ coupled(df.k,df.v); if(df.k=="wfs"&&S.w.ampsAuto) syncAmps(S.w); autosave(); render({keepScroll:true}); } }
+  else if(a=="wpsswitch"){ var nq=wpsById(el.dataset.wpsId); if(nq){ S.w.wpsId=nq.id; S.w.wps=wpsLabel(nq); autosave(); toast("Record now says "+wpsLabel(nq)+"."); render({keepScroll:true}); } }
+  else if(a=="wpsack"){ S.r.wpsAck=diffSig(wpsDiffs(S.w)); autosave(); render({keepScroll:true}); }
+  else if(a=="wpsunack"){ S.r.wpsAck=""; autosave(); render({keepScroll:true}); }
   else if(a=="wpsfix"){ var fx=(wpsChecks(S.draft)[+el.dataset.i]||{}).fix; if(fx){ S.draft[fx.key]=fx.val; render({keepScroll:true}); } }
   else if(a=="wpsforco") go("wpscopy");
   else if(a=="newwpsco"){ var nc=getRow("companies",S.coId); go("wpsedit",{draft:{basis:"Prequalified",companyId:S.coId,contact:nc&&nc.contact||"",date:today()}}); }
@@ -2840,6 +2938,8 @@ document.addEventListener("click", function(e){
     if(confirm("Archive "+fin.length+" finished tests? They stay on file under Archive.")){ fin.forEach(function(r){ setArchived(r.id,true); }); render(); }
   }
   else if(a=="pdfrec"){
+    var open=wpsDiffs(S.w).length&&S.r.wpsAck!=diffSig(wpsDiffs(S.w));
+    if(open){ toast("This record is outside its WPS. Fix it, switch WPS, or keep it as tested first.",{bad:1}); var wd=document.getElementById("wpsdiff"); if(wd) wd.scrollIntoView({behavior:"smooth",block:"center"}); return; }
     if(!needPdf()) return;
     var final=S.r.verified&&S.r.result;
     upsertRecord();
@@ -3125,6 +3225,7 @@ document.addEventListener("change", function(e){
   if(t.id=="impfile"&&t.files&&t.files[0]){ var fr=new FileReader(); fr.onload=function(){ if(!importBackup(readBackup(fr.result))) document.getElementById("imperr").style.display="block"; }; fr.readAsText(t.files[0]); return; }
   if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; logoColor(d).then(function(col){ S.draft.lhLogoColor=col; render({keepScroll:true}); }); }); return; }
   if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
+  else if(S.screen=="inspect"&&t.dataset.k&&/^(amps|volts|wfs|flow|thicknessCustom|pipeOD)$/.test(t.dataset.k)){ var wd2=document.getElementById("wpsdiff"); if(wd2) wd2.innerHTML=wpsDiffCard(); }
   else if(S.screen=="wpsedit"&&t.dataset.d&&/^(amps|volts|wfs|travel|flow|preheat|base|positions|pwhtTemp|filler|fillerDia|gas|angle|rootOpening)$/.test(t.dataset.d)) render({keepScroll:true});
 });
 /* Shrink a chosen image to a small PNG data URL for the letterhead. */

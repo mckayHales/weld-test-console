@@ -377,6 +377,21 @@ record with the same welder, coupon and WPS, in the same group, position blank.
 before `S.w` changes, and `back()` onto a record screen reloads that record from storage
 — together they make record → other plate → Back land on the right record.
 
+### A test record against its WPS
+
+`wpsDiffs(w, p)` compares a record with the WPS it names: wire speed, typed amps (amps
+worked out from wire speed follow the wire speed and aren't judged), volts, gas flow
+against the WPS ranges — a single value on a prequalified WPS gets its Table 5.5
+tolerance, a range is taken as written — and process, filler, diameter (a WPS range like
+`.045" to 1/16"` counts), gas, polarity, transfer, base metal, thickness (`thickRange`),
+position (the letters a test position needs, `POS_NEEDS`, against the WPS's positions),
+progression and backing. `wpsDiffCard()` sits under the Test coupon card only when there
+are differences and outlines the boxes that are off. Each one can be corrected as a typo
+(the nearest allowed value, rounded inward), the record can switch to a WPS that covers
+it as it stands (`wpsThatFit()`), or the inspector keeps it as tested — `r.wpsAck` stores
+the signature of what was kept, so any new difference opens the warning again. **Save
+WPQR refuses** while a difference is neither fixed nor kept.
+
 ### A client's own WPS
 
 A WPS with `companyId` belongs to that client and prints on their letterhead (`wpsBrand()`
