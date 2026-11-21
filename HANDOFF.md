@@ -258,6 +258,13 @@ screen, so the whole page shows; Whole page / Zoom / Zoom more widen them and th
 scrolls both ways, and pinch zoom works on top. No signal → falls back to the iframe.
 Every document is US letter portrait.
 
+**Printing.** The preview's **Print** button (`printPdf()`) draws each page with pdf.js at
+200 dpi into a PNG, puts the images in `#printpages`, and calls `window.print()`; the
+`@media print` rules hide the app and print those images one per sheet, 8.5 × 11 in, no
+margins (`@page`). Printing the PDF file itself is unreliable on phones; an image of the
+page prints the same everywhere (AirPrint on an iPhone). Save / Share → Print is the
+fallback. A record outside its WPS and not settled previews — and so prints — as DRAFT.
+
 **Which code a record is qualified to** is per record (`w.code`, defaulting to the org's
 edition; `recCode(w)`). Only D1.1 has lookup tables: for D1.3 / D1.4 `suggest()` returns
 blank ranges and the record screen says to fill them from the book — never a D1.1 number
