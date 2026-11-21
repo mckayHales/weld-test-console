@@ -166,7 +166,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.11";
+var VERSION="2026-11-21.12";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -409,10 +409,11 @@ var toastT;
 function toast(msg,opts){
   opts=opts||{};
   var t=document.getElementById("toast");
-  t.innerHTML='<span>'+esc(msg)+'</span>'+(opts.undo?'<button type="button">Undo</button>':'');
+  var act=opts.undo?"Undo":opts.action, run=opts.undo||opts.run;
+  t.innerHTML='<span>'+esc(msg)+'</span>'+(act?'<button type="button">'+esc(act)+'</button>':'');
   t.className=opts.bad?"bad":""; t.style.display="flex";
-  if(opts.undo) t.querySelector("button").onclick=function(){ t.style.display="none"; opts.undo(); };
-  clearTimeout(toastT); toastT=setTimeout(function(){ t.style.display="none"; },opts.undo?6000:4200);
+  if(act) t.querySelector("button").onclick=function(){ t.style.display="none"; run(); };
+  clearTimeout(toastT); if(!opts.sticky) toastT=setTimeout(function(){ t.style.display="none"; },opts.undo?6000:4200);
 }
 
 /* ---------- option data ---------- */
@@ -3064,6 +3065,30 @@ document.addEventListener("keydown", function(e){
   if(e.key!="Enter" || S.screen!="onboard" || e.target.tagName!="INPUT") return;
   var b=app.querySelector("button.primary"); if(b){ e.preventDefault(); b.click(); }
 });
+/* ---------- updates ----------
+   GitHub tells phones they may keep the page 10 minutes, and a
+   home-screen app can sit on its copy longer. On open and whenever the
+   app comes back to the front, ask the server (past every cache) which
+   version it has; if it's newer, say so once, and Update loads it fresh.
+   Never on a welder's ticket — a reload there would lose their answers. */
+var updateSeen="";
+function checkForUpdate(){
+  if(!hosted()||S.welder||S.screen=="intake") return;
+  fetch(location.pathname+"?check="+Date.now(),{cache:"no-store"}).then(function(r){ return r.ok?r.text():""; }).then(function(html){
+    var m=String(html).match(/var VERSION="([^"]+)"/); if(!m) return;
+    var live=m[1];
+    if(live==VERSION||live==updateSeen||verNum(live)<=verNum(VERSION)) return;
+    updateSeen=live;
+    toast("A new version of Weld Sync is ready.",{ action:"Update", sticky:true, run:function(){
+      flushSave();
+      fetch(location.pathname,{cache:"reload"}).catch(function(){}).then(function(){ location.replace(location.pathname+"?u="+Date.now()); });
+    } });
+  }).catch(function(){});
+}
+/* "2026-11-21.11" → a number that orders correctly (.11 after .9). */
+function verNum(v){ var m=String(v).match(/^(\d+)-(\d+)-(\d+)\.(\d+)$/); return m ? ((+m[1]*100+ +m[2])*100+ +m[3])*1000+ +m[4] : 0; }
+document.addEventListener("visibilitychange",function(){ if(document.visibilityState=="visible") checkForUpdate(); });
+
 /* ---------- swipe to delete ----------
    Drag a row left: past halfway it deletes, a shorter drag leaves the
    Delete button showing. Vertical drags scroll as normal (touch-action:
@@ -3119,6 +3144,7 @@ function refreshBar(){
 (function(){
   loadPdfLib().catch(function(){});
   carryOver();
+  if(/[?&]u=\d/.test(location.search)) history.replaceState(null,"",location.pathname+location.hash);
   var hk=location.hash.match(/[#&](k|new)=([A-Za-z0-9\-_]+)/);
   if(hk){ (hk[1]=="k" ? unpackLink(hk[2]) : Promise.resolve(dec(hk[2]))).then(welderBoot,function(){ welderBoot(null); }); return; }
   if(isReturn(location.hash)){
@@ -3130,6 +3156,7 @@ function refreshBar(){
   if(!setUp()){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
   if(!raw.get(ns("starters"))) addStarters();
   myKeys().catch(function(){});
+  setTimeout(checkForUpdate,1500);
   fillLogoColors();
   render();
 })();

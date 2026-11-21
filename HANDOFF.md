@@ -453,6 +453,15 @@ opens. ZIP formats as 84663 or 84663-1234.
 into the field beside it on the WPS editor. Fixed with `min-width:0` on row children and
 `-webkit-appearance:none` on `input[type=date]`; Chrome never showed it.
 
+**Phones hold on to an old copy.** GitHub Pages sends `Cache-Control: max-age=600`, and
+an iPhone home-screen app can keep its copy past that. `checkForUpdate()` runs 1.5 s after
+boot and whenever the app returns to the front: it fetches the page with
+`cache:"no-store"`, reads `VERSION` out of it, and if it is newer (`verNum()` orders
+"2026-11-21.11" after ".9") shows a toast with **Update** that stays up; Update refetches
+with `cache:"reload"` and navigates to `?u=<time>` (stripped from the address at boot). It
+never runs on a welder's ticket. **Bump `VERSION` on every push** — it is what the check
+compares.
+
 **Shell heredocs eat backslashes** on this machine (Git Bash). Edit scripts that carry
 `\n` or `\'` must be written to a file, not piped in.
 
