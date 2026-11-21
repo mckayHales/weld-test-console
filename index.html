@@ -157,7 +157,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.2";
+var VERSION="2026-11-21.3";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -476,6 +476,29 @@ function autosave(){
 function flushSave(){ if(S.screen=="inspect"&&(S.recId||S.w.name)){ clearTimeout(saveT); upsertRecord(); } }
 
 
+/* ---------- starter procedures ----------
+   The two tests run most: 3/8" plate, single V with backing, on stick
+   and on dual shield. Put in the library once, the first time the app
+   opens, and editable like any other WPS. They are a starting point to
+   check against the shop's own WPS, not a qualified procedure. */
+function starterWps(){
+  var joint={ weldType:"CJP groove", jointType:"Butt", jointDesig:"B-U2a", groove:"Single V", angle:"45°", rootOpening:'1/4"', rootFace:"0",
+    backing:"With backing", backingMat:"Steel", backgouge:"None", base:"A36", baseTo:"A36", thickRange:'1/8" to 3/4"', diaRange:"Plate",
+    positions:"All", progression:"Uphill", bead:"Either", passes:"Multiple pass", cleaning:"Chip, wire brush, grind", peening:"None",
+    preheat:"32 °F min", basis:"Prequalified", rev:"0", date:today(), starter:true };
+  return [
+    Object.assign({ id:"starter-smaw-38", no:"WPS-SMAW-38", title:'3/8" plate test, single V with backing — stick (E7018)',
+      process:"SMAW", filler:"E7018", fillerSpec:"A5.1", fillerDia:'1/8"', polarity:"DCEP", powerSource:"CC",
+      amps:"110–140", volts:"21–25", travel:"3–6", gas:"", notes:"Starter WPS. Check every value against the shop's own WPS before a welder tests to it." }, joint),
+    Object.assign({ id:"starter-fcaw-38", no:"WPS-FCAW-38", title:'3/8" plate test, single V with backing — dual shield (E71T-1C/1M)',
+      process:"FCAW-G", filler:"E71T-1C", fillerSpec:"A5.20", fillerDia:'.045"', gas:"75% Ar / 25% CO2", flow:"35", nozzle:'5/8"', ctwd:'3/4" to 1"',
+      polarity:"DCEP", powerSource:"CV", amps:"160–200", volts:"22–25", wfs:"250–350", travel:"5–9",
+      notes:"Starter WPS. E71T-1C wire run on 75/25 should be dual classified -1C/-1M — check the box label. Check every value against the shop's own WPS before a welder tests to it." }, joint)
+  ];
+}
+function addStarters(){ starterWps().forEach(function(p){ if(!getRow("wps",p.id)) putRow("wps",p); }); raw.set(ns("starters"),"1"); }
+function startersMissing(){ return starterWps().some(function(p){ return !getRow("wps",p.id); }); }
+
 /* ---------- sample data for testing ---------- */
 function demoData(){
   var co=[{id:"demo-co-1",name:"Wasatch Steel Fabrication",contact:"Ray Alder",phone:"801-555-0142",_demo:true},
@@ -529,6 +552,16 @@ function demoData(){
   ];
   recs[2].w.thickness="custom"; recs[2].w.thicknessCustom="0.28";
   return { co:co, ps:ps, recs:recs };
+}
+function sampleInspection(){
+  return Object.assign(blankInspection(), { reportNo:new Date().getFullYear()+"-001", project:"Hangar 3 mezzanine", client:"Wasatch Steel Fabrication",
+    clientContact:"Ray Alder", address:"1200 N Airport Rd, Provo, UT", phone:"801-555-0142", vendor:"Wasatch Steel Fabrication",
+    location:"Level 2, grid C-4 to C-7", siteContact:"Jared Moss", result:"Accepted with repairs",
+    items:[{item:"Beam B-12 to column C-4, flange CJP",finding:"Full fusion, profile acceptable",result:"Accept"},
+      {item:"Beam B-12 to column C-4, web fillets",finding:'5/16" fillets, size verified both sides',result:"Accept"},
+      {item:"Beam B-13 to column C-5, flange CJP",finding:'Undercut 1/16" deep x 2" long at toe, top flange',result:"Repair & re-inspect"},
+      {item:"Brace BR-3 gusset fillets",finding:"Profile and size acceptable",result:"Accept"}],
+    notes:"Repair at B-13 top flange marked in paint stick. Fabricator to grind and re-weld; re-inspect before decking." });
 }
 function seedDemo(){
   var d=demoData();
@@ -614,6 +647,8 @@ VIEWS.home = function(){
 
   h += '<div class="menu">'
     + mi("ticket","New test ticket","Send a welder the intake link","newticket",1)
+    + '<button class="mi" data-act="startblank"><span class="ic">'+mIcon("wps")+'</span>'
+    + '<span><b>Enter a test by hand</b><span>No link went out — type the whole record yourself</span></span><span class="go">'+CHEV+'</span></button>'
     + mi("inbox","Test records", recs.length ? (pending? pending+" waiting on results" : recs.length+" on file") : "Empty — tap to load sample data","records")
     + mi("company","Companies","Who you've qualified, and their welders","companies")
     + mi("inbox","Inspection reports",(inspections().length?inspections().length+" report"+(inspections().length==1?"":"s")+" on file":"Job-site visual inspections"),"inspections")
@@ -761,7 +796,7 @@ VIEWS.records = function(){
   }
   if(recs.length||arch.length) h += '<p class="foot" style="margin-top:4px">Swipe a record left to delete it.</p>';
   h += pasteCard();
-  return { body:h, bar:'<button class="primary" data-act="startblank">Start a record myself</button>' };
+  return { body:h, bar:'<button class="primary" data-act="startblank">Enter a test by hand</button>' };
 };
 
 /* ---------- companies ---------- */
@@ -874,7 +909,8 @@ VIEWS.wpslist = function(){
       + '<span>'+esc([p.wpsQual?"Qualifies "+p.wpsQual:"", p.process, p.welder, p.dateTested?fmtDate(p.dateTested):""].filter(Boolean).join(" · "))+'</span></span>'
       + '<span class="pill">PQR</span></button>');
   });
-  h += '<p class="foot"><button class="mini" data-act="newpqr">Add a PQR from scratch</button></p>';
+  h += '<p class="foot"><button class="mini" data-act="newpqr">Add a PQR from scratch</button>'
+    + (startersMissing()?'<br><button class="mini" data-act="addstarters">Put the starter WPSs back (3/8" stick and dual shield)</button>':'')+'</p>';
   return { body:h, bar:'<button class="primary" data-act="newwps">Add a WPS</button>' };
 };
 
@@ -1374,6 +1410,7 @@ VIEWS.inspect = function(){
   }
   h+='</div>';
 
+  h+=couponCard();
   h+='<div class="card"><h3>Record number and method</h3>'
     +'<div class="field"><label>Qualified to</label>'+editionSelect('data-k="code"', recCode(w))+'</div><div class="row">'
     +'<div class="field" style="margin:0"><label>Record no.</label><input type="text" data-r="testNo" value="'+esc(r.testNo)+'" placeholder="'+esc(recNo(w,{}))+'"></div>'
@@ -1438,6 +1475,44 @@ VIEWS.inspect = function(){
   var ready=r.verified&&r.result;
   return { body:h, bar:'<button class="ghost" data-act="previewrec">Preview</button><button class="primary" data-act="pdfrec" '+(ready?"":"disabled")+'>Save WPQR</button>' };
 };
+/* The coupon as the welder described it, or as the inspector types it
+   when no link went out. Selects, not tiles: this is the inspector's
+   screen, and a whole record has to fit. Open by default on a record
+   that has no coupon yet. */
+function selK(label,key,opts,cur){
+  cur=cur!==undefined?cur:S.w[key];
+  var list=opts.map(function(o){ return typeof o=="object"?o:{v:o,d:o}; });
+  if(cur&&!list.some(function(o){return o.v==cur})) list.push({v:cur,d:cur});
+  return '<div class="field"><label>'+esc(label)+'</label><select data-k="'+key+'"><option value="">—</option>'
+    +list.map(function(o){ return '<option value="'+esc(o.v)+'" '+(o.v==cur?"selected":"")+'>'+esc(o.d||o.v)+'</option>'; }).join("")+'</select></div>';
+}
+function txtK(label,key,ph,type){
+  return '<div class="field"><label>'+esc(label)+'</label><input type="'+(type||"text")+'" data-k="'+key+'" value="'+esc(S.w[key])+'" placeholder="'+esc(ph||"")+'"></div>';
+}
+function couponCard(){
+  var w=S.w, open=!!S.couponOpen;
+  var sum=[w.position,w.process,frac(tVal(w)),w.base,w.filler=="Other"?w.fillerOther:w.filler].filter(Boolean).join(" · ")||"Nothing entered yet";
+  var h='<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">Test coupon <button class="mini" data-act="togglecoupon" style="padding:0">'+(open?"Done":"Edit")+'</button></h3>';
+  if(!open) return h+'<p style="margin:0;font-size:.9rem;color:var(--muted)">'+esc(sum)+'</p></div>';
+  var posList=(w.weldType=="fillet"?FILLET_POS:w.product=="pipe"?GROOVE_PIPE:GROOVE_PLATE).map(function(o){ return {v:o.v,d:o.v+" — "+o.d}; });
+  var gs=GASES[w.process]||[];
+  h+='<p style="margin:-4px 0 12px;font-size:.86rem;color:var(--muted)">Pick a WPS and it fills in what it calls for. Change anything that doesn\'t match the coupon.</p>'
+    +'<div class="row">'+txtK("Test date","date","","date")+selK("WPS","wpsId",wpsOnly().map(function(p){ return {v:p.id,d:wpsLabel(p)}; }))+'</div>'
+    +'<div class="row">'+selK("Weld type","weldType",[{v:"groove",d:"Groove"},{v:"fillet",d:"Fillet"}])+selK("Plate or pipe","product",[{v:"plate",d:"Plate"},{v:"pipe",d:"Pipe / tube"}])+'</div>'
+    +'<div class="row">'+selK("Process","process",PROCESSES.map(function(o){ return {v:o.v,d:o.v+" — "+o.d}; }))+selK("Position","position",posList)+'</div>'
+    +((w.process=="GMAW"||isVertical(w.position))?'<div class="row">'
+      +(w.process=="GMAW"?selK("Transfer mode","transfer",["Spray","Globular","Short circuit","Pulsed"]):"")
+      +(isVertical(w.position)?selK("Progression","progression",[{v:"Uphill",d:"Uphill (vertical up)"},{v:"Downhill",d:"Downhill (vertical down)"}]):"")+'</div>':"")
+    +'<div class="row">'+selK("Base metal","base",BASE_METALS)+selK(w.product=="pipe"?"Wall thickness":"Thickness","thickness",THICKNESSES.map(function(o){ return {v:o.v,d:o.d}; }))+'</div>'
+    +(w.thickness=="custom"?txtK("Thickness, decimal inches","thicknessCustom","0.625","number"):"")
+    +(w.product=="pipe"?txtK("Pipe OD (in)","pipeOD","6.625","number"):"")
+    +(w.weldType!="fillet"?selK("Backing","backing",[{v:"with",d:"With backing"},{v:"without",d:"No backing"}]):"")
+    +'<div class="row">'+selK(w.process=="SMAW"?"Electrode":"Filler","filler",FILLERS[w.process]||["Other"])+selK(DIAM_LABEL[w.process]||"Diameter","fillerDia",DIAMS[w.process]||[])+'</div>'
+    +(w.filler=="Other"?txtK("AWS classification","fillerOther","e.g. E71T-1C/1M"):"")
+    +(gs.length&&gs[0]!="None"?'<div class="row">'+selK("Shielding gas","gas",gs)+selK("Flow (CFH)","flow",FLOWS.map(function(f){return f.v}))+'</div>':"")
+    +(w.gas=="Other"?txtK("Gas","gasOther","What is on the bottle"):"");
+  return h+'</div>';
+}
 function resRow(label,key){
   var v=S.r[key];
   return '<div class="res"><span>'+esc(label)+'</span><span class="seg">'
@@ -1466,7 +1541,7 @@ VIEWS.settings = function(){
       : '<button class="mini" data-act="seed">Load sample data</button>')+'</div>';
   h+='<div class="card"><h3>Sample documents</h3>'
     +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">What the forms look like with your letterhead, using made-up data. Nothing is saved.</p>'
-    +'<button class="mini" data-act="samplewpqr">Preview a WPQR</button> &nbsp;·&nbsp; <button class="mini" data-act="samplewps">Preview a WPS</button></div>';
+    +'<button class="mini" data-act="samplewpqr">Preview a WPQR</button> &nbsp;·&nbsp; <button class="mini" data-act="samplewps">Preview a WPS</button> &nbsp;·&nbsp; <button class="mini" data-act="sampleinsp">Preview an inspection report</button></div>';
   h+='<div class="card"><h3>Your data</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Everything lives on this phone and nowhere else. Export a backup and email it to yourself now and then — that copy is what you restore from on a new phone. Import adds a backup\'s records to what is here.</p>'
     +'<button class="mini" data-act="export">Export everything</button> &nbsp; <button class="mini" data-act="import">Import a backup</button></div>';
   return { body:h, bar:'<button class="primary" data-act="savecfg">Save settings</button>' };
@@ -2135,6 +2210,8 @@ document.addEventListener("click", function(e){
   else if(a=="delco"){ removeRow("companies",S.draft.id); S.stack=[]; S.screen="companies"; render(); }
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
+  else if(a=="addstarters"){ addStarters(); render({keepScroll:true}); }
+  else if(a=="togglecoupon"){ S.couponOpen=!S.couponOpen; render({keepScroll:true}); }
   else if(a=="savewps"){
     var d=S.draft;
     if(!d.no){ var se2=document.getElementById("saveerr"); if(se2) se2.style.display="block"; return; }
@@ -2157,7 +2234,7 @@ document.addEventListener("click", function(e){
   else if(a=="previewwelder"){ startIntake({},true); }
   else if(a=="exitpreview"){ S.preview=false; S.wps=null; S.stack=[]; S.screen="home"; S.w=blankW(); S.r=blankR(); render(); }
   else if(a=="homeclear"){ S.stack=[]; S.screen="home"; S.draft={}; render(); }
-  else if(a=="startblank"){ S.w=Object.assign(blankW(),{code:CFG.code}); S.r=blankR(); S.recId=null; go("inspect"); }
+  else if(a=="startblank"){ S.w=Object.assign(blankW(),{code:CFG.code}); S.r=blankR(); S.recId=null; S.couponOpen=true; go("inspect"); }
   else if(a=="pasteclip"){
     navigator.clipboard.readText().then(function(txt){ if(!takeReturn(txt)) document.getElementById("pasteerr").style.display="block"; })
       .catch(function(){ toast("Couldn't read the clipboard — paste it in the box instead."); });
@@ -2200,6 +2277,7 @@ document.addEventListener("click", function(e){
     var dd=demoData(); var doc=withRecord(dd.recs[1], function(){ return wpqrPdf(false); });
     showPdf(doc, "Sample_WPQR.pdf", "Sample WPQR", "Made-up welder. Your letterhead, your code edition.");
   }
+  else if(a=="sampleinsp"){ if(!needPdf()) return; showPdf(inspectionPdf(sampleInspection()), "Sample_Inspection.pdf", "Sample inspection report", "Made-up job. Your letterhead."); }
   else if(a=="samplewps"){ if(!needPdf()) return; var dp=demoData().ps[0]; showPdf(wpsPdf(dp), "Sample_WPS.pdf", "Sample WPS", "Made-up procedure. Your letterhead."); }
   else if(a=="sharewps"){
     var wp2=currentWps(); if(!wp2) return;
@@ -2241,7 +2319,7 @@ function importBackup(d){
 
 function openRecord(id){
   var r=records().filter(function(x){return x.id==id})[0]; if(!r) return;
-  S.w=Object.assign(blankW(),r.w); S.r=Object.assign(blankR(),r.r); S.recId=r.id; go("inspect");
+  S.w=Object.assign(blankW(),r.w); S.r=Object.assign(blankR(),r.r); S.recId=r.id; S.couponOpen=!r.w.process; go("inspect");
 }
 function startIntake(pre,preview,wps){
   S.w=blankW(); S.r=blankR(); S.step=0; S.preview=!!preview; S.wps=wps||null;
@@ -2272,7 +2350,9 @@ function prefillFromWps(p){
   if(p.backing) w.backing = p.backing=="No backing" ? "without" : "with";
   if(p.progression) w.progression=p.progression;
   if(!w.wps) w.wps=wpsLabel(p);
+  if(!w.wpsId&&p.id) w.wpsId=p.id;
   if(p.code) w.code=p.code;
+  if(!w.thickness&&p.starter&&/3\/8/.test(p.title||"")) w.thickness="0.375";
 }
 
 /* ---------- the two links ----------
@@ -2328,7 +2408,7 @@ function finishOnboard(){
   var d=S.draft;
   if(!d.shop||!d.inspector){ authErr("The company name and your name are needed for the certificate header."); return; }
   CFG=Object.assign({},CFG,{ shop:d.shop, city:d.city||"", inspector:d.inspector, cert:d.cert||"", code:d.code||"AWS D1.1:2025" });
-  saveCfg();
+  saveCfg(); addStarters();
   S.stack=[]; S.screen="home"; S.draft={}; render();
 }
 
@@ -2350,9 +2430,17 @@ function pick(v,group){
   render({keepScroll:true});
 }
 
+/* Setting one coupon field can clear the ones that depended on it, the
+   same as tapping a tile on the welder's form. */
+function coupled(k,v){
+  var w=S.w; w[k]=v;
+  if(k=="weldType"||k=="product") w.position="";
+  if(k=="process"){ w.filler=""; w.fillerOther=""; w.gas=(GASES[v]||[])[0]=="None"?"None":""; w.transfer=""; w.fillerDia=""; w.flow=""; }
+  if(k=="wpsId"){ var p=wpsById(v); w.wps=p?wpsLabel(p):""; if(p&&S.screen=="inspect") prefillFromWps(p); }
+}
 function onField(e){
   var t=e.target;
-  if(t.dataset.k){ S.w[t.dataset.k]=t.value; autosave(); if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
+  if(t.dataset.k){ coupled(t.dataset.k, t.value); autosave(); if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.r){ S.r[t.dataset.r]=(t.type=="checkbox")?t.checked:t.value; autosave(); if(t.type=="checkbox"||t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); }
   else if(t.dataset.li){ var lp=t.dataset.li.split(":"); var arr=S.draft[lp[0]]||(S.draft[lp[0]]=[]); (arr[+lp[1]]||(arr[+lp[1]]={}))[lp[2]]=t.value; }
@@ -2451,6 +2539,7 @@ function refreshBar(){
     S.landed={ link:link, w:readReturn(link).w }; S.screen="landed"; render(); return;
   }
   if(!setUp()){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
+  if(!raw.get(ns("starters"))) addStarters();
   render();
 })();
 </script>

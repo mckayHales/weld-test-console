@@ -306,6 +306,26 @@ flow, base metal. Anything without an exact tile match stays blank for the welde
 pick; the card still shows it. The ticket stores a snapshot of the WPS at creation, so a
 later edit to the library doesn't change what a welder already saw.
 
+### Entering a test by hand
+
+When no link went out, **Enter a test by hand** (home screen, and the bar on Test
+records) opens a blank record with the **Test coupon** card open: date, WPS, weld type,
+plate/pipe, process, position (and transfer / progression when they apply), base metal,
+thickness, OD, backing, filler, diameter, gas, flow — selects, not tiles, since this is
+the inspector's screen. Picking a WPS runs `prefillFromWps()` on the record. `coupled()`
+clears what depended on a changed field (new process → filler and gas cleared), the
+same as the welder's tiles. On a record that came from a welder the card starts closed
+as a one-line summary, and Edit opens it, so the inspector can fix a welder's mistake.
+
+### Starter procedures
+
+`starterWps()`: WPS-SMAW-38 (E7018 1/8", DCEP, CC) and WPS-FCAW-38 (E71T-1C .045",
+75/25, DCEP, CV), both 3/8" A36 plate, single V, 45°, 1/4" root, steel backing, B-U2a,
+uphill. `addStarters()` puts them in the library once (flag `wq.local.starters`) on first
+run; deleted ones stay deleted, and Procedures offers to put them back. They carry
+`starter:true` and a note to check them against the shop's own WPS — starting points,
+not qualified procedures.
+
 ### Who enters what
 
 The welder is only asked things the inspector can't already know: position, thickness,
