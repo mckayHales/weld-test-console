@@ -9,9 +9,14 @@ so the inspector only has to verify, stamp, and print.
 Built for more than one inspector from the start: each inspection company is its own
 tenant, and the plan is to offer it to other CWIs.
 
-**Current state:** working app, hosted on GitHub Pages, data in Supabase. Multi-tenant
-with sign-in. Welder submissions land automatically. The printed WPQR and WPS are laid
-out like Yeti Welding's paper forms.
+**Current state:** working app, hosted on GitHub Pages as a plain static page. No server,
+no accounts. Everything the inspector has lives on their phone. Tickets go out as links
+and the welder's answers come back as links. The printed WPQR and WPS are laid out like
+Yeti Welding's paper forms.
+
+It was on Supabase (sign-in, row-level security, welder submissions written straight to
+the DB) from Sept to Nov 2026, and went back to links on purpose. That version is in git
+history at `c50ff41` if it's ever wanted again.
 
 ---
 
@@ -26,13 +31,12 @@ python -m http.server 8765
 ```
 
 No build step. `index.html` is the whole app; `manifest.webmanifest` and the two PNGs
-make it installable ("Add to Home Screen"). Dependencies, all from jsDelivr: `supabase-js`
-at the top of the script, and `jspdf` + `jspdf-autotable`, fetched in the background at
-boot and used only to build the PDFs.
+make it installable ("Add to Home Screen"). The only dependencies are `jspdf` and
+`jspdf-autotable` from jsDelivr, fetched in the background at boot and used only to build
+the PDFs.
 
-The Supabase project URL and publishable key sit at the top of the script. They are
-public by design (they ship to every browser); the row-level security in the database is
-what protects the data, not the key.
+It still has to be *hosted* (GitHub Pages) — that's what makes it installable and gives
+the links somewhere to open. Hosting is just serving the one file; nothing is stored there.
 
 ---
 
@@ -40,13 +44,37 @@ what protects the data, not the key.
 
 | | Inspector | Welder |
 |---|---|---|
-| Entry point | opens the app, signs in | taps a link the inspector texted (`?t=<ticket>`) |
+| Entry point | opens the app from the home screen | taps a link the inspector texted (`#new=…`) |
 | Sees | console: records, inspection reports, companies, procedures (WPS + PQR), settings | a 5-step intake form with the WPS card on top, nothing else |
-| Produces | WPQR, WPS, PQR and inspection-report PDFs | a record in the inspector's Test records |
+| Produces | WPQR, WPS, PQR and inspection-report PDFs | a link they text back (`#t=…`) |
 
-The welder never installs anything, never sees the console, never makes an account. The
-ticket id in the link is the only credential they have, and it's a 12-character random
-token.
+The welder never installs anything, never sees the console, never makes an account.
+
+### The two links
+
+Both are `index.html` with a base64url JSON blob in the hash (`enc()` / `dec()`). The
+hash never reaches the server.
+
+```
+#new=<ticket>   inspector → welder
+                { id, data: prefill, wps: WPS snapshot, org: { shop, city, inspector, phone, code } }
+#t=<answers>    welder → inspector
+                { tid: ticket id, w: everything the welder filled in }
+```
+
+`lean()` drops empty fields so the ticket link stays short (~1.3 KB with a typical WPS).
+The logo isn't sent; the welder's header is text only.
+
+The record id is `"t" + tid`, so pasting the same return link twice opens the one record.
+The welder's phone remembers a sent ticket (`wq.sent.<tid>`), so reopening the original
+link shows "Your test ticket" with the WPS and the return link again instead of a blank form.
+
+**The iPhone catch.** A link tapped in Messages opens in Safari, not the home-screen app,
+and iOS gives the two separate storage. So `#t=` opened somewhere with no setup shows the
+`landed` screen: "Copy the link, open Weld Sync, Test records → Paste it." In the app,
+"Paste it" uses `navigator.clipboard.readText()` (one tap on iOS's Paste bubble), with a
+textarea fallback. Where the records *are* (a desktop browser, an Android PWA that captures
+its links), `#t=` files the record straight away.
 
 ---
 
@@ -59,11 +87,13 @@ object, a map of view functions that return HTML strings, and one delegated even
 S = {
   screen, stack, step, w, r, recId, coId, wpsId, draft, preview,
   wps,        // WPS snapshot shown on the welder's intake
-  ticket,     // the ticket row just created (inspector side)
+  ticket,     // the ticket just created, before it goes in the link (inspector side)
   ticketId,   // the ticket being filled out (welder side)
+  welder,     // true when this visit came from a #new= link
+  landed,     // a #t= link opened where there are no records
   pdf         // { doc, url, name, title, note, pages } behind the pdfview screen
 }
-AUTH = { user, org, profile }    // set after sign-in; CFG is built from org + profile
+CFG = { shop, city, address, phone, logo, inspector, cert, code }   // wq.local.cfg
 ```
 
 ### Views
@@ -79,92 +109,41 @@ wpslist  wpsedit  wpsview                  WPSs and PQRs together ("Procedures")
 pdfview  settings  exported  importer
 ```
 
-Auth and welder screens:
+First-run and welder screens:
 
 ```
-login  onboard  loading  intake  sent  closed
+onboard  intake  sent  myticket  closed  landed
 ```
 
 ### Data flow
 
-Views read synchronously from a localStorage cache (`db.get`), namespaced by org id.
-Writes go through `putRow(table, obj)` / `delRow(table, id)`: cache first (so the screen
-updates immediately), then an upsert/delete to Supabase. `loadAll()` refetches the four
-data tables and is called on sign-in, on the Refresh button, and whenever the app comes back
-to the foreground on a console screen — that's how new welder submissions appear.
+Views read synchronously from localStorage (`db.get`, keys `wq.local.*`). Writes go
+through `putRow(table, obj)` / `delRow(table, id)`. Settings are `wq.local.cfg`; first run
+(no shop name) shows `onboard`.
 
-Last write wins. There's no conflict resolution; with one inspector per org that's fine.
+`carryOver()` runs once: if there's no `wq.local.cfg` but the old signed-in version left a
+cache (`wq.profile.<user>` and `wq.<org id>.<table>`), it copies that in, so the phone
+keeps what it had.
 
 ### Events
 
 One delegated `click` listener on `document`, dispatching on data attributes
 (`data-go`, `data-act`, `data-pick`+`data-group`, `data-rec`/`data-co`/`data-wps`,
 `data-res`+`data-val`, `data-result`). Field input via `onField`, wired to **both**
-`input` and `change` — see §7.
+`input` and `change` — see §6.
 
 ---
 
-## 4. Database
+## 4. Backups
 
-Schema is in `supabase/schema.sql`. Seven tables:
-
-```
-orgs        the tenant — one inspection company (name, city, address, phone, logo, code
-            edition — one of EDITIONS, chosen in Settings)
-profiles    user → org, plus the inspector's name and cert line
-companies   (org_id, id) → data jsonb       the client companies
-wps         (org_id, id) → data jsonb       WPSs, and PQRs (kind:"PQR")
-records     (org_id, id) → data jsonb       { w, r, status, updated }
-inspections (org_id, id) → data jsonb       visual inspection reports
-tickets     id → org_id, data, wps, org_info, status, submission
-```
-
-The four data tables store the front-end object as jsonb, keyed by the short id the app
-already generates. Adding a field to a form is a front-end-only change.
-
-**Live project vs. fresh project.** `schema.sql` drops and recreates everything, so it is
-only for a new Supabase project. Changes to a live project go in
-`supabase/migrations/<date>-<what>.sql`, written to be safe to run twice, and pasted into
-the SQL Editor by hand. Both files must be kept in step: every migration's change also
-goes into `schema.sql`. The app copes with a migration that hasn't run yet — Settings
-says which file to run if address/phone or the logo won't save, and the Inspection
-reports screen says so (and keeps reports on the phone) until the `inspections` table
-exists (`MISSING.inspections`).
-
-Migrations so far, oldest first:
-
-```
-2026-09-16-org-letterhead.sql   orgs.address, orgs.phone
-2026-09-17-org-logo.sql         orgs.logo
-2026-09-17-inspections.sql      the inspections table + its RLS policy
-```
-
-Row-level security: every signed-in query is filtered by `my_org()`. The `anon` role has
-no table access at all. Welders go through two `security definer` functions:
-
-- `get_ticket(tid)` — returns the prefill, the WPS snapshot, and the shop header
-- `submit_ticket(tid, payload)` — inserts a record with status `Awaiting test`, marks the
-  ticket submitted, and refuses a second submission
-
-`create_org(...)` runs once on first sign-in and makes the org + profile together.
+There is no other copy of the data. Settings → Export everything gives a base64 blob to
+email to yourself; Import merges one back in (same id → the backup's copy wins). On a
+fresh phone, the first-run screen has "Restore from a backup instead", which also brings
+the letterhead settings.
 
 ---
 
-## 5. Sign-in
-
-Email and password, through Supabase Auth. Create account, sign in, forgot-password
-reset link, and a "new password" screen that appears when the reset link lands
-(`PASSWORD_RECOVERY` event). No custom email templates or SMTP needed; the defaults work.
-
-If "Confirm email" is on in the Supabase project, a new account gets a confirmation link
-first and then signs in. If it's off, sign-up drops straight into onboarding.
-
-The Site URL / redirect list in Supabase must include the hosted URL, or the reset link
-won't come back to the app.
-
----
-
-## 6. Domain rules, and the line that matters
+## 5. Domain rules, and the line that matters
 
 ### The PDFs
 
@@ -292,7 +271,7 @@ Everything on the welder's side after the name field is tap-only.
 
 ---
 
-## 7. Gotchas, all learned the hard way
+## 6. Gotchas, all learned the hard way
 
 **iOS fires only `change` on `<select>`, never `input`.** Handled by wiring `onField` to
 both events and de-duplicating. Don't collapse them back into one.
@@ -310,36 +289,32 @@ submit button in the body as well.
 
 **Silent returns.** Failed validation must show a message, never just return.
 
-**The sign-in check races your own test code.** If you drive the app from the console
-during development, `getSession()` resolving will render the login screen over whatever
-you set up. Set `S.screen` and call `render()` again.
+**Testing on one machine.** Inspector and welder share localStorage when you open both
+links in the same browser. Welder mode overrides `CFG` in memory only and never saves it.
 
 ---
 
-## 8. Known limits
+## 7. Known limits
 
-- **One inspector per org.** The schema supports more (profiles → org), but there's no
-  invite flow yet. Adding a coworker to the *same* company means inserting their profile
-  row by hand. Separate companies just sign up separately.
+- **One phone per inspector.** Nothing syncs. A coworker with their own company just
+  installs it on their own phone; their data never touches yours.
+- **Backups are manual.** Lose the phone without an export and the records are gone.
 - **No welder continuity or expiration tracking** (D1.1 six-month continuity, requal).
 - **No photos.** The WPQR has the photo box; nothing fills it.
 - **Only D1.1 ranges are drafted.** D1.3 / D1.4 records print blank ranges.
 - **Inspection reports have no photos and no per-item sketches.**
 - **No archiving of the PDF.** It goes to the share sheet and that's the copy.
-- **Offline is read-only-ish.** The cache lets the console open without signal, and
-  writes go to the cache, but a write made offline is not queued for later — it's lost
-  on reload. Fine for now; a retry queue is the fix if it bites.
+- **The welder has to text the link back.** Until they do, the inspector has nothing.
 
 ---
 
-## 9. Where it was going next
+## 8. Where it was going next
 
 1. **Continuity and expiration tracking** per welder — the feature another CWI would pay for.
-2. **Invite a coworker** to the same org.
-3. **Trim the option lists** to what the shops actually stock.
-4. **Multi-process tickets** for combo qualifications.
-5. **Custom domain** for the hosted app.
-6. **A designed form as the PDF template.** The plan: the inspector lays the WPQR / WPS
+2. **Trim the option lists** to what the shops actually stock.
+3. **Multi-process tickets** for combo qualifications.
+4. **Custom domain** for the hosted app.
+5. **A designed form as the PDF template.** The plan: the inspector lays the WPQR / WPS
    out in Sheets, exports a blank PDF, and the app fills values into that PDF at
    measured coordinates (pdf-lib) instead of redrawing the form — pixel-exact to the
    design, with the logo box and letterhead lines left blank for each org to fill from
@@ -347,7 +322,7 @@ you set up. Set `S.screen` and call `render()` again.
 
 ---
 
-## 10. Design
+## 9. Design
 
 Shop-floor instrument, not SaaS. Dark steel panels, arc blue for selection, safety yellow
 for attention and verification gates, oxide red for fails. Large tap targets sized for

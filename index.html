@@ -136,31 +136,24 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 <div id="app"><div class="wrap" id="view"></div></div>
 <div class="bar" id="bar"></div>
 <div id="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.49.4/dist/umd/supabase.min.js"></script>
 <script>
 /* =========================================================
    Weld Sync — inspector side + welder ticket links
-   One page. Inspectors sign in; their data lives in Supabase,
-   scoped to their inspection company. Welders never sign in —
-   a ticket link is all they get, and Send files the record.
+   One page, no server. The inspector's data lives on this phone.
+   A ticket goes out as a link with everything the welder needs in
+   it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-09-18.2";
-var SB_URL="https://xvpypvrlkaryvcpuyudl.supabase.co";
-var SB_KEY="sb_publishable_RouDM0y1DwiTMf95JhA81Q_bQLkbEro";
-var sb = (window.supabase && window.supabase.createClient) ? window.supabase.createClient(SB_URL, SB_KEY) : null;
+var VERSION="2026-11-21.1";
 
-/* ---------- local cache ----------
-   The views read synchronously from here. The server is the record;
-   this is a mirror so the console opens instantly and survives a
-   dropped signal. Namespaced by org so two accounts on one phone
-   never see each other's rows. */
+/* ---------- storage ----------
+   Everything is in localStorage on this device. Export a backup from
+   Settings now and then — there is no other copy. */
 var mem={};
 var raw={ get:function(k){try{return localStorage.getItem(k)}catch(e){return mem[k]||null}},
           set:function(k,v){try{localStorage.setItem(k,v)}catch(e){mem[k]=v}},
           del:function(k){try{localStorage.removeItem(k)}catch(e){delete mem[k]}} };
-var AUTH={ user:null, org:null, profile:null };
-function ns(k){ return "wq."+(AUTH.org?AUTH.org.id:"anon")+"."+k; }
+function ns(k){ return "wq.local."+k; }
 var db={
   get:function(k,d){ try{ var v=JSON.parse(raw.get(ns(k))||"null"); return v===null?d:v; }catch(e){ return d; } },
   set:function(k,v){ raw.set(ns(k), JSON.stringify(v)); }
@@ -170,10 +163,13 @@ function linkBase(){ return hosted() ? location.origin+location.pathname : ""; }
 function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,6); }
 function token(){ var a=new Uint8Array(12); (window.crypto||window.msCrypto).getRandomValues(a);
   var s=""; for(var i=0;i<a.length;i++) s+=(a[i]%36).toString(36); return s; }
+/* Opened from the home screen, not a browser tab. On an iPhone the two
+   keep separate storage, so a link tapped in Messages lands in Safari
+   where none of the inspector's records are. */
+function standalone(){ return !!(navigator.standalone || (window.matchMedia&&matchMedia("(display-mode: standalone)").matches)); }
 
-/* ---------- settings ----------
-   Assembled from the org row and the profile row once signed in. */
-var CFG = { shop:"", city:"", address:"", phone:"", logo:"", inspector:"", cert:"", code:"AWS D1.1:2025" };
+/* ---------- settings ---------- */
+var CFG = Object.assign({ shop:"", city:"", address:"", phone:"", logo:"", inspector:"", cert:"", code:"AWS D1.1:2025" }, db.get("cfg",{}));
 /* The editions the app knows. The clause numbers on the printed WPQR
    come from CLAUSES, keyed by the year in this string. */
 var EDITIONS=["AWS D1.1:2020","AWS D1.1:2025","AWS D1.3:2018","AWS D1.4:2018"];
@@ -185,23 +181,27 @@ function editionSelect(attr,cur){
   var list=EDITIONS.indexOf(cur)>-1||!cur ? EDITIONS : EDITIONS.concat([cur]);
   return '<select '+attr+'>'+list.map(function(e){return '<option '+(e==cur?"selected":"")+'>'+esc(e)+'</option>';}).join("")+'</select>';
 }
-function cfgFromAuth(){
-  if(!AUTH.org) return;
-  CFG={ shop:AUTH.org.name||"", city:AUTH.org.city||"", address:AUTH.org.address||"", phone:AUTH.org.phone||"",
-        logo:AUTH.org.logo||"", code:AUTH.org.code||"AWS D1.1:2025", inspector:AUTH.profile.name||"", cert:AUTH.profile.cert||"" };
-}
-function saveCfg(){
-  if(!sb||!AUTH.org) return;
-  AUTH.org.name=CFG.shop; AUTH.org.city=CFG.city; AUTH.org.address=CFG.address; AUTH.org.phone=CFG.phone; AUTH.org.logo=CFG.logo; AUTH.org.code=CFG.code;
-  AUTH.profile.name=CFG.inspector; AUTH.profile.cert=CFG.cert;
-  sb.from("orgs").update({name:CFG.shop,city:CFG.city,code:CFG.code}).eq("id",AUTH.org.id).then(chk);
-  sb.from("orgs").update({address:CFG.address,phone:CFG.phone}).eq("id",AUTH.org.id).then(function(res){
-    if(res&&res.error) toast("Address and phone didn't save — run supabase/migrations/2026-09-16-org-letterhead.sql on the project.");
+function saveCfg(){ db.set("cfg",CFG); }
+function setUp(){ return !!CFG.shop; }
+
+/* The signed-in version kept a mirror of the account on the phone,
+   under wq.<org id>.*. The first time this version opens, carry that
+   mirror over so nothing on the phone is left behind. */
+function carryOver(){
+  if(raw.get(ns("cfg"))) return;
+  var org=null, keys=[];
+  try{ for(var i=0;i<localStorage.length;i++) keys.push(localStorage.key(i)); }catch(e){ return; }
+  keys.forEach(function(k){
+    var m=k.match(/^wq\.profile\.(.+)$/); if(!m||org) return;
+    try{ var c=JSON.parse(raw.get(k)); if(c&&c.org){ org=c.org;
+      CFG={ shop:org.name||"", city:org.city||"", address:org.address||"", phone:org.phone||"", logo:org.logo||"",
+            code:org.code||"AWS D1.1:2025", inspector:(c.profile&&c.profile.name)||"", cert:(c.profile&&c.profile.cert)||"" }; } }catch(e){}
   });
-  sb.from("orgs").update({logo:CFG.logo||null}).eq("id",AUTH.org.id).then(function(res){
-    if(res&&res.error) toast("The logo didn't save — run supabase/migrations/2026-09-17-org-logo.sql on the project.");
+  if(!org) return;
+  TABLES.forEach(function(t){
+    var v=raw.get("wq."+org.id+"."+t); if(v) raw.set(ns(t), v);
   });
-  sb.from("profiles").update({name:CFG.inspector,cert:CFG.cert}).eq("user_id",AUTH.user.id).then(chk);
+  saveCfg();
 }
 
 /* ---------- whose letterhead ----------
@@ -222,45 +222,18 @@ function recordBrand(w){
 function wpsBrand(p){ if(p.brand) return p.brand; var c=companyById(p.companyId); return c ? companyBrand(c) : orgBrand(); }
 function hexRgb(h){ var m=/^#?([0-9a-f]{6})$/i.exec(h||""); if(!m) return hexRgb(BRAND_RED); var n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; }
 
-/* ---------- sync ----------
-   Reads come from the cache. Writes go to the cache first (so the
-   screen updates now) and then to the server. */
 var TABLES=["companies","wps","records","inspections"];
-var MISSING={};   // tables the project doesn't have yet (migration not run)
-function rowToObj(row){ return Object.assign({id:row.id}, row.data); }
-function objToRow(o){ var d=Object.assign({},o); delete d.id; return { org_id:AUTH.org.id, id:o.id, data:d, updated_at:new Date().toISOString() }; }
-function loadAll(){
-  if(!sb||!AUTH.org) return Promise.resolve();
-  var failed=false;
-  return Promise.all(TABLES.map(function(t){
-    return sb.from(t).select("id,data").order("updated_at",{ascending:false}).then(function(res){
-      if(res.error){
-        if(t=="inspections"&&/relation|does not exist|schema cache/i.test(res.error.message)){ MISSING.inspections=true; return; }
-        if(!failed) toast("Couldn't refresh — "+res.error.message); failed=true; return;
-      }
-      if(t=="inspections") MISSING.inspections=false;
-      var list=res.data.map(rowToObj);
-      if(t=="companies") list.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
-      db.set(t,list);
-    });
-  }));
-}
 function putRow(table,obj){
   var all=db.get(table,[]), i=-1;
   for(var k=0;k<all.length;k++) if(all[k].id==obj.id) i=k;
   if(i>-1) all[i]=obj; else all.unshift(obj);
   if(table=="companies") all.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
-  db.set(table,all);
-  if(sb&&AUTH.org) sb.from(table).upsert(objToRow(obj)).then(function(res){
-    if(res&&res.error&&table=="inspections"&&/relation|does not exist|schema cache/i.test(res.error.message)){ MISSING.inspections=true; toast("Saved on this phone only — run the inspections migration in Supabase to sync reports."); return; }
-    chk(res);
-  });
+  try{ localStorage.setItem(ns(table), JSON.stringify(all)); }
+  catch(e){ mem[ns(table)]=JSON.stringify(all); toast("This phone is out of room — that didn't save. Export a backup and archive old records."); }
 }
 function delRow(table,id){
   db.set(table, db.get(table,[]).filter(function(x){return x.id!=id}));
-  if(sb&&AUTH.org) sb.from(table).delete().eq("org_id",AUTH.org.id).eq("id",id).then(chk);
 }
-function chk(res){ if(res&&res.error) toast("Didn't save — "+res.error.message); }
 var toastT;
 function toast(msg){
   var t=document.getElementById("toast"); t.textContent=msg; t.style.display="block";
@@ -590,38 +563,11 @@ VIEWS.home = function(){
     h += '</div>';
   }
   h += '<p class="foot"><button class="mini" data-act="settings">Shop and stamp settings</button><br>'
-     + (AUTH.user ? 'Signed in as '+esc(AUTH.user.email) : 'Not signed in')+' · v'+VERSION+'</p>';
+     + 'Saved on this phone · v'+VERSION+'</p>';
   return { body:h, bar:"" };
 };
 
-/* ---------- sign in / first run ---------- */
-VIEWS.login = function(){
-  var d=S.draft, mode=d.mode||"in";
-  var h='<div class="ticket signin"><div class="ticket-top"><div>'
-    +'<div class="shop">Weld Sync</div>'
-    +'<h1>'+(mode=="up"?"Create your account":mode=="reset"?"Reset password":"Sign in")+'<span>For inspectors. Welders don\'t sign in — they open the link you text them.</span></h1>'
-    +'</div>'+codeChip()+'</div></div>';
-  if(d.note) h+='<div class="flag"><b>'+esc(d.note)+'</b></div>';
-  h+='<div class="field"><label>Email</label><input type="email" data-d="email" value="'+esc(d.email||"")+'" placeholder="you@example.com" autocomplete="email" inputmode="email"></div>';
-  if(mode!="reset") h+='<div class="field"><label>Password'+(mode=="up"?' <span style="color:var(--muted);font-weight:400">— 8 characters or more</span>':'')+'</label><input type="password" data-d="password" value="'+esc(d.password||"")+'" autocomplete="'+(mode=="up"?"new-password":"current-password")+'"></div>';
-  if(mode=="in") h+='<button class="primary" data-act="signin" style="width:100%">Sign in</button>'
-    +'<p class="foot"><button class="mini" data-act="mode-up">Create an account</button> &nbsp;·&nbsp; <button class="mini" data-act="mode-reset">Forgot password</button></p>';
-  if(mode=="up") h+='<button class="primary" data-act="signup" style="width:100%">Create account</button>'
-    +'<p class="foot"><button class="mini" data-act="mode-in">I already have one</button></p>';
-  if(mode=="reset") h+='<button class="primary" data-act="sendreset" style="width:100%">Email me a reset link</button>'
-    +'<p class="foot"><button class="mini" data-act="mode-in">Back to sign in</button></p>';
-  h+='<p id="autherr" class="err" style="display:none"></p>';
-  return { body:h, bar:"" };
-};
-VIEWS.newpass = function(){
-  var d=S.draft;
-  var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">Weld Sync</div>'
-    +'<h1>New password<span>Pick one and you\'re back in.</span></h1></div></div></div>';
-  h+='<div class="field"><label>New password — 8 characters or more</label><input type="password" data-d="password" value="'+esc(d.password||"")+'" autocomplete="new-password"></div>'
-    +'<button class="primary" data-act="setpass" style="width:100%">Save password</button>'
-    +'<p id="autherr" class="err" style="display:none"></p>';
-  return { body:h, bar:"" };
-};
+/* ---------- first run ---------- */
 VIEWS.onboard = function(){
   var d=S.draft;
   var h='<div class="ticket"><div class="ticket-top"><div><div class="shop">First time here</div>'
@@ -633,7 +579,8 @@ VIEWS.onboard = function(){
     +'<div class="field"><label>Certification line</label><input type="text" data-d="cert" value="'+esc(d.cert||"")+'" placeholder="AWS CWI #12345678"></div>'
     +'<div class="field"><label>Code edition</label>'+editionSelect('data-d="code"', d.code||"AWS D1.1:2025")+'</div>'
     +'<button class="primary" data-act="finishonboard" style="width:100%">Open the console</button>'
-    +'<p id="autherr" class="err" style="display:none"></p>';
+    +'<p id="autherr" class="err" style="display:none"></p>'
+    +'<p class="foot"><button class="mini" data-act="import">Restore from a backup instead</button></p>';
   return { body:h, bar:"" };
 };
 VIEWS.loading = function(){
@@ -702,14 +649,13 @@ function wpsCard(p, title){
 }
 
 VIEWS.ticketlink = function(){
-  var d=S.draft, t=S.ticket||{};
-  var pre=t.data||{};
-  var link=linkBase()+"?t="+t.id;
+  var t=S.ticket||{}, pre=t.data||{};
+  var link=linkBase()+"#new="+enc(t);
   window._link=link;
-  window._msg="Weld test intake — "+CFG.shop+"\nFill this out before your test:\n"+link;
+  window._msg="Weld test intake — "+CFG.shop+"\nFill this out before your test, then text me back the link it gives you:\n"+link;
   var h=nav("Send to welder");
   h+='<div class="card"><h3>Ticket ready</h3>'
-    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Text this to the welder. When they tap Send, their answers land in your Test records on their own.</p>'
+    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Text this to the welder. When they tap Send they get a link to text back to you. Tap it, or paste it into Test records, and the test is on file.</p>'
     +'<div class="linkbox">'+esc(link)+'</div>'
     +'<button class="mini" data-act="copy">Copy link</button> &nbsp; <button class="mini" data-act="sms">Text it</button> &nbsp; <button class="mini" data-act="share">Share</button></div>';
   h+='<div class="card"><h3>On the ticket</h3><dl class="kv">'
@@ -723,6 +669,15 @@ VIEWS.ticketlink = function(){
 };
 
 /* ---------- records ---------- */
+/* Where a welder's link comes in. On an iPhone a link tapped in
+   Messages opens in Safari, not here, so pasting is the main road. */
+function pasteCard(){
+  return '<div class="card" style="margin-top:14px"><h3>Welder sent a link back?</h3>'
+    + (navigator.clipboard&&navigator.clipboard.readText ? '<button class="primary" data-act="pasteclip" style="width:100%;margin-bottom:10px">Paste it</button>' : '')
+    + '<textarea id="pastebox" placeholder="Or paste it here" style="font-size:14px"></textarea>'
+    + '<div style="margin-top:10px"><button class="ghost" data-act="paste" style="width:100%">Load welder</button></div>'
+    + '<p id="pasteerr" class="err" style="display:none">No test in that. Copy the whole link they sent, including everything after the #.</p></div>';
+}
 VIEWS.records = function(){
   var recs=active(), arch=archived();
   var finished=recs.filter(function(r){return r.r.result});
@@ -732,7 +687,7 @@ VIEWS.records = function(){
       + '<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Load three made-up welders so you can walk the record screen without waiting on a real test.</p>'
       + '<button class="primary" data-act="seed" style="width:100%">Load sample data</button></div>';
   }
-  if(!recs.length && arch.length) h += '<div class="empty">Nothing open. Welders\' tickets show up here when they tap Send.</div>';
+  if(!recs.length && arch.length) h += '<div class="empty">Nothing open. Paste a welder\'s link below when they send one back.</div>';
   recs.forEach(function(r){ h += recRow(r); });
   if(finished.length>1) h += '<p class="foot" style="margin-top:8px"><button class="mini" data-act="archfinished">Archive all '+finished.length+' finished tests</button></p>';
   if(arch.length){
@@ -741,7 +696,7 @@ VIEWS.records = function(){
     else h += '<p style="margin:0;font-size:.86rem;color:var(--muted)">'+arch.length+' finished test'+(arch.length==1?"":"s")+' put away. Still on file, still searchable by company.</p>';
     h += '</div>';
   }
-  h += '<p class="foot">Welders\' tickets show up here on their own when they tap Send.<br><button class="mini" data-act="refresh">Refresh</button></p>';
+  h += pasteCard();
   return { body:h, bar:'<button class="primary" data-act="startblank">Start a record myself</button>' };
 };
 
@@ -751,7 +706,6 @@ var ITEM_COLS=[{k:"item",label:"Item / weld",w:1.4,ph:"e.g. Beam B-12 flange"},{
 VIEWS.inspections = function(){
   var list=inspections();
   var h=nav("Inspection reports");
-  if(MISSING.inspections) h+='<div class="flag"><b>One-time setup</b> — this needs a new table in the database. Run <code>supabase/migrations/2026-09-17-inspections.sql</code> in Supabase → SQL Editor, then tap Refresh. Reports you write before that stay on this phone only.</div>';
   if(!list.length) h+='<div class="empty">No reports yet.<br>A report is a job-site visual inspection: where you went, what you looked at, what passed.</div>';
   list.forEach(function(i){
     var n=(i.items||[]).length, rej=(i.items||[]).filter(function(x){return /Reject|Repair/.test(x.result||"")}).length;
@@ -1082,7 +1036,7 @@ VIEWS.wpsview = function(){
   if(isPqr(p)){
     h+='<div class="card"><h3>Test results</h3><dl class="kv">'+(p.results||[]).map(function(r){return '<dt>'+esc([r.test,r.spec].filter(function(x){return x&&x!="—"}).join(" ")||"—")+'</dt><dd>'+esc(r.result||"—")+(r.remarks?' — '+esc(r.remarks):'')+'</dd>';}).join("")+'</dl></div>';
     if((p.passes||[]).length) h+='<div class="card"><h3>Per-pass readings</h3><dl class="kv">'+p.passes.map(function(q){return '<dt>Pass '+esc(q.no||"")+'</dt><dd>'+esc([q.process,q.size,q.polarity,q.amps?q.amps+" A":"",q.volts?q.volts+" V":"",q.wfs?q.wfs+" ipm WFS":"",q.travel?q.travel+" ipm":""].filter(Boolean).join(" · "))+'</dd>';}).join("")+'</dl></div>';
-  } else if(!S.preview&&AUTH.org&&!S.ticketId){
+  } else if(!S.preview&&!S.welder){
     h+='<p class="foot"><button class="mini" data-act="pqrfrom">Qualify this procedure — start a PQR from it</button></p>';
   }
   if(p.notes) h+='<div class="card"><h3>Notes</h3><p style="margin:0;font-size:.92rem;white-space:pre-wrap">'+esc(p.notes)+'</p></div>';
@@ -1245,35 +1199,64 @@ function missing(){
   if((GASES[w.process]||[])[0]!="None" && !w.gas)m.push("shielding gas");
   return m;
 }
+/* The welder's answers go back the way the ticket came: as a link. */
+function returnLink(){ return linkBase()+"#t="+enc({ tid:S.ticketId||"", w:S.w }); }
+function returnMsg(link){ return "Weld test — "+[S.w.name||"welder", S.w.position, S.w.process].filter(Boolean).join(" · ")+"\n"+link; }
+function sendBack(){
+  var link=returnLink();
+  window._link=link; window._msg=returnMsg(link);
+  window._smsTo=String(CFG.phone||"").replace(/[^\d+]/g,"");
+  return '<div class="card"><h3>Text this back to '+esc(CFG.inspector||"the inspector")+'</h3>'
+    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Nothing is sent until you send this link. It is your whole test record.</p>'
+    +'<button class="primary" data-act="sms" style="width:100%;margin-bottom:10px">Text it'+(CFG.inspector?' to '+esc(CFG.inspector):'')+'</button>'
+    +'<div class="linkbox">'+esc(link)+'</div>'
+    +'<button class="mini" data-act="copy">Copy link</button> &nbsp; <button class="mini" data-act="share">Share</button></div>';
+}
 VIEWS.sent = function(){
   var h=previewBar()+'<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+'</div>'
-    +'<h1>Sent to '+esc(CFG.inspector||"the inspector")+'<span>'+(S.preview?'In the real thing, this is already in your Test records.':'Your test record is drafted. Nothing else to send.')+'</span></h1></div></div><div class="perf"></div>'
+    +'<h1>One more step<span>'+(S.preview?'This is the link the welder texts back to you.':'Text the link below to '+esc(CFG.inspector||"the inspector")+'. That is what files your test.')+'</span></h1></div></div><div class="perf"></div>'
     +'<div class="ticket-bottom">'+esc(S.w.name)+' · '+esc(S.w.position)+' · '+esc(S.w.process)+'</div></div>';
+  h+=sendBack();
   h+='<div class="card"><h3>Before you weld</h3><p style="margin:0;font-size:.9rem;color:var(--muted)">Bring your coupon to the booth. The inspector confirms the position and thickness ranges against the code book, then witnesses the test.</p></div>';
   if(S.wps) h+=wpsCard(S.wps, "Your procedure")+keepWps();
+  h+='<p class="foot"><button class="mini" data-act="iedit">Change something</button></p>';
   return { body:h, bar:"" };
 };
-/* What a welder sees when they reopen a link they already sent. The
-   text message they got is their copy of the WPS; this is what it opens. */
+/* What a welder sees when they reopen a link they already filled out
+   on this phone. The text message they got is their copy of the WPS;
+   this is what it opens. */
 VIEWS.myticket = function(){
-  var t=S.ticket||{}, d=t.data||{};
+  var w=S.w;
   var h='<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+(CFG.city?' &nbsp;·&nbsp; '+esc(CFG.city):'')+'</div>'
-    +'<h1>Your test ticket<span>Already sent to '+esc(CFG.inspector||"the inspector")+'. Bring your coupon to the booth.</span></h1></div>'
+    +'<h1>Your test ticket<span>Already filled out. If you never texted the link back, do it below.</span></h1></div>'
     +''+codeChip()+'</div><div class="perf"></div>'
-    +'<div class="ticket-bottom">'+esc([d.name,d.company,d.position,d.process].filter(Boolean).join(" · ")||"Sent")+'</div></div>';
+    +'<div class="ticket-bottom">'+esc([w.name,w.company,w.position,w.process].filter(Boolean).join(" · ")||"Filled out")+'</div></div>';
   if(S.wps) h+=wpsCard(S.wps, "Your procedure")+keepWps();
-  else h+='<div class="empty">No WPS was attached to this ticket.</div>';
+  h+=sendBack();
+  h+='<p class="foot"><button class="mini" data-act="iedit">Change something</button></p>';
   return { body:h, bar:"" };
 };
 function keepWps(){
   return '<div class="card"><h3>Keep a copy</h3>'
-    +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">This link keeps working — open the text message any time to see the WPS. Or save it now.</p>'
+    +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">The link in your texts keeps working — open it any time to see the WPS. Or save it now.</p>'
     +'<button class="mini" data-act="sharewps">Share as text</button> &nbsp;·&nbsp; <button class="mini" data-act="pdfwps">Save as PDF</button></div>';
 }
 VIEWS.closed = function(){
   var d=S.draft;
   var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop||"Weld test")+'</div>'
-    +'<h1>'+esc(d.title||"Already sent")+'<span>'+esc(d.msg||"")+'</span></h1></div></div></div>';
+    +'<h1>'+esc(d.title||"Something is off")+'<span>'+esc(d.msg||"")+'</span></h1></div></div></div>';
+  return { body:h, bar:"" };
+};
+/* A welder's link tapped somewhere with none of the inspector's data —
+   on an iPhone, Safari, since Messages doesn't open home-screen apps. */
+VIEWS.landed = function(){
+  var w=(S.landed&&S.landed.w)||{};
+  window._link=S.landed&&S.landed.link;
+  var h='<div class="ticket signin"><div class="ticket-top"><div><div class="shop">Weld Sync</div>'
+    +'<h1>A welder\'s test<span>'+esc([w.name,w.position,w.process].filter(Boolean).join(" · ")||"Test record")+'</span></h1></div></div></div>';
+  h+='<div class="card"><h3>This goes in your Weld Sync app</h3>'
+    +'<p style="margin:0 0 14px;font-size:.9rem;color:var(--muted)">Your records are in the app on your home screen, not in this browser. Copy the link, open Weld Sync, go to Test records and tap Paste it.</p>'
+    +'<button class="primary" data-act="copy" style="width:100%">Copy the link</button></div>';
   return { body:h, bar:"" };
 };
 
@@ -1410,10 +1393,8 @@ VIEWS.settings = function(){
   h+='<div class="card"><h3>Sample documents</h3>'
     +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">What the forms look like with your letterhead, using made-up data. Nothing is saved.</p>'
     +'<button class="mini" data-act="samplewpqr">Preview a WPQR</button> &nbsp;·&nbsp; <button class="mini" data-act="samplewps">Preview a WPS</button></div>';
-  h+='<div class="card"><h3>Your data</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Everything is saved to your account and shows up on any phone you sign in on. Export is a spare copy; Import adds records from an older backup.</p>'
+  h+='<div class="card"><h3>Your data</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Everything lives on this phone and nowhere else. Export a backup and email it to yourself now and then — that copy is what you restore from on a new phone. Import adds a backup\'s records to what is here.</p>'
     +'<button class="mini" data-act="export">Export everything</button> &nbsp; <button class="mini" data-act="import">Import a backup</button></div>';
-  h+='<div class="card"><h3>Account</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">'+esc(AUTH.user?AUTH.user.email:"")+'</p>'
-    +'<button class="mini" data-act="signout">Sign out</button></div>';
   return { body:h, bar:'<button class="primary" data-act="savecfg">Save settings</button>' };
 };
 VIEWS.exported = function(){
@@ -1427,10 +1408,10 @@ VIEWS.exported = function(){
 };
 VIEWS.importer = function(){
   var h = nav("Import a backup");
-  h+='<div class="card"><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">This replaces everything currently in the app.</p>'
+  h+='<div class="card"><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Adds the backup\'s records, companies, procedures and reports to what is here. Anything with the same id is replaced by the backup\'s copy.</p>'
     +'<textarea id="impbox" placeholder="Paste the backup" style="font-size:13px;min-height:140px"></textarea>'
     +'<p id="imperr" class="err" style="display:none">That doesn\'t look like a backup.</p></div>';
-  return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="doimport">Replace everything</button>' };
+  return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="doimport">Import</button>' };
 };
 
 /* =========================================================
@@ -1959,6 +1940,7 @@ document.addEventListener("click", function(e){
     var box=document.getElementById("impbox"), er=document.getElementById("imperr");
     var d=dec((box.value||"").trim());
     if(d&&d.records){
+      if(!setUp()&&d.cfg){ CFG=Object.assign({},CFG,d.cfg); saveCfg(); }
       (d.companies||[]).forEach(function(x){ putRow("companies",x); });
       (d.wps||[]).forEach(function(x){ putRow("wps",x); });
       (d.records||[]).forEach(function(x){ putRow("records",x); });
@@ -2017,7 +1999,11 @@ document.addEventListener("click", function(e){
   else if(a=="exitpreview"){ S.preview=false; S.wps=null; S.stack=[]; S.screen="home"; S.w=blankW(); S.r=blankR(); render(); }
   else if(a=="homeclear"){ S.stack=[]; S.screen="home"; S.draft={}; render(); }
   else if(a=="startblank"){ S.w=blankW(); S.r=blankR(); S.recId=null; go("inspect"); }
-  else if(a=="refresh"){ el.textContent="Refreshing…"; loadAll().then(function(){ render({keepScroll:true}); }); }
+  else if(a=="pasteclip"){
+    navigator.clipboard.readText().then(function(txt){ if(!takeReturn(txt)) document.getElementById("pasteerr").style.display="block"; })
+      .catch(function(){ toast("Couldn't read the clipboard — paste it in the box instead."); });
+  }
+  else if(a=="paste"){ var pb=document.getElementById("pastebox"); if(!takeReturn(pb&&pb.value)) document.getElementById("pasteerr").style.display="block"; }
   else if(a=="saverec"){ upsertRecord(); el.textContent="Saved"; }
   else if(a=="delrec"){ if(confirm("Delete this record?")){ delRow("records",S.recId); S.stack=[]; S.screen="records"; render(); } }
   else if(a=="archive"){ upsertRecord(); setArchived(S.recId,true); S.stack=[]; S.screen="records"; render(); }
@@ -2037,13 +2023,7 @@ document.addEventListener("click", function(e){
   else if(a=="istep-back"){ S.step=Math.max(0,S.step-1); render(); }
   else if(a=="isend"){ sendIntake(el); }
   else if(a=="iedit"){ S.screen="intake"; S.step=0; render(); }
-  else if(a=="signin") signIn();
-  else if(a=="signup") signUp();
-  else if(a=="sendreset") sendReset();
-  else if(a=="setpass") setPassword();
-  else if(a=="mode-in"||a=="mode-up"||a=="mode-reset"){ S.draft={email:S.draft.email,mode:a.slice(5)}; render(); }
   else if(a=="finishonboard") finishOnboard();
-  else if(a=="signout"){ if(AUTH.user) raw.del("wq.profile."+AUTH.user.id); sb.auth.signOut().then(function(){ location.href=location.pathname; }); }
   else if(a=="pdfwps"){
     var wp=currentWps(); if(!wp) return;
     if(!needPdf()) return;
@@ -2069,7 +2049,7 @@ document.addEventListener("click", function(e){
     else { copy(txt); el.textContent="Copied"; }
   }
   else if(a=="copy"){ copy(window._link); el.textContent="Copied"; }
-  else if(a=="sms"){ location.href="sms:?&body="+encodeURIComponent(window._msg); }
+  else if(a=="sms"){ var to=(S.screen=="sent"||S.screen=="myticket")?(window._smsTo||""):""; location.href="sms:"+to+"?&body="+encodeURIComponent(window._msg); }
   else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}); else { copy(window._link); el.textContent="Copied"; } }
 });
 function copy(t){ try{ navigator.clipboard.writeText(t); }catch(e){} }
@@ -2110,119 +2090,61 @@ function prefillFromWps(p){
   if(p.code) w.code=p.code;
 }
 
-/* ---------- server round trips ---------- */
-function createTicket(btn){
-  var d=S.draft;
-  if(!sb||!AUTH.org){ toast("Not signed in."); return; }
-  var p=wpsById(d.wpsId);
-  var t={ id:token(), org_id:AUTH.org.id,
-    data:{ companyId:d.companyId||"", company:coName(d.companyId), name:d.name||"",
-           wpsId:d.wpsId||"", wps:wpsLabel(p), position:d.position||"", process:d.process||"" },
-    wps: p ? Object.assign({},p) : null,
-    org_info:{ shop:CFG.shop, city:CFG.city, address:CFG.address, phone:CFG.phone, logo:CFG.logo, inspector:CFG.inspector, code:CFG.code } };
-  if(t.wps){ delete t.wps._demo; t.wps.brand=wpsBrand(p); }
-  btn.disabled=true; btn.textContent="Creating…";
-  sb.from("tickets").insert(t).then(function(res){
-    if(res.error){ btn.disabled=false; btn.textContent="Create link"; toast("Couldn't create the ticket — "+res.error.message); return; }
-    S.ticket=t; go("ticketlink");
-  });
+/* ---------- the two links ----------
+   #new=<ticket>   inspector → welder. Prefill, a snapshot of the WPS,
+                   and the shop header, so the welder's phone needs
+                   nothing else.
+   #t=<answers>    welder → inspector. The ticket id and what they
+                   filled in. The ticket id is the record id, so the
+                   same link pasted twice opens one record, not two. */
+function lean(o){
+  var out={}; Object.keys(o||{}).forEach(function(k){
+    var v=o[k]; if(k=="_demo"||v===""||v==null||(Array.isArray(v)&&!v.length)) return; out[k]=v; });
+  return out;
 }
-function sendIntake(btn){
-  if(S.preview||!S.ticketId){ S.screen="sent"; render(); return; }
-  btn.disabled=true; btn.textContent="Sending…";
-  sb.rpc("submit_ticket",{ tid:S.ticketId, payload:S.w }).then(function(res){
-    var er=document.getElementById("senderr");
-    if(res.error){ btn.disabled=false; btn.textContent="Send to inspector"; if(er){ er.textContent="Didn't go through — "+res.error.message+". Check your signal and try again."; er.style.display="block"; } return; }
-    if(res.data=="closed"){ S.screen="closed"; S.draft={title:"Already sent",msg:"This ticket was already submitted. If something is wrong on it, tell the inspector."}; render(); return; }
-    if(res.data!="ok"){ S.screen="closed"; S.draft={title:"Ticket not found",msg:"Ask the inspector to send a new link."}; render(); return; }
-    S.screen="sent"; render();
-  });
+function createTicket(){
+  var d=S.draft, p=wpsById(d.wpsId);
+  S.ticket={ id:token(),
+    data:lean({ companyId:d.companyId, company:coName(d.companyId), name:d.name,
+                wpsId:d.wpsId, wps:wpsLabel(p), position:d.position, process:d.process }),
+    wps: p ? Object.assign(lean(p), { brand:lean(Object.assign({}, wpsBrand(p), { logo:"" })) }) : null,
+    org: lean({ shop:CFG.shop, city:CFG.city, inspector:CFG.inspector, phone:CFG.phone, code:CFG.code }) };
+  go("ticketlink");
 }
-function welderBoot(tid){
-  S.screen="loading"; S.draft={msg:"Opening your ticket…"}; render();
-  if(!sb){ S.screen="closed"; S.draft={title:"Can't reach the server",msg:"Check your signal and reopen the link."}; render(); return; }
-  sb.rpc("get_ticket",{tid:tid}).then(function(res){
-    var t=res.data;
-    if(res.error||!t){ S.screen="closed"; S.draft={title:"Ticket not found",msg:"This link doesn't match a ticket. Ask the inspector to send it again."}; render(); return; }
-    CFG=Object.assign({},CFG,t.org||{});
-    if(t.status!="open"){ S.ticket=t; S.wps=t.wps||null; S.screen="myticket"; render(); return; }
-    S.ticketId=t.id; startIntake(t.data||{}, false, t.wps||null);
-  });
+function sendIntake(){
+  if(!S.preview&&S.ticketId) raw.set("wq.sent."+S.ticketId, JSON.stringify(S.w));
+  S.screen="sent"; render();
 }
-
-/* ---------- inspector sign-in ---------- */
+function welderBoot(t){
+  if(!t||!t.id){ S.screen="closed"; S.draft={title:"This link is cut off",msg:"Part of it didn't come through. Ask the inspector to text it again."}; render(); return; }
+  CFG=Object.assign({},CFG,t.org||{});   // for this visit only — never saved
+  S.welder=true; S.ticketId=t.id;
+  var done=null; try{ done=JSON.parse(raw.get("wq.sent."+t.id)||"null"); }catch(e){}
+  if(done){ S.w=Object.assign(blankW(),done); S.wps=t.wps||null; S.screen="myticket"; render(); return; }
+  startIntake(t.data||{}, false, t.wps||null);
+}
+function readReturn(txt){
+  var m=String(txt||"").match(/[#&]t=([A-Za-z0-9\-_]+)/);
+  var d=m?dec(m[1]):null;
+  return d&&d.w&&typeof d.w=="object" ? d : null;
+}
+/* File a welder's answers. Returns false if there's no test in it. */
+function takeReturn(txt){
+  var d=readReturn(txt); if(!d) return false;
+  var id=d.tid?"t"+d.tid:uid(), old=records().filter(function(x){return x.id==id})[0];
+  if(old){ toast("Already on file — opened it."); openRecord(id); return true; }
+  putRow("records",{ id:id, w:Object.assign(blankW(),d.w), r:blankR(), status:"Awaiting test", updated:Date.now() });
+  toast("Filed under Test records.");
+  S.stack=[]; S.screen="records"; openRecord(id);
+  return true;
+}
 function authErr(msg){ var e=document.getElementById("autherr"); if(e){ e.textContent=msg; e.style.display="block"; } }
-function authFields(needPass){
-  var email=(S.draft.email||"").trim(), pw=S.draft.password||"";
-  if(!/^\S+@\S+\.\S+$/.test(email)){ authErr("That doesn't look like an email address."); return null; }
-  if(needPass && pw.length<8){ authErr("Password needs to be at least 8 characters."); return null; }
-  return { email:email, password:pw };
-}
-function signIn(){
-  var f=authFields(true); if(!f) return;
-  sb.auth.signInWithPassword(f).then(function(res){
-    if(res.error){ authErr(/invalid/i.test(res.error.message)?"Wrong email or password.":res.error.message); return; }
-    afterSignIn();
-  });
-}
-function signUp(){
-  var f=authFields(true); if(!f) return;
-  sb.auth.signUp({ email:f.email, password:f.password, options:{ emailRedirectTo:linkBase() } }).then(function(res){
-    if(res.error){ authErr(res.error.message); return; }
-    if(res.data&&res.data.session){ afterSignIn(); return; }
-    // Email confirmation is on for this project: they confirm, then sign in.
-    S.draft={email:f.email,mode:"in",note:"Check your email for a confirmation link, then sign in here."}; render();
-  });
-}
-function sendReset(){
-  var f=authFields(false); if(!f) return;
-  sb.auth.resetPasswordForEmail(f.email,{ redirectTo:linkBase() }).then(function(res){
-    if(res.error){ authErr(res.error.message); return; }
-    S.draft={email:f.email,mode:"in",note:"Reset link sent. Open it on this device and you'll be asked for a new password."}; render();
-  });
-}
-function setPassword(){
-  var pw=S.draft.password||"";
-  if(pw.length<8){ authErr("Password needs to be at least 8 characters."); return; }
-  sb.auth.updateUser({ password:pw }).then(function(res){
-    if(res.error){ authErr(res.error.message); return; }
-    afterSignIn();
-  });
-}
 function finishOnboard(){
   var d=S.draft;
   if(!d.shop||!d.inspector){ authErr("The company name and your name are needed for the certificate header."); return; }
-  sb.rpc("create_org",{ p_name:d.shop, p_city:d.city||"", p_code:d.code||"AWS D1.1:2025", p_inspector:d.inspector, p_cert:d.cert||"" }).then(function(res){
-    if(res.error){ authErr(res.error.message); return; }
-    afterSignIn();
-  });
-}
-/* The session itself is kept by supabase-js in localStorage and renewed
-   in the background, so a returning inspector is already signed in.
-   The profile + org are cached too, so a bad signal on open shows the
-   console from cache instead of bouncing to the sign-in screen. */
-function afterSignIn(){
-  S.screen="loading"; S.draft={msg:"Loading your records…"}; render();
-  sb.auth.getSession().then(function(res){
-    var sess=res.data&&res.data.session;
-    AUTH.user=sess&&sess.user;
-    if(!AUTH.user){ S.screen="login"; S.draft={}; render(); return; }
-    var cached=null; try{ cached=JSON.parse(raw.get("wq.profile."+AUTH.user.id)||"null"); }catch(e){}
-    function enter(profile, org){
-      AUTH.profile=profile; AUTH.org=org; cfgFromAuth();
-      raw.set("wq.profile."+AUTH.user.id, JSON.stringify({profile:profile, org:org}));
-      S.stack=[]; S.screen="home"; S.draft={}; render();
-      return loadAll().then(function(){ if(!S.preview) render({keepScroll:true}); });
-    }
-    return sb.from("profiles").select("*, orgs(*)").eq("user_id",AUTH.user.id).maybeSingle().then(function(res){
-      if(res.error){
-        if(cached&&cached.org){ toast("No signal — showing what's saved on this phone."); return enter(cached.profile, cached.org); }
-        S.screen="login"; S.draft={note:"Couldn't reach the server. Check your signal and try again."}; render(); return;
-      }
-      if(!res.data){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
-      return enter(res.data, res.data.orgs);
-    });
-  });
+  CFG=Object.assign({},CFG,{ shop:d.shop, city:d.city||"", inspector:d.inspector, cert:d.cert||"", code:d.code||"AWS D1.1:2025" });
+  saveCfg();
+  S.stack=[]; S.screen="home"; S.draft={}; render();
 }
 
 function pick(v,group){
@@ -2285,30 +2207,23 @@ function refreshBar(){
 }
 
 /* ---------- boot ----------
-   ?t=<ticket>  → a welder opened their link. No sign-in, no console.
-   otherwise    → inspector. Session in hand → console; none → sign in.
-   Supabase puts its own tokens in the hash after a magic link; the
-   client library consumes them on load. */
+   #new=…  → a welder opened their ticket. No console.
+   #t=…    → a welder's answers. File them if this is where the
+             records are; otherwise say where they go.
+   neither → the console, or first-run setup. */
 (function(){
   loadPdfLib().catch(function(){});
-  var tid=new URLSearchParams(location.search).get("t");
-  if(tid){ welderBoot(tid); return; }
-  if(!sb){ S.screen="closed"; S.draft={title:"Can't reach the server",msg:"Check your connection and reload."}; render(); return; }
-  S.screen="loading"; S.draft={msg:"Signing in…"}; render();
-  sb.auth.getSession().then(function(res){
-    if(res.data&&res.data.session) afterSignIn();
-    else { S.screen="login"; S.draft={}; render(); }
-  });
-  sb.auth.onAuthStateChange(function(ev){
-    if(ev=="PASSWORD_RECOVERY"){ S.screen="newpass"; S.draft={}; render(); return; }
-    if(ev=="SIGNED_IN" && S.screen=="login") afterSignIn();
-  });
-  // Coming back to the app is when a welder's ticket is most likely to
-  // have landed. Refetch quietly on the console screens.
-  document.addEventListener("visibilitychange", function(){
-    if(document.visibilityState!="visible" || !AUTH.org) return;
-    if(["home","records","company","companies"].indexOf(S.screen)>-1) loadAll().then(function(){ render({keepScroll:true}); });
-  });
+  carryOver();
+  var hn=location.hash.match(/[#&]new=([A-Za-z0-9\-_]+)/);
+  if(hn){ welderBoot(dec(hn[1])); return; }
+  if(readReturn(location.hash)){
+    var link=location.href;
+    history.replaceState(null,"",location.pathname);
+    if(setUp()){ takeReturn(link); return; }
+    S.landed={ link:link, w:readReturn(link).w }; S.screen="landed"; render(); return;
+  }
+  if(!setUp()){ S.screen="onboard"; S.draft={code:"AWS D1.1:2025"}; render(); return; }
+  render();
 })();
 </script>
 </body>
