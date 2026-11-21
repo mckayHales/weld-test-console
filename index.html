@@ -68,9 +68,13 @@ input[type=text],input[type=email],input[type=password],input[type=number],input
   width:100%;background:var(--panel);border:1px solid var(--line);color:var(--paper);
   border-radius:8px;padding:13px 12px;font-size:17px;font-family:inherit}
 textarea{min-height:76px;resize:vertical}
+/* iOS gives a date box a built-in width that won't shrink; in a two-up
+   row it pushed into the field beside it. */
+input[type=date]{-webkit-appearance:none;appearance:none;min-width:0;display:block;min-height:50px;text-align:left}
+input[type=date]::-webkit-date-and-time-value{text-align:left}
 input:focus,select:focus,textarea:focus,button:focus-visible{outline:2px solid var(--arc);outline-offset:1px}
 select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 50%,calc(100% - 13px) 50%;background-size:5px 5px,5px 5px;background-repeat:no-repeat}
-.row{display:flex;gap:10px}.row>*{flex:1}
+.row{display:flex;gap:10px}.row>*{flex:1;min-width:0}
 .tiles{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(92px,1fr))}
 .tiles.wide{grid-template-columns:repeat(auto-fit,minmax(132px,1fr))}
 .tile{background:var(--panel);border:1px solid var(--line);color:var(--paper);border-radius:8px;padding:12px 8px;font:inherit;font-size:.95rem;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;min-height:54px;justify-content:center;text-align:center}
@@ -118,7 +122,16 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .rail{display:flex;gap:5px;margin:0 0 22px}
 .rail i{flex:1;height:4px;background:var(--line);border-radius:2px}
 .rail i.on{background:var(--arc)}.rail i.done{background:#4a6f93}
-#toast{display:none;position:fixed;left:16px;right:16px;top:calc(12px + env(safe-area-inset-top));max-width:44rem;margin:0 auto;background:var(--slag);color:#fff;padding:12px 16px;border-radius:8px;font-size:.9rem;z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.4)}
+#toast{display:none;position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));max-width:44rem;margin:0 auto;background:var(--panel2);border:1px solid var(--line);color:var(--paper);padding:12px 16px;border-radius:8px;font-size:.9rem;z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.4);align-items:center;gap:12px}
+#toast.bad{background:var(--slag);border-color:var(--slag);color:#fff}
+#toast span{flex:1}
+#toast button{background:none;border:0;color:var(--arc);font:inherit;font-weight:650;padding:4px 2px;cursor:pointer}
+/* Swipe a row left for Delete, the way Messages and Mail do it. */
+.sw{position:relative;overflow:hidden;border-radius:8px;margin-bottom:8px}
+.sw>.sub{margin:0;position:relative;z-index:1;touch-action:pan-y;transition:transform .22s ease;will-change:transform}
+.sw.drag>.sub{transition:none}
+.sw-act{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;justify-content:flex-end;background:var(--slag);border-radius:8px}
+.sw-act button{width:88px;background:none;border:0;color:#fff;font:inherit;font-weight:650;font-size:.95rem;cursor:pointer}
 .wps-card{border-color:#3C6789;background:linear-gradient(180deg,#22405A,#1E3448)}
 .wps-card h3{display:flex;align-items:center;gap:8px}
 .wps-card h3 small{font-weight:400;color:var(--muted);font-size:.8rem}
@@ -144,7 +157,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.1";
+var VERSION="2026-11-21.2";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -229,15 +242,33 @@ function putRow(table,obj){
   if(i>-1) all[i]=obj; else all.unshift(obj);
   if(table=="companies") all.sort(function(x,y){return (x.name||"").localeCompare(y.name||"")});
   try{ localStorage.setItem(ns(table), JSON.stringify(all)); }
-  catch(e){ mem[ns(table)]=JSON.stringify(all); toast("This phone is out of room — that didn't save. Export a backup and archive old records."); }
+  catch(e){ mem[ns(table)]=JSON.stringify(all); toast("This phone is out of room — that didn't save. Export a backup and archive old records.",{bad:1}); }
 }
+function getRow(table,id){ return db.get(table,[]).filter(function(x){return x.id==id})[0]; }
 function delRow(table,id){
   db.set(table, db.get(table,[]).filter(function(x){return x.id!=id}));
 }
+/* Delete with an Undo in the toast instead of an "are you sure". */
+var NOUNS={ records:"Record", companies:"Company", wps:"Procedure", inspections:"Report" };
+function removeRow(table,id){
+  var all=db.get(table,[]), at=-1;
+  for(var i=0;i<all.length;i++) if(all[i].id==id) at=i;
+  if(at<0) return;
+  var gone=all[at];
+  delRow(table,id);
+  toast((NOUNS[table]||"Item")+" deleted", { undo:function(){
+    var now=db.get(table,[]); now.splice(Math.min(at,now.length),0,gone); db.set(table,now); render({keepScroll:true});
+  } });
+}
 var toastT;
-function toast(msg){
-  var t=document.getElementById("toast"); t.textContent=msg; t.style.display="block";
-  clearTimeout(toastT); toastT=setTimeout(function(){ t.style.display="none"; },4200);
+/* opts.undo puts an Undo button on it; opts.bad colors it as an error. */
+function toast(msg,opts){
+  opts=opts||{};
+  var t=document.getElementById("toast");
+  t.innerHTML='<span>'+esc(msg)+'</span>'+(opts.undo?'<button type="button">Undo</button>':'');
+  t.className=opts.bad?"bad":""; t.style.display="flex";
+  if(opts.undo) t.querySelector("button").onclick=function(){ t.style.display="none"; opts.undo(); };
+  clearTimeout(toastT); toastT=setTimeout(function(){ t.style.display="none"; },opts.undo?6000:4200);
 }
 
 /* ---------- option data ---------- */
@@ -291,7 +322,11 @@ function mIcon(k){
 var CHEV='<svg width="9" height="15" viewBox="0 0 9 15" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 1l6 6.5L1 14"/></svg>';
 
 /* ---------- helpers ---------- */
-function today(){ var d=new Date(), z=function(n){return (n<10?"0":"")+n}; return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
+/* Dates are local calendar days. toISOString() is UTC and lands on
+   tomorrow every evening in Utah. */
+function ymd(d){ var z=function(n){return (n<10?"0":"")+n}; return d.getFullYear()+"-"+z(d.getMonth()+1)+"-"+z(d.getDate()); }
+function today(){ return ymd(new Date()); }
+function isVertical(pos){ return /3G|5G|6G|3F/.test(pos||""); }
 function fmtDate(s){ if(!s)return ""; var p=String(s).split("-"); return p.length==3?p[1]+"/"+p[2]+"/"+p[0]:s; }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
 function enc(o){ return btoa(unescape(encodeURIComponent(JSON.stringify(o)))).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
@@ -305,7 +340,12 @@ function frac(n){
   if(best) return (w?w+" ":"")+best+'"';
   return v.toFixed(3).replace(/0+$/,"").replace(/\.$/,"")+'"';
 }
-function tVal(w){ return w.thickness=="custom"?parseFloat(w.thicknessCustom):parseFloat(w.thickness); }
+/* Coupon thickness. On pipe it is the wall; older records kept the wall
+   in its own field. */
+function tVal(w){
+  var t=w.thickness=="custom"?parseFloat(w.thicknessCustom):parseFloat(w.thickness);
+  return isNaN(t)&&w.product=="pipe" ? parseFloat(w.pipeWall) : t;
+}
 
 /* ---------- qualified range drafts ----------
    Everything here is a draft the inspector edits and verifies against
@@ -352,15 +392,22 @@ function suggest(w){
   if(!isNaN(t)&&t>0){ tMin = t<0.125?frac(t):'1/8"'; tMax = t>=1?"Unlimited":frac(t*2); }
   var dia="";
   if(pipe){ var od=parseFloat(w.pipeOD); if(!isNaN(od)) dia = od>=24?"All diameters":frac(od)+" OD and larger — verify"; }
-  else dia='24" OD and larger';
+  else dia='24" Min';
   var filler=w.filler=="Other"?w.fillerOther:w.filler, fn=F_NUMBER[filler];
   return { positions:pos, filletPositions:fpos, thickMin:tMin, thickMax:tMax, diameter:dia,
-    filletThick: groove ? (pipe ? "Unlimited" : '1/8" min, unlimited') : (tMin ? tMin+" to Unlimited" : ""),
+    grooveThick: groove&&tMin ? tMin+" to "+tMax : "",
+    filletThick: groove ? (pipe ? "Unlimited" : '1/8" Min') : (tMin ? tMin+" to Unlimited" : ""),
     process: w.process ? w.process+(w.transfer?" ("+w.transfer+")":"") : "",
     backing: groove ? (w.backing=="with" ? "With, or with backgouge" : "With or without") : "N/A",
     joints: groove ? "Groove, fillet, plug, slot (PJP T-, K-, Y- groove)" : "Fillet, plug, slot",
     base: METAL_GROUP[w.base] ? "Any D1.1 qualified base metal" : "",
-    filler: fn ? F_RANGE[fn] : (filler ? String(filler).replace(/-.*$/,"-X") : "") };
+    filler: fn ? F_RANGE[fn] : fillerRange(filler) };
+}
+/* What a non-SMAW filler qualifies, written the shop's way: E71T-1C → E7xT-xx. */
+function fillerRange(f){
+  f=String(f||""); if(!f) return "";
+  var m=f.match(/^E(\d)\dT/i); if(m) return "E"+m[1]+"xT-xx";
+  return f.replace(/-.*$/,"-X");
 }
 
 /* ---------- state ---------- */
@@ -369,7 +416,7 @@ function blankW(){ return { code:"",name:"",company:"",companyId:"",letterhead:"
   base:"",thickness:"",thicknessCustom:"",pipeOD:"",pipeWall:"",filler:"",fillerOther:"",fillerDia:"",
   gas:"",gasOther:"",flow:"",amps:"",volts:"",polarity:"DCEP",preheat:"",wps:"",wpsId:"",notes:"" }; }
 function blankR(){ return { method:"bend",visual:"",bendRootFace1:"",bendRootFace2:"",bendSide1:"",bendSide2:"",
-  bendSide3:"",bendSide4:"",macro:"",rt:"",remarks:"",testNo:"",verified:false,result:"" }; }
+  bendSide3:"",bendSide4:"",bendRoot2:"",bendFace2:"",bendSet:"",macro:"",rt:"",remarks:"",testNo:"",verified:false,result:"" }; }
 
 var S = { screen:"home", stack:[], step:0, w:blankW(), r:blankR(), recId:null, coId:null, wpsId:null, draft:{}, preview:false,
           wps:null, ticket:null, ticketId:null };
@@ -402,18 +449,31 @@ function setArchived(id,flag){
   if(flag) r.archived=Date.now(); else delete r.archived;
   putRow("records",r);
 }
-function recRow(r){
-  return '<button class="sub" data-rec="'+r.id+'"><span style="flex:1"><b>'+esc(r.w.name||"Unnamed")+'</b>'
-    + '<span>'+esc([fmtDate(r.w.date),r.w.position,r.w.process,coName(r.w.companyId)].filter(Boolean).join(" · "))+'</span></span>'
-    + pill(r.status)+'</button>';
+function recRow(r,noCo){
+  return swipe("records", r.id, '<button class="sub" data-rec="'+r.id+'"><span style="flex:1"><b>'+esc(r.w.name||"Unnamed")+'</b>'
+    + '<span>'+esc([fmtDate(r.w.date),r.w.position,r.w.process,noCo?"":coName(r.w.companyId)].filter(Boolean).join(" · "))+'</span></span>'
+    + pill(r.status)+'</button>');
 }
+/* A list row you can swipe left to delete. */
+function swipe(table,id,row){
+  return '<div class="sw" data-sw="'+esc(table)+':'+esc(id)+'"><div class="sw-act"><button type="button" data-act="swdel" tabindex="-1">Delete</button></div>'+row+'</div>';
+}
+/* Save the record on screen. Anything the screen doesn't own (archived,
+   _demo) rides along from what's stored. */
 function upsertRecord(){
-  var old=records().filter(function(x){return x.id==S.recId})[0]||{};
-  var rec={ id:S.recId||uid(), w:S.w, r:S.r, updated:Date.now(),
-            status: S.r.result ? S.r.result : "Awaiting test" };
-  if(old._demo) rec._demo=true;
+  var old=S.recId ? getRow("records",S.recId)||{} : {};
+  var rec=Object.assign({}, old, { id:S.recId||uid(), w:S.w, r:S.r, updated:Date.now(),
+            status: S.r.result ? S.r.result : "Awaiting test" });
   S.recId=rec.id; putRow("records",rec); return rec;
 }
+/* The record screen saves as you go; Back never loses an edit. A blank
+   "start a record myself" isn't saved until it has a name. */
+var saveT;
+function autosave(){
+  if(S.screen!="inspect"||(!S.recId&&!S.w.name)) return;
+  clearTimeout(saveT); saveT=setTimeout(upsertRecord,400);
+}
+function flushSave(){ if(S.screen=="inspect"&&(S.recId||S.w.name)){ clearTimeout(saveT); upsertRecord(); } }
 
 
 /* ---------- sample data for testing ---------- */
@@ -437,14 +497,14 @@ function demoData(){
              w:Object.assign(blankW(),w), r:Object.assign(blankR(),r) };
   }
   var d=new Date(); d.setDate(d.getDate()-1);
-  var yday=d.toISOString().slice(0,10);
-  d.setDate(d.getDate()-12); var older=d.toISOString().slice(0,10);
-  d.setDate(d.getDate()-9); var oldest=d.toISOString().slice(0,10);
+  var yday=ymd(d);
+  d.setDate(d.getDate()-12); var older=ymd(d);
+  d.setDate(d.getDate()-9); var oldest=ymd(d);
 
   var recs=[
     mk("demo-rec-1",
       { name:"Jose Ramirez", company:"Wasatch Steel Fabrication", companyId:"demo-co-1", phone:"801-555-0177",
-        stamp:"", date:yday, weldType:"groove", product:"plate", process:"FCAW-G", position:"3G",
+        stamp:"", date:yday, weldType:"groove", product:"plate", process:"FCAW-G", position:"3G", progression:"Uphill",
         backing:"with", base:"A36", thickness:"0.375", filler:"E71T-1C", fillerDia:'.045"',
         gas:"75% Ar / 25% CO2", flow:"35", wpsId:"demo-wps-1", wps:"WPS-01 Rev 0",
         notes:"Ran the cap a little hot on the second pass." },
@@ -455,12 +515,12 @@ function demoData(){
         backing:"with", base:"A572 Gr. 50", thickness:"0.5", filler:"E7018", fillerDia:'1/8"',
         gas:"None", amps:"135", volts:"24", polarity:"DCEP", preheat:"70", wps:"WPS-03", division:"Welder" },
       { testNo:"WPQR-2026-018", method:"bend", visual:"Pass", bendSide1:"Pass", bendSide2:"Pass",
-        bendSide3:"Pass", bendSide4:"Pass", verified:true, result:"Qualified",
+        bendSide3:"Pass", bendSide4:"Pass", bendSet:"s4", verified:true, result:"Qualified",
         remarks:"Slight undercut at toe, within limits." }, "Qualified"),
     mk("demo-rec-3",
       { name:"Dee Parker", company:"Canyon Mechanical", companyId:"demo-co-2",
         date:oldest, weldType:"groove", product:"pipe", process:"GTAW", position:"6G",
-        backing:"without", base:"304/304L", thickness:"0.28", thicknessCustom:"", pipeOD:"6", pipeWall:"0.28",
+        backing:"without", base:"304/304L", thickness:"0.28", thicknessCustom:"", pipeOD:"6",
         filler:"ER308L", fillerDia:'3/32"', gas:"100% Argon", flow:"25",
         amps:"95", volts:"12", polarity:"DCEN", wpsId:"demo-wps-2", wps:"WPS-07 Rev 1" },
       { testNo:"WPQR-2026-011", method:"bend", visual:"Pass", bendRootFace1:"Fail", bendRootFace2:"Pass",
@@ -484,9 +544,19 @@ function clearDemo(){
 function hasDemo(){ return records().some(function(r){return r._demo}) || companies().some(function(c){return c._demo}); }
 
 /* ---------- nav ---------- */
-function go(screen, opts){ S.stack.push({screen:S.screen,coId:S.coId,wpsId:S.wpsId,recId:S.recId,step:S.step});
-  S.screen=screen; Object.assign(S,opts||{}); render(); }
-function back(){ var p=S.stack.pop(); if(!p){ S.screen="home"; } else { Object.assign(S,p); } render(); }
+/* Each frame keeps everything its screen reads, so coming back to a
+   half-filled form finds it as it was left. */
+var FRAME=["screen","coId","wpsId","recId","step","draft","viewWps","pdf"];
+function go(screen, opts){
+  flushSave();
+  var f={}; FRAME.forEach(function(k){ f[k]=S[k]; }); S.stack.push(f);
+  S.screen=screen; Object.assign(S,opts||{}); render();
+}
+function back(){
+  flushSave();
+  if(S.screen=="pdfview"&&S.pdf&&S.pdf.url) URL.revokeObjectURL(S.pdf.url);
+  var p=S.stack.pop(); if(!p){ S.screen="home"; S.draft={}; } else { Object.assign(S,p); } render();
+}
 
 var app=document.getElementById("view"), scroller=document.getElementById("app"), bar=document.getElementById("bar");
 function render(o){
@@ -494,7 +564,7 @@ function render(o){
   var y = keep ? scroller.scrollTop : 0;
   var v = VIEWS[S.screen] || VIEWS.home;
   var out = v();
-  var active = document.activeElement, aid = active && active.dataset ? (active.dataset.k||active.dataset.r||active.dataset.d||active.dataset.c) : null;
+  var focused = document.activeElement, aid = focused && focused.dataset ? (focused.dataset.k||focused.dataset.r||focused.dataset.d||focused.dataset.c) : null;
   app.innerHTML = out.body;
   bar.innerHTML = out.bar ? '<div class="inner">'+out.bar+'</div>' : "";
   bar.style.display = out.bar ? "block" : "none";
@@ -555,11 +625,7 @@ VIEWS.home = function(){
   var recent = recs.slice(0,3);
   if(recent.length){
     h += '<div class="card"><h3>Recent</h3>';
-    recent.forEach(function(r){
-      h += '<button class="sub" data-rec="'+r.id+'"><span style="flex:1"><b>'+esc(r.w.name||"Unnamed")+'</b>'
-        + '<span>'+esc([r.w.position,r.w.process,coName(r.w.companyId)].filter(Boolean).join(" · "))+'</span></span>'
-        + pill(r.status)+'</button>';
-    });
+    recent.forEach(function(r){ h += recRow(r); });
     h += '</div>';
   }
   h += '<p class="foot"><button class="mini" data-act="settings">Shop and stamp settings</button><br>'
@@ -582,9 +648,6 @@ VIEWS.onboard = function(){
     +'<p id="autherr" class="err" style="display:none"></p>'
     +'<p class="foot"><button class="mini" data-act="import">Restore from a backup instead</button></p>';
   return { body:h, bar:"" };
-};
-VIEWS.loading = function(){
-  return { body:'<div class="empty" style="padding-top:30vh">'+esc(S.draft.msg||"Loading…")+'</div>', bar:"" };
 };
 function mi(ic,title,sub,screen,hero){
   return '<button class="mi'+(hero?" hero":"")+'" data-go="'+screen+'"><span class="ic">'+mIcon(ic)+'</span>'
@@ -696,6 +759,7 @@ VIEWS.records = function(){
     else h += '<p style="margin:0;font-size:.86rem;color:var(--muted)">'+arch.length+' finished test'+(arch.length==1?"":"s")+' put away. Still on file, still searchable by company.</p>';
     h += '</div>';
   }
+  if(recs.length||arch.length) h += '<p class="foot" style="margin-top:4px">Swipe a record left to delete it.</p>';
   h += pasteCard();
   return { body:h, bar:'<button class="primary" data-act="startblank">Start a record myself</button>' };
 };
@@ -709,11 +773,11 @@ VIEWS.inspections = function(){
   if(!list.length) h+='<div class="empty">No reports yet.<br>A report is a job-site visual inspection: where you went, what you looked at, what passed.</div>';
   list.forEach(function(i){
     var n=(i.items||[]).length, rej=(i.items||[]).filter(function(x){return /Reject|Repair/.test(x.result||"")}).length;
-    h+='<button class="sub" data-insp="'+i.id+'"><span style="flex:1"><b>'+esc(i.project||i.client||"Untitled")+'</b>'
+    h+=swipe("inspections",i.id,'<button class="sub" data-insp="'+i.id+'"><span style="flex:1"><b>'+esc(i.project||i.client||"Untitled")+'</b>'
       +'<span>'+esc([i.reportNo, fmtDate(i.date), i.client, n?n+" item"+(n==1?"":"s"):""].filter(Boolean).join(" · "))+'</span></span>'
-      +(i.result?'<span class="pill '+(i.result=="Accepted"?"ok":i.result=="Rejected"?"no":"wait")+'">'+esc(i.result)+'</span>':(rej?'<span class="pill no">'+rej+' open</span>':''))+'</button>';
+      +(i.result?'<span class="pill '+(i.result=="Accepted"?"ok":i.result=="Rejected"?"no":"wait")+'">'+esc(i.result)+'</span>':(rej?'<span class="pill no">'+rej+' open</span>':''))+'</button>');
   });
-  h+='<p class="foot"><button class="mini" data-act="refresh">Refresh</button></p>';
+  if(list.length) h+='<p class="foot">Swipe a report left to delete it.</p>';
   return { body:h, bar:'<button class="primary" data-act="newinsp">New report</button>' };
 };
 VIEWS.inspedit = function(){
@@ -743,12 +807,13 @@ VIEWS.inspedit = function(){
 VIEWS.companies = function(){
   var cs=companies();
   var h = nav("Companies");
-  if(!cs.length) h += '<div class="empty">No companies yet.<br>They get added when you create a ticket.</div>';
+  if(!cs.length) h += '<div class="empty">No companies yet.<br>Add the outfits you test welders for.</div>';
   cs.forEach(function(c){
     var rs=recsFor(c.id), q=rs.filter(function(r){return r.r.result=="Qualified"}).length;
-    h += '<button class="sub" data-co="'+c.id+'"><span style="flex:1"><b>'+esc(c.name)+'</b>'
-      + '<span>'+rs.length+' test'+(rs.length==1?"":"s")+' · '+q+' qualified</span></span><span class="go">'+CHEV+'</span></button>';
+    h += swipe("companies",c.id,'<button class="sub" data-co="'+c.id+'"><span style="flex:1"><b>'+esc(c.name)+'</b>'
+      + '<span>'+rs.length+' test'+(rs.length==1?"":"s")+' · '+q+' qualified</span></span><span class="go">'+CHEV+'</span></button>');
   });
+  if(cs.length) h += '<p class="foot">Swipe a company left to delete it. Its test records stay on file.</p>';
   return { body:h, bar:'<button class="primary" data-act="newco">Add a company</button>' };
 };
 
@@ -764,10 +829,7 @@ VIEWS.company = function(){
     + '<p style="margin:12px 0 0"><button class="mini" data-act="editco">Edit</button></p></div>';
   h += '<div class="card"><h3>Welders</h3>';
   if(!rs.length) h += '<p style="margin:0;color:var(--muted);font-size:.9rem">No tests recorded yet.</p>';
-  rs.forEach(function(r){
-    h += '<button class="sub" data-rec="'+r.id+'"><span style="flex:1"><b>'+esc(r.w.name||"Unnamed")+'</b>'
-      + '<span>'+esc([fmtDate(r.w.date),r.w.position,r.w.process].filter(Boolean).join(" · "))+'</span></span>'+pill(r.status)+'</button>';
-  });
+  rs.forEach(function(r){ h += recRow(r,1); });
   h += '</div>';
   return { body:h, bar:'<button class="primary" data-act="ticketfor">New ticket for '+esc(c.name)+'</button>' };
 };
@@ -802,15 +864,15 @@ VIEWS.wpslist = function(){
   h += '<h2 class="step">WPS</h2><p class="hint">What welders test to. Send one with a ticket and the welder sees it.</p>';
   if(!ps.length) h += '<div class="empty">No WPS on file yet.</div>';
   ps.forEach(function(p){
-    h += '<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(p.no)+(p.rev?" Rev "+esc(p.rev):"")+'</b>'
-      + '<span>'+esc([coName(p.companyId),p.process,p.base,p.positions,p.thickRange].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>';
+    h += swipe("wps",p.id,'<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(p.no)+(p.rev?" Rev "+esc(p.rev):"")+'</b>'
+      + '<span>'+esc([coName(p.companyId),p.process,p.base,p.positions,p.thickRange].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>');
   });
   h += '<h2 class="step" style="margin-top:22px">PQR</h2><p class="hint">Procedure qualification records — the test that proves a WPS. Start one from a WPS, or from scratch.</p>';
   if(!qs.length) h += '<div class="empty">No PQRs on file.</div>';
   qs.forEach(function(p){
-    h += '<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(p.no)+(p.rev?" Rev "+esc(p.rev):"")+'</b>'
+    h += swipe("wps",p.id,'<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(p.no)+(p.rev?" Rev "+esc(p.rev):"")+'</b>'
       + '<span>'+esc([p.wpsQual?"Qualifies "+p.wpsQual:"", p.process, p.welder, p.dateTested?fmtDate(p.dateTested):""].filter(Boolean).join(" · "))+'</span></span>'
-      + '<span class="pill">PQR</span></button>';
+      + '<span class="pill">PQR</span></button>');
   });
   h += '<p class="foot"><button class="mini" data-act="newpqr">Add a PQR from scratch</button></p>';
   return { body:h, bar:'<button class="primary" data-act="newwps">Add a WPS</button>' };
@@ -973,8 +1035,8 @@ VIEWS.wpsedit = function(){
     h += '<div class="card"><h3>Per-pass readings</h3><p style="margin:0 0 10px;font-size:.86rem;color:var(--muted)">What the machine read on each pass while you witnessed it.</p>'+listEditor("passes",PASS_COLS,"+ Add a pass")+'</div>';
   }
   h += '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
-    + '<button class="primary" data-act="savewps" style="width:100%">Save WPS</button>'
-    + '<p id="saveerr" class="err" style="display:none">Give the WPS a number first.</p>';
+    + '<button class="primary" data-act="savewps" style="width:100%">Save '+kindName+'</button>'
+    + '<p id="saveerr" class="err" style="display:none">Give the '+kindName+' a number first.</p>';
   var b = '<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="savewps">Save '+kindName+'</button>';
   if(d.id) b = '<button class="ghost" data-act="delwps">Delete</button><button class="primary" data-act="savewps">Save '+kindName+'</button>';
   return { body:h, bar:b };
@@ -1106,14 +1168,21 @@ function transferField(){
     +(S.w.transfer=="Short circuit"?'<p class="err">Short circuit needs a qualified WPS — check with the inspector.</p>':'')+'</div>';
 }
 function thicknessField(){
-  var w=S.w, h='<div class="field"><label>Material thickness <span class="req">*</span></label>'+tiles(THICKNESSES,w.thickness,false,"w:thickness");
+  var w=S.w, h='<div class="field"><label>'+(w.product=="pipe"?"Wall thickness":"Material thickness")+' <span class="req">*</span></label>'+tiles(THICKNESSES,w.thickness,false,"w:thickness");
   if(w.thickness=="custom") h+='<div style="margin-top:8px"><input type="number" step="0.001" data-k="thicknessCustom" value="'+esc(w.thicknessCustom)+'" placeholder="Decimal inches, e.g. 0.625"></div>';
   return h+'</div>';
 }
 function pipeFields(){
   var w=S.w; if(w.product!="pipe") return "";
-  return '<div class="row"><div class="field"><label>Pipe OD (in)</label><input type="number" step="0.01" data-k="pipeOD" value="'+esc(w.pipeOD)+'"></div>'
-    +'<div class="field"><label>Wall (in)</label><input type="number" step="0.001" data-k="pipeWall" value="'+esc(w.pipeWall)+'"></div></div>';
+  return '<div class="field"><label>Pipe OD (in) <span class="req">*</span></label><input type="number" step="0.01" inputmode="decimal" data-k="pipeOD" value="'+esc(w.pipeOD)+'" placeholder="e.g. 6.625"></div>';
+}
+/* Uphill or downhill matters on anything vertical, and the record prints
+   it. Asked only when the position is vertical and the WPS didn't say. */
+function progressionField(){
+  var w=S.w; if(!isVertical(w.position)) return "";
+  if(S.wps&&S.wps.progression) return "";
+  return '<div class="field"><label>Vertical progression <span class="req">*</span></label>'
+    +tiles([{v:"Uphill",d:"Vertical up"},{v:"Downhill",d:"Vertical down"}],w.progression,false,"w:progression")+'</div>';
 }
 function positionField(withHeading){
   var w=S.w;
@@ -1124,7 +1193,7 @@ function positionField(withHeading){
   return h + (withHeading ? '' : '</div>');
 }
 function stepPosition(){
-  return '<h2 class="step">Test position</h2><p class="hint">This decides more of what you get qualified for than anything else on this form.</p>'+positionField(true);
+  return '<h2 class="step">Test position</h2><p class="hint">This decides more of what you get qualified for than anything else on this form.</p>'+positionField(true)+progressionField();
 }
 /* The one middle step when a WPS is attached. Everything the WPS fixes
    is already on the record; this asks only about the coupon itself. */
@@ -1135,6 +1204,7 @@ function stepCoupon(){
   if(locked) h+='<div class="card"><h3>Test position</h3><dl class="kv"><dt>Position</dt><dd>'+esc(w.position)+' · '+esc(w.product)+'</dd></dl>'
     +'<div class="flag" style="margin:12px 0 0"><b>Draft range</b> — if you pass, this position typically qualifies you for '+esc(suggest(w).positions)+'. The inspector confirms it against the code book before signing.</div></div>';
   else h+=productField()+positionField(false);
+  h+=progressionField();
   if(w.process=="GMAW"&&!(p&&p.transfer)) h+=transferField();
   h+=thicknessField()+pipeFields();
   // Anything the WPS left blank that the record still needs.
@@ -1174,7 +1244,8 @@ function stepReview(){
     +kv("Type",(w.weldType=="fillet"?"Fillet":"Groove")+" on "+w.product)
     +kv("Process",w.process+(w.transfer?" — "+w.transfer:""))+kv("Position",w.position)+kv("Base metal",w.base)
     +kv("Thickness",frac(tVal(w)))
-    +(w.product=="pipe"?kv("Pipe",w.pipeOD+'" OD × '+w.pipeWall+'" wall'):"")
+    +(w.product=="pipe"&&w.pipeOD?kv("Pipe OD",w.pipeOD+'"'):"")
+    +(isVertical(w.position)?kv("Progression",w.progression):"")
     +(w.weldType=="groove"?kv("Backing",w.backing=="with"?"With backing":"No backing"):"")+'</dl></div>';
   h+='<div class="card"><h3>Filler and gas</h3><dl class="kv">'
     +kv("Filler",(w.filler=="Other"?w.fillerOther:w.filler)+(w.fillerDia?" × "+w.fillerDia:""))
@@ -1193,6 +1264,8 @@ function missing(){
   if(!w.process)m.push("process");
   if(w.process=="GMAW"&&!w.transfer)m.push("transfer mode");
   if(!w.position)m.push("position");
+  if(isVertical(w.position)&&!w.progression)m.push("uphill or downhill");
+  if(w.product=="pipe"&&!w.pipeOD)m.push("pipe OD");
   if(!w.thickness||(w.thickness=="custom"&&!w.thicknessCustom))m.push("thickness");
   if(!w.filler)m.push("filler metal");
   if((DIAMS[w.process]||[]).length && !w.fillerDia)m.push((DIAM_LABEL[w.process]||"filler diameter").toLowerCase());
@@ -1276,7 +1349,7 @@ VIEWS.inspect = function(){
   var w=S.w,r=S.r,s=suggest(w);
   var h = nav("Test record", '<button data-act="saverec">Save</button>');
   var arch=records().filter(function(x){return x.id==S.recId && x.archived})[0];
-  if(arch) h+='<div class="flag" style="border-color:var(--muted)"><b style="color:var(--muted)">Archived</b> — put away '+fmtDate(new Date(arch.archived).toISOString().slice(0,10))+'. You can still print it or put it back.</div>';
+  if(arch) h+='<div class="flag" style="border-color:var(--muted)"><b style="color:var(--muted)">Archived</b> — put away '+fmtDate(ymd(new Date(arch.archived)))+'. You can still print it or put it back.</div>';
   h+='<div class="ticket"><div class="ticket-top"><div>'
     +'<div class="shop">'+esc(coName(w.companyId)||w.company||"No company")+'</div>'
     +'<h1>'+esc(w.name||"Unnamed")+'<span>'+esc([w.position,w.process,frac(tVal(w)),w.base].filter(Boolean).join(" · "))+'</span></h1>'
@@ -1303,7 +1376,7 @@ VIEWS.inspect = function(){
 
   h+='<div class="card"><h3>Record number and method</h3>'
     +'<div class="field"><label>Qualified to</label>'+editionSelect('data-k="code"', recCode(w))+'</div><div class="row">'
-    +'<div class="field" style="margin:0"><label>Record no.</label><input type="text" data-r="testNo" value="'+esc(r.testNo)+'" placeholder="WPQR-'+new Date().getFullYear()+'-001"></div>'
+    +'<div class="field" style="margin:0"><label>Record no.</label><input type="text" data-r="testNo" value="'+esc(r.testNo)+'" placeholder="'+esc(recNo(w,{}))+'"></div>'
     +'<div class="field" style="margin:0"><label>Std. test no.</label><input type="text" data-r="stdTestNo" value="'+esc(r.stdTestNo||"")+'" placeholder="optional"></div>'
     +'<div class="field" style="margin:0"><label>Method</label><select data-r="method">'
     +[["bend","Bend test"],["rt","Radiographic"],["macro","Macroetch / break"]].map(function(o){return '<option value="'+o[0]+'" '+(r.method==o[0]?"selected":"")+'>'+o[1]+'</option>'}).join("")
@@ -1318,7 +1391,7 @@ VIEWS.inspect = function(){
     +'<div class="row"><div class="field" style="margin:0"><label>Polarity</label><select data-k="polarity">'
     +["DCEP","DCEN","AC"].map(function(p){return '<option '+(w.polarity==p?"selected":"")+'>'+p+'</option>'}).join("")
     +'</select></div><div class="field" style="margin:0"><label>Preheat (°F)</label><input type="number" data-k="preheat" value="'+esc(w.preheat)+'" placeholder="Ambient"></div></div>'
-    +(/3G|5G|6G|3F/.test(w.position) ? '<div class="row" style="margin-top:14px"><div class="field" style="margin:0"><label>Vertical progression</label><select data-k="progression"><option value="">—</option>'
+    +(isVertical(w.position) ? '<div class="row" style="margin-top:14px"><div class="field" style="margin:0"><label>Vertical progression</label><select data-k="progression"><option value="">—</option>'
       +["Uphill","Downhill"].map(function(p){return '<option '+(w.progression==p?"selected":"")+'>'+p+'</option>'}).join("")+'</select></div><div></div></div>' : '')
     +'<dl class="kv" style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">'
     +'<dt>Filler</dt><dd>'+esc((w.filler=="Other"?w.fillerOther:w.filler)||"—")+(w.fillerDia?" × "+esc(w.fillerDia):"")+'</dd>'
@@ -1326,9 +1399,10 @@ VIEWS.inspect = function(){
     +'</div>';
   h+='<div class="card"><h3>Results</h3>'+resRow("Visual inspection","visual");
   if(r.method=="bend"){
-    var t=tVal(w);
-    if(!isNaN(t)&&t>=0.375) h+=resRow("Side bend 1","bendSide1")+resRow("Side bend 2","bendSide2")+resRow("Side bend 3","bendSide3")+resRow("Side bend 4","bendSide4");
-    else h+=resRow("Root bend","bendRootFace1")+resRow("Face bend","bendRootFace2");
+    var bs=bendSet(r,w);
+    h+='<div class="field" style="margin:4px 0 6px"><label>Bend specimens</label><select data-r="bendSet">'
+      +Object.keys(BEND_SETS).map(function(k){ return '<option value="'+k+'" '+(k==bs?"selected":"")+'>'+esc(BEND_SETS[k].label)+(k==bendDefault(w)?" (D1.1 default)":"")+'</option>'; }).join("")+'</select></div>';
+    BEND_SETS[bs].rows.forEach(function(x){ h+=resRow(x[0],x[1]); });
   }
   if(r.method=="rt") h+=resRow("Radiograph","rt");
   if(r.method=="macro") h+=resRow("Macroetch / break","macro");
@@ -1339,7 +1413,7 @@ VIEWS.inspect = function(){
   h+='<div class="card"><h3>Qualified range — draft</h3>'
     +qrow("Joints","qJoint",s.joints)
     +qrow("Base metal","qBase",s.base)
-    +qrow("Groove thickness","qThick",s.thickMin?s.thickMin+" to "+s.thickMax:"")
+    +qrow("Groove thickness","qThick",s.grooveThick)
     +qrow("Fillet thickness","qFillet",s.filletThick)
     +qrow("Diameter","qDia",s.diameter)
     +qrow("Process","qProc",s.process)
@@ -1351,7 +1425,7 @@ VIEWS.inspect = function(){
   if(s.other) h+='<div class="flag"><b>'+esc(recCode(w))+' ranges aren\'t drafted by the app yet.</b> Every range above is blank on purpose — fill each one in from the book. Only D1.1 has a lookup table so far.</div>';
   else h+='<div class="flag"><b>These are drafts.</b> They come from a lookup table in this app, not from the code book. Check each one against '+esc(recCode(w))+' Clause 6, Part C before you sign. You are the one stamping it.</div>';
   h+='<div class="field"><label>Remarks on the record</label><textarea data-r="remarks">'+esc(r.remarks)+'</textarea></div>';
-  h+='<label class="check"><input type="checkbox" data-r="verified" '+(r.verified?"checked":"")+'><span>I verified every qualified range above against '+esc(CFG.code)+' and the results are correctly recorded.</span></label>';
+  h+='<label class="check"><input type="checkbox" data-r="verified" '+(r.verified?"checked":"")+'><span>I verified every qualified range above against '+esc(recCode(w))+' and the results are correctly recorded.</span></label>';
   h+='<div class="field"><label>Overall result</label><div class="seg">'
     +'<button class="p" data-result="Qualified" aria-pressed="'+(r.result=="Qualified")+'" style="flex:1;padding:14px">Qualified</button>'
     +'<button class="f" data-result="Not qualified" aria-pressed="'+(r.result=="Not qualified")+'" style="flex:1;padding:14px">Not qualified</button></div></div>';
@@ -1360,7 +1434,7 @@ VIEWS.inspect = function(){
     +(cur ? (cur.archived
         ? '<button class="mini" data-act="unarchive">Put back in Test records</button> &nbsp;·&nbsp; '
         : '<button class="mini" data-act="archive">Archive this record</button> &nbsp;·&nbsp; ') : '')
-    +'<button class="mini" data-act="delrec">Delete this record</button></p>';
+    +'<button class="mini" data-act="delrec">Delete this record</button><br>Changes save as you make them.</p>';
   var ready=r.verified&&r.result;
   return { body:h, bar:'<button class="ghost" data-act="previewrec">Preview</button><button class="primary" data-act="pdfrec" '+(ready?"":"disabled")+'>Save WPQR</button>' };
 };
@@ -1373,18 +1447,18 @@ function resRow(label,key){
 
 /* ---------- settings ---------- */
 VIEWS.settings = function(){
-  var h = nav("Settings");
+  var c=S.draft, h = nav("Settings");
   h+='<p class="hint">Your inspection company. It is the letterhead on every WPQR and WPS you print, and the "test conducted by" line. The welder\'s employer is entered per record.</p>'
-    +'<div class="field"><label>Inspection company</label><input type="text" data-c="shop" value="'+esc(CFG.shop)+'"></div>'
-    +'<div class="field"><label>City</label><input type="text" data-c="city" value="'+esc(CFG.city)+'"></div>'
-    +'<div class="field"><label>Street address, for the letterhead</label><input type="text" data-c="address" value="'+esc(CFG.address)+'" placeholder="Street address, City, State"></div>'
-    +'<div class="field"><label>Phone</label><input type="tel" data-c="phone" value="'+esc(CFG.phone)+'"></div>'
+    +'<div class="field"><label>Inspection company</label><input type="text" data-c="shop" value="'+esc(c.shop)+'"></div>'
+    +'<div class="field"><label>City</label><input type="text" data-c="city" value="'+esc(c.city)+'"></div>'
+    +'<div class="field"><label>Street address, for the letterhead</label><input type="text" data-c="address" value="'+esc(c.address)+'" placeholder="Street address, City, State"></div>'
+    +'<div class="field"><label>Phone</label><input type="tel" data-c="phone" value="'+esc(c.phone)+'"></div>'
     +'<div class="field"><label>Logo, top-left of the letterhead</label>'
-    +(CFG.logo?'<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px"><img src="'+CFG.logo+'" alt="" style="height:64px;background:#fff;border-radius:6px;padding:4px"><button class="mini" data-act="clearlogo">Remove</button></div>':'')
+    +(c.logo?'<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px"><img src="'+c.logo+'" alt="" style="height:64px;background:#fff;border-radius:6px;padding:4px"><button class="mini" data-act="clearlogo">Remove</button></div>':'')
     +'<input type="file" id="logofile" accept="image/*" style="font-size:14px"></div>'
-    +'<div class="field"><label>Inspector</label><input type="text" data-c="inspector" value="'+esc(CFG.inspector)+'"></div>'
-    +'<div class="field"><label>Certification line on the signature block</label><input type="text" data-c="cert" value="'+esc(CFG.cert)+'" placeholder="AWS CWI #12345678"></div>'
-    +'<div class="field"><label>Code edition — the book you verify against; it sets the clause numbers on the WPQR</label>'+editionSelect('data-c="code"', CFG.code)+'</div>';
+    +'<div class="field"><label>Inspector</label><input type="text" data-c="inspector" value="'+esc(c.inspector)+'"></div>'
+    +'<div class="field"><label>Certification line on the signature block</label><input type="text" data-c="cert" value="'+esc(c.cert)+'" placeholder="AWS CWI #12345678"></div>'
+    +'<div class="field"><label>Code edition — the book you verify against; it sets the clause numbers on the WPQR</label>'+editionSelect('data-c="code"', c.code)+'</div>';
   h+='<div class="card"><h3>Testing</h3>'
     +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Three made-up welders and two companies, so you can walk the record screen without waiting on a real test.</p>'
     +(hasDemo()
@@ -1397,11 +1471,14 @@ VIEWS.settings = function(){
     +'<button class="mini" data-act="export">Export everything</button> &nbsp; <button class="mini" data-act="import">Import a backup</button></div>';
   return { body:h, bar:'<button class="primary" data-act="savecfg">Save settings</button>' };
 };
+function backupData(){ return { app:"weld-sync", saved:new Date().toISOString(), cfg:CFG, companies:companies(), wps:wpsAll(), records:records(), inspections:db.get("inspections",[]) }; }
 VIEWS.exported = function(){
-  var blob = enc({ cfg:CFG, companies:companies(), wps:wpsAll(), records:records(), inspections:db.get("inspections",[]) });
+  var blob = enc(backupData());
   var h = nav("Backup");
-  h+='<div class="card"><h3>Copy this somewhere safe</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Email it to yourself. Pasting it back into Import restores everything.</p>'
-    +'<div class="linkbox" style="max-height:200px">'+esc(blob)+'</div>'
+  h+='<div class="card"><h3>Save a backup file</h3><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">One file with every record, company, procedure, report and your settings. Save it to Files or email it to yourself.</p>'
+    +'<button class="primary" data-act="savebackup" style="width:100%">Save backup file</button></div>'
+    +'<div class="card"><h3>Or copy it as text</h3>'
+    +'<div class="linkbox" style="max-height:120px">'+esc(blob.slice(0,600))+(blob.length>600?"…":"")+'</div>'
     +'<button class="mini" data-act="copyblob">Copy backup</button></div>';
   window._blob=blob;
   return { body:h, bar:'<button class="primary" data-act="back">Done</button>' };
@@ -1409,7 +1486,8 @@ VIEWS.exported = function(){
 VIEWS.importer = function(){
   var h = nav("Import a backup");
   h+='<div class="card"><p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Adds the backup\'s records, companies, procedures and reports to what is here. Anything with the same id is replaced by the backup\'s copy.</p>'
-    +'<textarea id="impbox" placeholder="Paste the backup" style="font-size:13px;min-height:140px"></textarea>'
+    +'<div class="field"><label>Backup file</label><input type="file" id="impfile" accept=".json,application/json,text/plain" style="font-size:14px"></div>'
+    +'<textarea id="impbox" placeholder="Or paste the backup text" style="font-size:13px;min-height:140px"></textarea>'
     +'<p id="imperr" class="err" style="display:none">That doesn\'t look like a backup.</p></div>';
   return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="doimport">Import</button>' };
 };
@@ -1535,7 +1613,106 @@ function watermark(d){
   d.restoreGraphicsState(); d.setFont("helvetica","normal");
 }
 
-/* ---- the WPQR ---- */
+/* ---- the WPQR ----
+   Laid out on the shop's spreadsheet form, rule for rule: every x and y
+   below was measured off the WPQR the shop issues (Arial ≈ Helvetica,
+   6.56 pt body, 10.6 pt rows, text sitting on the bottom rule the way a
+   spreadsheet prints it). Only the test-results table grows, one row per
+   specimen set, and everything under it moves down with it. */
+var WQ={ L:77.5, A:172.3, M:315.6, V:361.0, R:373.6, RA:417.5, E:554.2, ROW:10.6, FS:6.56,
+  BAR:153, FILL:240, SHADE:242 };
+/* Printed form of a value: "-" for nothing, inches as "3/8 in", ranges
+   as "1/8 in - 3/4 in", the way the shop writes them. */
+function pv(v){
+  if(v===""||v==null) return "-";
+  return String(v).replace(/(\d)"/g,"$1 in").replace(/ to /g," - ");
+}
+function pdate(s){ var p=String(s||"").split("-"); return p.length==3 ? (+p[1])+"/"+(+p[2])+"/"+p[0] : String(s||""); }
+/* One ruled table at fixed positions. cols: x of every vertical rule.
+   rows: { h, fill, size, mid, cells:[ text | {t, c:span, a:"l"|"c"|"r",
+   b:bold, fill, size, gap} ] }. A gap cell draws nothing — it is the
+   white space between the "actual" and "qualified" halves. A cell too
+   long for its box shrinks a little, then wraps and the row grows.
+   Returns the y under the last row. */
+function ruled(d,o){
+  var cols=o.cols, y=o.y, PAD=1.8;
+  o.rows.forEach(function(row){
+    var ci=0, cells=[], h=row.h||WQ.ROW;
+    row.cells.forEach(function(c){
+      if(c===null||typeof c!="object") c={t:c};
+      var span=c.c||1; cells.push({c:c, x0:cols[ci], x1:cols[ci+span]}); ci+=span;
+    });
+    cells.forEach(function(k){
+      var c=k.c; if(c.gap) return;
+      var fs=c.size||row.size||WQ.FS, txt=c.t==null?"":String(c.t), room=k.x1-k.x0-2*PAD;
+      d.setFont("helvetica", c.b||row.b ? "bold" : "normal");
+      var widest=function(){ return Math.max.apply(null, txt.split("\n").map(function(x){ return d.setFontSize(fs).getTextWidth(x); })); };
+      while(fs>WQ.FS*.8 && widest()>room) fs-=.2;
+      d.setFontSize(fs);
+      k.fs=fs; k.lines=txt.indexOf("\n")>-1 ? txt.split("\n") : d.splitTextToSize(txt, room);
+      h=Math.max(h, k.lines.length*fs*1.15+1.6);
+    });
+    d.setLineWidth(.5); d.setDrawColor(0);
+    cells.forEach(function(k){
+      var c=k.c; if(c.gap) return;
+      var f=c.fill||row.fill; if(f){ d.setFillColor(f); d.rect(k.x0,y,k.x1-k.x0,h,"F"); }
+      d.rect(k.x0,y,k.x1-k.x0,h,"S");
+    });
+    cells.forEach(function(k){
+      var c=k.c; if(c.gap||!k.lines) return;
+      d.setFont("helvetica", c.b||row.b ? "bold" : "normal"); d.setFontSize(k.fs); d.setTextColor(0);
+      var a=c.a||row.a||"l", tx=a=="c"?(k.x0+k.x1)/2:a=="r"?k.x1-PAD:k.x0+PAD;
+      var lh=k.fs*1.15, n=k.lines.length;
+      var base=row.mid ? y+h/2-(n-1)*lh/2+k.fs*.33 : y+h-1.6-(n-1)*lh;
+      k.lines.forEach(function(ln,i){ d.text(ln, tx, base+i*lh, {align:a=="c"?"center":a=="r"?"right":"left"}); });
+    });
+    y+=h;
+  });
+  d.setFont("helvetica","normal");
+  return y;
+}
+/* The shop's letterhead: grey rule across the top, logo left, name in the
+   brand color and the address and phone centered over the title. */
+function formHead(d,title,b){
+  var cx=326.5, rgb=hexRgb(b.color);
+  d.setFillColor(WQ.BAR); d.rect(57.6,53.5,496.8,11.1,"F");
+  if(b.logo){ try{ var pr=d.getImageProperties(b.logo), s=Math.min(94/pr.width,94/pr.height), lw=pr.width*s, lh=pr.height*s;
+    d.addImage(b.logo,"PNG",76.7+(94-lw)/2,65.6+(94-lh)/2,lw,lh); }catch(e){} }
+  d.setFont("helvetica","bold"); d.setFontSize(13.77); d.setTextColor(rgb[0],rgb[1],rgb[2]);
+  d.text(String(b.name||"").toUpperCase(), cx, 89.9, {align:"center"});
+  d.setTextColor(0); d.setFontSize(7.21);
+  var ly=100.8; [b.address,b.phone].filter(Boolean).forEach(function(t){ d.text(String(t),cx,ly,{align:"center"}); ly+=10.6; });
+  d.setFontSize(9.84); d.text(title, cx, 154.8, {align:"center"});
+  d.setFont("helvetica","normal");
+}
+/* Which bend specimens a coupon gets, and the result keys they fill.
+   The default follows D1.1 Table 6.11 for welders; the inspector can
+   change it on the record, and that choice is what prints. */
+var BEND_SETS={
+  rf:{ label:"1 root + 1 face", rows:[["Root bend","bendRootFace1"],["Face bend","bendRootFace2"]] },
+  s2:{ label:"2 side", rows:[["Side bend 1","bendSide1"],["Side bend 2","bendSide2"]] },
+  rf2:{ label:"2 root + 2 face", rows:[["Root bend 1","bendRootFace1"],["Root bend 2","bendRoot2"],["Face bend 1","bendRootFace2"],["Face bend 2","bendFace2"]] },
+  s4:{ label:"4 side", rows:[["Side bend 1","bendSide1"],["Side bend 2","bendSide2"],["Side bend 3","bendSide3"],["Side bend 4","bendSide4"]] } };
+function bendDefault(w){
+  var t=tVal(w);
+  if(w.product=="pipe") return !isNaN(t)&&t>=0.375 ? "s4" : "rf2";
+  return !isNaN(t)&&t>=1 ? "s2" : "rf";
+}
+/* Records from before the choice existed carry results under the old
+   keys; read the set back from what was filled in. */
+function bendSet(r,w){
+  if(BEND_SETS[r.bendSet]) return r.bendSet;
+  if(r.bendSide3||r.bendSide4) return "s4";
+  if(r.bendSide1||r.bendSide2) return w.product=="pipe" ? "s4" : "s2";
+  if(r.bendRoot2||r.bendFace2) return "rf2";
+  if(r.bendRootFace1||r.bendRootFace2) return w.product=="pipe" ? "rf2" : "rf";
+  return bendDefault(w);
+}
+/* Record number as the shop writes it when none is typed:
+   "Mckay Hales WPQR 3G FCAW". */
+function recNo(w,r){ return r.testNo || [w.name,"WPQR",w.position,String(w.process||"").replace(/-[GS]$/,"")].filter(Boolean).join(" "); }
+function codeBook(code){ return String(code||"").split(":")[0]; }
+
 function wpqrPdf(draft){
   var w=S.w,r=S.r,s=suggest(w),t=tVal(w),code=recCode(w),cl=clauseRefs(code);
   var g=function(k,fb){ return r[k]!==undefined&&r[k]!==""?r[k]:fb; };
@@ -1545,116 +1722,109 @@ function wpqrPdf(draft){
   var filler=w.filler=="Other"?w.fillerOther:w.filler;
   var gas=w.gas=="Other"?(w.gasOther||"Other"):(w.gas||"None");
   var thick=frac(t), grp=METAL_GROUP[w.base]||"", odTxt=!isNaN(od)?frac(od):"";
-  var spec=/^A\d/.test(w.base||"")?"ASTM "+w.base:w.base;
-  var jointType=(pipe?"Pipe":"Plate")+" — "+(groove
-    ? [wp.groove,"groove"].filter(Boolean).join(" ")+(w.backing=="with"?" w/ backing":" without backing") : "fillet");
-  var prog=w.progression=="Downhill"?"Vertical down":w.progression=="Uphill"?"Vertical up":"";
-  var manual=(w.process=="SMAW"||w.process=="GTAW")?"Manual":"Semi-automatic";
-  var backA=groove?(w.backing=="with"?"With":"Without"):"N/A";
-  var vert=/3G|5G|6G|3F/.test(w.position);
+  var bm=String(w.base||"").match(/^(A\d+)\s*(.*)$/), spec=bm?"ASTM "+bm[1]:w.base, grade=bm?bm[2]:"";
+  var jointType=(pipe?"Pipe":"Plate")+" - "+(groove
+    ? [wp.groove,"Groove"].filter(Boolean).join(" ")+(w.backing=="with"?" w/ Backing":" w/o Backing") : "Fillet");
+  var vert=isVertical(w.position);
+  var prog=vert ? (w.progression=="Downhill"?"Vertical Down":w.progression=="Uphill"?"Vertical Up":"") : "";
+  var manual=(w.process=="SMAW"||w.process=="GTAW")?"Manual":"Semi Automatic";
+  var backA=groove?(w.backing=="with"?"With":"Without"):"-";
   var qPos=g("qPos",s.positions), qFPos=g("qFPos",s.filletPositions);
-  var qThick=g("qThick",s.thickMin?s.thickMin+" to "+s.thickMax:""), qFillet=g("qFillet",s.filletThick), qDia=g("qDia",s.diameter);
-  var fspec=fillerSpecFor(filler)||wp.fillerSpec||"", fnum=F_NUMBER[filler]||"";
-  var IND="   ", GREY=[236,236,236];
+  var qThick=g("qThick",s.grooveThick), qFillet=g("qFillet",s.filletThick), qDia=g("qDia",s.diameter);
+  var fspec=fillerSpecFor(filler)||wp.fillerSpec||"", fnum=F_NUMBER[filler]||"", qFiller=g("qFiller",s.filler);
+  var no=recNo(w,r);
+  var L=WQ.L, A=WQ.A, M=WQ.M, V=WQ.V, R=WQ.R, RA=WQ.RA, E=WQ.E, F=WQ.FILL, GAP={gap:1};
 
-  var d=pdfDoc(), x=PG.m, W=PG.w-2*PG.m, y=letterhead(d,"Welder Performance Qualification Record (WPQR)",recordBrand(w));
-  var shade=function(c){ if(c.section=="head"||(c.section=="body"&&c.column.index==0)) c.cell.styles.fillColor=GREY; };
+  var d=pdfDoc(); formHead(d,"Welder Performance Qualification Record (WPQR)",recordBrand(w));
 
-  // Identity: two tables with the photo box between them, as on the shop's form.
-  var lw=Math.round(W*.45), pw=Math.round(W*.13), rw=W-lw-pw-2*PG.gap, rx=x+lw+pw+2*PG.gap;
-  var y1=grid(d,{x:x,w:lw,y:y,col:{0:{cellWidth:64}},body:[["Name",dash(w.name)],["ID Number",dash(w.stamp)],["Company",dash(employer)],["Division",dash(w.division)],
-    [{content:"Photo ID:",colSpan:2,styles:{halign:"right",fontStyle:"bold"}}]]});
-  var y2=grid(d,{x:rx,w:rw,y:y,col:{0:{cellWidth:64}},body:[["Test Date",dash(fmtDate(w.date))],["Record No.",dash(r.testNo)],["Std. Test No.",dash(g("stdTestNo",""))],
-    ["WPS No.",dash(wpsNo)],["Qualified To",dash([code,wp.jointDesig].filter(Boolean).join("  "))]]});
-  var yb=Math.max(y1,y2); d.setLineWidth(.5); d.setDrawColor(0); d.rect(x+lw+PG.gap, y, pw, yb-y);
-  y=yb+PG.gap;
+  // Welder and test, with the photo space between them.
+  var y0=166.2, rowsL=[["Name",w.name],["ID Number",w.stamp],["Company",employer],["Division",w.division]];
+  ruled(d,{cols:[L,A,M],y:y0,rows:rowsL.map(function(x,i){ return {cells:[{t:x[0],b:i==0},x[1]||""]}; })
+    .concat([{h:11.6,cells:[{t:"Photo ID:",c:2,a:"r"}]}])});
+  var yI=ruled(d,{cols:[R,RA,E],y:y0,rows:[["Test Date",pdate(w.date)],["Record No.",no],["Std. Test No.",g("stdTestNo","")],
+    ["WPS No.",wpsNo],["Qualified To",[codeBook(code),wp.jointDesig].filter(Boolean).join(" ")]].map(function(x,i){ return {h:i==4?11.6:WQ.ROW,cells:x}; })});
+  d.setLineWidth(.5); d.line(M,y0,R,y0); d.line(M,yI,R,yI);
 
-  // Base metals, all eight columns.
-  var mrow=function(k){ return [k,dash(spec),"—",dash(grp),dash(pipe?odTxt:""),"—",dash(thick),dash(pipe?odTxt:"")]; };
-  y=grid(d,{x:x,w:W,y:y,center:1,col:{0:{cellWidth:78}},parse:shade,
-    head:["Base Metals","Specification","Type or Grade","AWS Group No.","Size (NPS)","Schedule","Thickness","Diameter"],
-    body:[mrow("Base Material"),mrow("Welded To")]})+PG.gap;
+  // Base metals.
+  var mrow=function(k){ return {size:5.9,a:"c",cells:[{t:k,a:"l",fill:WQ.SHADE},pv(spec),pv(grade),pv(grp),"-","-",pv(thick),pv(pipe?odTxt:"")]}; };
+  var y=ruled(d,{cols:[L,A,262.6,M,R,RA,460.4,504.7,E],y:yI+10.6,rows:[
+    {h:16.1,mid:1,a:"c",cells:[{t:"Base Metals",a:"l",b:1,size:7.21},"Specification","Type or Grade","AWS Group No.","Size (NPS)","Schedule","Thickness","Diameter"]},
+    mrow("Base Material"),mrow("Welded To")]});
 
-  // Actual values on the left, ranges qualified on the right: one table,
-  // so the rows line up, with an unruled gap column between the halves.
-  var lwv=Math.round(W*.56), gap=PG.gap, rwv=W-lwv-gap;
-  function pair(o){
-    var head=o.head, body=o.body;
-    var colw=o.colw||[118, lwv-118]; var rcols=o.rcols||[rwv];
-    var col={0:{cellWidth:colw[0]},1:{cellWidth:colw[1]},2:{cellWidth:gap}};
-    for(var i=0;i<rcols.length;i++) col[3+i]={cellWidth:rcols[i]};
-    if(o.colw&&o.colw.length>2) col[1]={cellWidth:o.colw[1]}, col[2]={cellWidth:o.colw[2]}, col[3]={cellWidth:gap}, col[4]={cellWidth:rcols[0]}, col[5]={cellWidth:rcols[1]||0};
-    var gi=o.gapIndex||2;
-    return grid(d,{x:x,w:W,y:y,center:1,bold:o.bold||[0],col:col,head:head,body:body,parse:function(c){
-      if(c.column.index==gi){ c.cell.styles.lineWidth=0; c.cell.styles.fillColor=false; c.cell.text=[""]; return; }
-      if(c.section=="head") c.cell.styles.fillColor=GREY;
-      if(c.section=="head"&&c.column.index==0) c.cell.styles.halign="left";
-      if(o.indent&&c.section=="body"&&c.column.index==0&&/^   /.test(String(c.cell.raw))) c.cell.styles.fontStyle="normal";
-    }});
-  }
-  y=pair({head:["Variables","Actual Values","","Ranges Qualified"],body:[
-    ["Type of Weld Joint",dash(jointType),"",dash(g("qJoint",s.joints))],
-    ["Base Metal",dash(grp?"Group "+grp+" to Group "+grp:w.base),"",dash(g("qBase",s.base))]]})+PG.gap;
+  // Actual values left, ranges qualified right; one table so the rows line up.
+  y=ruled(d,{cols:[L,A,V,R,E],y:y+10.4,rows:[
+    {h:11.1,b:1,fill:F,a:"c",cells:[{t:"Variables",a:"l"},"Actual Values",GAP,"Ranges Qualified"]},
+    {h:14.3,a:"c",cells:[{t:"Type of Weld Joint",a:"l"},jointType,GAP,pv(g("qJoint",s.joints))]},
+    {a:"c",cells:[{t:"Base Metal",a:"l"},grp?"Group "+grp+" to Group "+grp:pv(w.base),GAP,pv(g("qBase",s.base))]}]});
 
-  y=pair({colw:[118,(lwv-118)/2,(lwv-118)/2],rcols:[rwv/2,rwv/2],gapIndex:3,head:["","Groove","Fillet","","Groove","Fillet"],body:[
-    ["Plate Thickness", dash(!pipe&&groove?thick:""), dash(!pipe&&!groove?thick:""), "", dash(qThick), dash(qFillet)],
-    ["Pipe/Tube Thickness", dash(pipe&&groove?thick:""), dash(pipe&&!groove?thick:""), "", dash(qThick), dash(groove?"Unlimited":qFillet)],
-    ["Pipe Diameter", dash(pipe&&groove?odTxt:""), dash(pipe&&!groove?odTxt:""), "", dash(qDia), dash(groove?"Unlimited":qDia)]]})+PG.gap;
+  y=ruled(d,{cols:[L,A,262.6,V,R,460.4,E],y:y+10.6,rows:[
+    {b:1,a:"c",cells:["","Groove","Fillet",GAP,"Groove","Fillet"]},
+    {a:"c",cells:[{t:"Plate Thickness",a:"l"},pv(!pipe&&groove?thick:""),pv(!pipe&&!groove?thick:""),GAP,pv(qThick),pv(qFillet)]},
+    {a:"c",cells:[{t:"Pipe/Tube Thickness",a:"l"},pv(pipe&&groove?thick:""),pv(pipe&&!groove?thick:""),GAP,pv(qThick),pv(groove?"Unlimited":qFillet)]},
+    {a:"c",cells:[{t:"Pipe Diameter",a:"l"},pv(pipe&&groove?odTxt:""),pv(pipe&&!groove?odTxt:""),GAP,pv(qDia),pv(groove?"Unlimited":qDia)]}]});
 
-  y=pair({indent:1,body:[
-    ["Welding Process",dash(w.process),"",dash(g("qProc",s.process))],
-    [IND+"Type",manual,"",manual],
-    [IND+"Backing",backA,"",dash(g("qBack",s.backing))],
-    ["Filler Metal (AWS Spec.)",dash(fspec),"",dash(fspec)],
-    [IND+"AWS Classification",dash(filler),"",dash(g("qFiller",s.filler))],
-    [IND+"F-Number",dash(fnum),"",dash(fnum)],
-    ["Position",dash(w.position),"",""],
-    [IND+"Groove — Plate / Pipe > 24\"", dash(groove&&!small?w.position:""),"", dash(groove?qPos:"")],
-    [IND+"Groove — Pipe < 24\"", dash(groove&&small?w.position:""),"", dash(groove&&pipe?qPos:"")],
-    [IND+"Fillet — Plate and Pipe > 24\"", dash(!groove&&!small?w.position:""),"", dash(qFPos)],
-    [IND+"Fillet — Pipe < 24\"", dash(!groove&&small?w.position:""),"", dash(qFPos)],
-    ["Progression", dash(vert?prog:""),"", dash(vert?prog:"")],
-    ["GMAW Transfer Mode", dash(w.transfer),"", dash(w.transfer)],
-    ["Single or Multiple Electrodes","Single","","Single"],
-    ["Gas/Flux Type", dash(gas),"", dash(gas)]]})+PG.gap;
+  var IND="   ", SH={t:"",fill:WQ.SHADE};
+  var prow=function(label,act,rng,bold){ return {a:"c",cells:[{t:label,a:"l",b:bold},typeof act=="object"?act:{t:act,b:bold&&label=="Welding Process"},GAP,{t:rng,b:bold&&label=="Welding Process"}]}; };
+  y=ruled(d,{cols:[L,A,V,R,E],y:y+10.6,rows:[
+    prow("Welding Process",pv(w.process),pv(g("qProc",s.process)),1),
+    prow(IND+"Type",manual,""),
+    prow(IND+"Backing",backA,pv(g("qBack",s.backing))),
+    prow("Filler Metal",pv(fspec),"",1),
+    prow(IND+"AWS Classification",pv(filler),fnum?"-":pv(qFiller)),
+    prow(IND+"F-Number",pv(fnum),fnum?pv(qFiller):"-"),
+    prow("Position",pv(w.position),"",1),
+    prow(IND+"Groove - Plate/Pipe > 24 in",SH,pv(groove?qPos:"")),
+    prow(IND+"Groove - Pipe < 24 in",SH,pv(groove&&pipe?qPos:"")),
+    prow(IND+"Fillet - Plate and Pipe > 24 in",SH,pv(qFPos)),
+    prow(IND+"Fillet - Pipe < 24 in",SH,pv(qFPos)),
+    prow("Progression",pv(prog),pv(prog)),
+    prow("GMAW Transfer Mode",pv(w.transfer),pv(w.transfer)),
+    prow("Single or Multiple Electrodes","Single","Single"),
+    prow("Gas/Flux Type",pv(gas),pv(gas))]});
 
-  // Test results
-  var res=[], push=function(k,crit,v){ res.push([k,dash(crit),dash(accept(v)),""]); };
+  // Test results: one row per specimen set; a set that split prints each.
+  var res=[];
+  function push(k,crit,v){ res.push({cells:[k,{t:crit,a:"c"},{t:accept(v),a:"c"},""]}); }
   push("Visual Examination per "+cl.visual, cl.visual, r.visual);
   if(r.method=="bend"){
-    if(!isNaN(t)&&t>=0.375){
-      var sides=["bendSide1","bendSide2","bendSide3","bendSide4"].map(function(k){return r[k]});
-      if(sides.every(function(v){return v==sides[0]})) push("Four Side Bends per "+cl.bendTest, cl.bend, sides[0]);
-      else sides.forEach(function(v,i){ push("Side Bend "+(i+1)+" per "+cl.bendTest, cl.bend, v); });
-    } else { push("Each Position: 1 Root Bend per "+cl.bendTest, cl.bend, r.bendRootFace1); push("Each Position: 1 Face Bend per "+cl.bendTest, cl.bend, r.bendRootFace2); }
+    var set=BEND_SETS[bendSet(r,w)], kinds={};
+    set.rows.forEach(function(x){ var k=x[0].replace(/ \d$/,""); (kinds[k]=kinds[k]||[]).push(r[x[1]]); });
+    Object.keys(kinds).forEach(function(k){
+      var vals=kinds[k], n=vals.length, same=vals.every(function(v){return v==vals[0]});
+      var what=k.replace(/ bend$/," Bend");
+      if(same) push("Each Position: "+n+" "+what+(n>1?"s":"")+" per "+cl.bendTest, cl.bend, vals[0]);
+      else vals.forEach(function(v,i){ push(what+" "+(i+1)+" per "+cl.bendTest, cl.bend, v); });
+    });
   }
   if(r.method=="rt") push("Radiographic Examination","Clause 6, Part C",r.rt);
   if(r.method=="macro") push("Macroetch / Fillet Break","Clause 6, Part C",r.macro);
-  if(r.remarks||w.notes) res.push(["Remarks",{content:r.remarks||w.notes,colSpan:3,styles:{halign:"left"}}]);
-  y=sectionTitle(d,y,"Test Results");
-  y=grid(d,{x:x,w:W,y:y,center:1,bold:[],col:{0:{cellWidth:230}},head:["Type of Test","Acceptance Criteria","Results","Remarks"],body:res,
-    parse:function(c){ if(c.section=="body"&&c.column.index==0){ c.cell.styles.halign="left"; if(c.cell.raw=="Remarks") c.cell.styles.fontStyle="bold"; } }})+PG.gap;
+  // A short remark fits the Remarks column; a longer one gets its own row.
+  d.setFontSize(WQ.FS);
+  if(r.remarks&&d.getTextWidth(r.remarks)<E-RA-4) res[0].cells[3]=r.remarks;
+  else if(r.remarks) res.push({cells:["Remarks",{t:r.remarks,c:3}]});
+  d.setFontSize(WQ.FS); d.text("TEST RESULTS", 79.3, y+17.3);
+  y=ruled(d,{cols:[L,M,V,RA,E],y:y+17.9,rows:[
+    {h:16.1,fill:F,a:"c",cells:[{t:"Type of Test",a:"l"},"Acceptance\nCriteria","Results","Remarks"]}].concat(res)});
 
-  // Certification
-  y=sectionTitle(d,y,"Certification");
-  y=grid(d,{x:x,w:W,y:y,col:{0:{cellWidth:110}},body:[
-    [{content:"Test Conducted By",colSpan:2,styles:{fontStyle:"bold"}}],
-    ["Laboratory",dash([CFG.shop,[CFG.inspector,CFG.cert].filter(Boolean).join(", ")].filter(Boolean).join("   -   "))],
-    ["Test Number",dash(r.testNo)],
-    ["File Number",dash(r.testNo?r.testNo+(w.name?" — "+w.name:""):w.name)],
-    ["Result",dash(r.result)]]})+4;
-  d.setFont("helvetica","italic"); d.setFontSize(7);
-  var stmt=d.splitTextToSize("We, the undersigned, certify that the statements in this record are correct and that the test welds were prepared, welded, and tested in accordance with the requirements of Clause 6 of "+code+".", W);
-  d.text(stmt,x,y+8); y+=stmt.length*8.5+6; d.setFont("helvetica","normal");
+  // Certification.
+  d.setFontSize(WQ.FS); d.text("CERTIFICATION", 79.3, y+17.8);
+  y=ruled(d,{cols:[L,A,E],y:y+18.4,rows:[
+    {h:11.1,fill:F,cells:[{t:"Test Conducted By",c:2}]},
+    {cells:["Laboratory",[CFG.shop,[CFG.inspector,CFG.cert].filter(Boolean).join(", ")].filter(Boolean).join("   -   ")]},
+    {cells:["Test Number",""]},
+    {cells:["File Number",no]}]});
+  d.setFont("helvetica","italic"); d.setFontSize(WQ.FS);
+  var stmt=d.splitTextToSize("We, the undersigned, certify that the statements in this record are correct and that the test welds were prepared, welded, and tested in accordance with the requirements of clause 6 of "+String(code).replace(":"," ")+".", E-79.3);
+  d.text(stmt, 79.3, y+12.3, {lineHeightFactor:1.15});
 
-  // Signature lines, laid out as on the shop's form.
-  var mid=x+W*.52;
-  d.setLineWidth(.5); d.setDrawColor(0);
-  d.setFontSize(8); d.text(String(employer||""), x+2, y+18);
-  d.line(x,y+21,x+W*.42,y+21); d.setFont("helvetica","italic"); d.setFontSize(7); d.text("Manufacturer or Contractor", x, y+29);
-  d.line(mid,y+21,x+W,y+21); d.text("Authorized by — "+[CFG.inspector,CFG.cert].filter(Boolean).join(", "), mid, y+29);
-  d.setFont("helvetica","normal"); d.setFontSize(8); d.text(fmtDate(today()), mid+4, y+50);
-  d.line(mid,y+53,mid+W*.25,y+53); d.setFont("helvetica","italic"); d.setFontSize(7); d.text("Date", mid, y+61);
+  // Signatures.
+  var ys=y+12.3+(stmt.length-1)*7.5;
+  d.setFont("helvetica","normal"); d.text(String(employer||""), 79.3, ys+22.7);
+  d.setLineWidth(.5); d.line(L,ys+23.6,262.6,ys+23.6); d.line(R,ys+23.6,504.7,ys+23.6);
+  d.setFont("helvetica","italic"); d.text("Manufacturer or Contractor", 79.3, ys+33.3); d.text("Authorized by", 375.4, ys+33.3);
+  d.setFont("helvetica","normal"); d.text(pdate(today()), 390.2, ys+43.9);
+  d.line(R,ys+44.8,460.4,ys+44.8);
+  d.setFont("helvetica","italic"); d.text("Date", 375.4, ys+54.5);
   d.setFont("helvetica","normal");
   if(draft) watermark(d);
   return d;
@@ -1917,6 +2087,7 @@ function currentWps(){ return S.viewWps || S.wps || (S.ticket&&S.ticket.wps) || 
    ========================================================= */
 document.addEventListener("click", function(e){
   var el=e.target.closest("button"); if(!el) return;
+  if(el.dataset.act=="swdel"){ var sw=el.closest(".sw"), k=sw.dataset.sw.split(":"); removeRow(k[0],k.slice(1).join(":")); render({keepScroll:true}); return; }
 
   if(el.dataset.go){ go(el.dataset.go); return; }
   if(el.dataset.rec){ openRecord(el.dataset.rec); return; }
@@ -1924,30 +2095,22 @@ document.addEventListener("click", function(e){
   if(el.dataset.insp){ var ins=inspections().filter(function(x){return x.id==el.dataset.insp})[0]; if(ins) go("inspedit",{draft:JSON.parse(JSON.stringify(ins))}); return; }
   if(el.dataset.wps){ var p=wpsAll().filter(function(x){return x.id==el.dataset.wps})[0]; go("wpsedit",{draft:Object.assign({},p)}); return; }
   if(el.dataset.pick!==undefined){ pick(el.dataset.pick, el.dataset.group); return; }
-  if(el.dataset.res){ S.r[el.dataset.res]=el.dataset.val; render({keepScroll:true}); return; }
+  if(el.dataset.res){ S.r[el.dataset.res]=el.dataset.val; autosave(); render({keepScroll:true}); return; }
   if(el.dataset.result){ S.r.result=el.dataset.result; upsertRecord(); render({keepScroll:true}); return; }
 
   var a=el.dataset.act;
   if(a=="back") back();
-  else if(a=="settings") go("settings");
-  else if(a=="savecfg"){ saveCfg(); back(); }
-  else if(a=="clearlogo"){ CFG.logo=""; render({keepScroll:true}); }
+  else if(a=="settings") go("settings",{draft:Object.assign({},CFG)});
+  else if(a=="savecfg"){ CFG=Object.assign({},CFG,S.draft); saveCfg(); back(); }
+  else if(a=="clearlogo"){ S.draft.logo=""; render({keepScroll:true}); }
   else if(a=="cleardraftlogo"){ S.draft.logo=""; render({keepScroll:true}); }
   else if(a=="export") go("exported");
   else if(a=="import") go("importer");
   else if(a=="copyblob"){ copy(window._blob); el.textContent="Copied"; }
+  else if(a=="savebackup"){ saveFile(new Blob([JSON.stringify(backupData())],{type:"application/json"}), "WeldSync-backup-"+today()+".json"); }
   else if(a=="doimport"){
-    var box=document.getElementById("impbox"), er=document.getElementById("imperr");
-    var d=dec((box.value||"").trim());
-    if(d&&d.records){
-      if(!setUp()&&d.cfg){ CFG=Object.assign({},CFG,d.cfg); saveCfg(); }
-      (d.companies||[]).forEach(function(x){ putRow("companies",x); });
-      (d.wps||[]).forEach(function(x){ putRow("wps",x); });
-      (d.records||[]).forEach(function(x){ putRow("records",x); });
-      (d.inspections||[]).forEach(function(x){ putRow("inspections",x); });
-      S.stack=[]; S.screen="home"; render();
-    }
-    else er.style.display="block";
+    var box=document.getElementById("impbox");
+    if(!importBackup(readBackup(box.value))) document.getElementById("imperr").style.display="block";
   }
   else if(a=="seed"){ seedDemo(); S.stack=[]; S.screen="records"; render(); }
   else if(a=="unseed"){ if(confirm("Remove the sample welders and companies?")){ clearDemo(); render(); } }
@@ -1967,13 +2130,9 @@ document.addEventListener("click", function(e){
     if(!di.id) di.id=uid();
     putRow("inspections", di); back();
   }
-  else if(a=="delinsp"){ if(confirm("Delete this report?")){ delRow("inspections",S.draft.id); S.stack=[]; S.screen="inspections"; render(); } }
+  else if(a=="delinsp"){ removeRow("inspections",S.draft.id); S.stack=[]; S.screen="inspections"; render(); }
   else if(a=="previewinsp"){ if(!needPdf()) return; var di2=S.draft; showPdf(inspectionPdf(di2), pdfName("Inspection "+(di2.reportNo||"")+" "+(di2.project||di2.client||"")), "Report "+(di2.reportNo||"")); }
-  else if(a=="delco"){
-    var n=recsFor(S.draft.id).length;
-    var msg = n ? "Delete this company? Its "+n+" test record"+(n==1?"":"s")+" stay on file under the name they were filed with." : "Delete this company?";
-    if(confirm(msg)){ delRow("companies",S.draft.id); S.stack=[]; S.screen="companies"; render(); }
-  }
+  else if(a=="delco"){ removeRow("companies",S.draft.id); S.stack=[]; S.screen="companies"; render(); }
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
   else if(a=="savewps"){
@@ -1983,7 +2142,7 @@ document.addEventListener("click", function(e){
     if(isPqr(d)){ var wq=wpsById(d.wpsQualId); d.wpsQual=wq?wpsLabel(wq):(d.wpsQual||""); }
     putRow("wps", d); back();
   }
-  else if(a=="delwps"){ if(confirm("Delete this "+(isPqr(S.draft)?"PQR":"WPS")+"?")){ delRow("wps",S.draft.id); back(); } }
+  else if(a=="delwps"){ removeRow("wps",S.draft.id); back(); }
   else if(a=="newpqr") go("wpsedit",{draft:{kind:"PQR",rev:"0",date:today(),testedBy:CFG.inspector,results:defaultResults(),passes:[{no:"1"}]}});
   else if(a=="pqrfrom"){ var src=currentWps(); if(src) go("wpsedit",{draft:pqrFromWps(src)}); }
   else if(a=="addli"){ var k1=el.dataset.li; (S.draft[k1]=S.draft[k1]||[]).push(k1=="passes"?{no:String((S.draft[k1].length||0)+1)}:{}); render({keepScroll:true}); }
@@ -1998,14 +2157,14 @@ document.addEventListener("click", function(e){
   else if(a=="previewwelder"){ startIntake({},true); }
   else if(a=="exitpreview"){ S.preview=false; S.wps=null; S.stack=[]; S.screen="home"; S.w=blankW(); S.r=blankR(); render(); }
   else if(a=="homeclear"){ S.stack=[]; S.screen="home"; S.draft={}; render(); }
-  else if(a=="startblank"){ S.w=blankW(); S.r=blankR(); S.recId=null; go("inspect"); }
+  else if(a=="startblank"){ S.w=Object.assign(blankW(),{code:CFG.code}); S.r=blankR(); S.recId=null; go("inspect"); }
   else if(a=="pasteclip"){
     navigator.clipboard.readText().then(function(txt){ if(!takeReturn(txt)) document.getElementById("pasteerr").style.display="block"; })
       .catch(function(){ toast("Couldn't read the clipboard — paste it in the box instead."); });
   }
   else if(a=="paste"){ var pb=document.getElementById("pastebox"); if(!takeReturn(pb&&pb.value)) document.getElementById("pasteerr").style.display="block"; }
   else if(a=="saverec"){ upsertRecord(); el.textContent="Saved"; }
-  else if(a=="delrec"){ if(confirm("Delete this record?")){ delRow("records",S.recId); S.stack=[]; S.screen="records"; render(); } }
+  else if(a=="delrec"){ clearTimeout(saveT); if(S.recId) removeRow("records",S.recId); S.recId=null; S.stack=[]; S.screen="records"; render(); }
   else if(a=="archive"){ upsertRecord(); setArchived(S.recId,true); S.stack=[]; S.screen="records"; render(); }
   else if(a=="unarchive"){ setArchived(S.recId,false); render({keepScroll:true}); }
   else if(a=="togglearch"){ S.draft.showArch=!S.draft.showArch; render({keepScroll:true}); }
@@ -2014,10 +2173,10 @@ document.addEventListener("click", function(e){
     if(confirm("Archive "+fin.length+" finished tests? They stay on file under Archive.")){ fin.forEach(function(r){ setArchived(r.id,true); }); render(); }
   }
   else if(a=="pdfrec"){
-    if(!pdfReady()){ toast("Still loading the PDF tool — try again in a second."); loadPdfLib().catch(function(){ toast("Couldn't load the PDF tool. Check your signal."); }); return; }
-    var final=S.r.verified&&S.r.result&&!el.dataset.draft;
-    if(final) upsertRecord();
-    deliverPdf(wpqrPdf(!final), pdfName(S.r.testNo||(S.w.name?S.w.name+" WPQR":"WPQR")));
+    if(!needPdf()) return;
+    var final=S.r.verified&&S.r.result;
+    upsertRecord();
+    deliverPdf(wpqrPdf(!final), pdfName(recNo(S.w,S.r)));
   }
   else if(a=="istep-next"){ S.step=Math.min(stepList().length-1,S.step+1); render(); }
   else if(a=="istep-back"){ S.step=Math.max(0,S.step-1); render(); }
@@ -2033,7 +2192,7 @@ document.addEventListener("click", function(e){
   else if(a=="previewrec"){
     if(!needPdf()) return;
     var fin=S.r.verified&&S.r.result;
-    showPdf(wpqrPdf(!fin), pdfName(S.r.testNo||(S.w.name?S.w.name+" WPQR":"WPQR")), "WPQR preview", fin?"":"Marked DRAFT until you verify the ranges and pick a result.");
+    showPdf(wpqrPdf(!fin), pdfName(recNo(S.w,S.r)), "WPQR preview", fin?"":"Marked DRAFT until you verify the ranges and pick a result.");
   }
   else if(a=="pdfsave"){ if(S.pdf&&S.pdf.doc) deliverPdf(S.pdf.doc, S.pdf.name); }
   else if(a=="samplewpqr"){
@@ -2050,9 +2209,35 @@ document.addEventListener("click", function(e){
   }
   else if(a=="copy"){ copy(window._link); el.textContent="Copied"; }
   else if(a=="sms"){ var to=(S.screen=="sent"||S.screen=="myticket")?(window._smsTo||""):""; location.href="sms:"+to+"?&body="+encodeURIComponent(window._msg); }
-  else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}); else { copy(window._link); el.textContent="Copied"; } }
+  else if(a=="share"){ if(navigator.share) navigator.share({title:"Weld test",text:window._msg}).catch(function(){}); else { copy(window._link); el.textContent="Copied"; } }
 });
-function copy(t){ try{ navigator.clipboard.writeText(t); }catch(e){} }
+/* Clipboard, with the old select-and-copy for browsers that refuse the API. */
+function copy(t){
+  function legacy(){ var ta=document.createElement("textarea"); ta.value=t; ta.setAttribute("readonly",""); ta.style.position="fixed"; ta.style.opacity="0";
+    document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); }catch(e){} ta.remove(); }
+  try{ navigator.clipboard.writeText(t).catch(legacy); }catch(e){ legacy(); }
+}
+/* A file to keep: the share sheet on a phone, a download elsewhere. */
+function saveFile(blob,name){
+  var file=null; try{ file=new File([blob],name,{type:blob.type}); }catch(e){}
+  if(file&&navigator.canShare&&navigator.canShare({files:[file]})){ navigator.share({files:[file],title:name}).catch(function(){}); return; }
+  var url=URL.createObjectURL(blob), a=document.createElement("a"); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); },60000);
+}
+/* A backup is the JSON file, or the same thing as copied text. */
+function readBackup(txt){
+  txt=String(txt||"").trim(); if(!txt) return null;
+  var d=null; if(txt.charAt(0)=="{"){ try{ d=JSON.parse(txt); }catch(e){} } else d=dec(txt);
+  return d&&Array.isArray(d.records) ? d : null;
+}
+function importBackup(d){
+  if(!d) return false;
+  if(!setUp()&&d.cfg){ CFG=Object.assign({},CFG,d.cfg); saveCfg(); }
+  TABLES.forEach(function(t){ (d[t]||[]).forEach(function(x){ if(x&&x.id) putRow(t,x); }); });
+  toast("Backup imported — "+d.records.length+" record"+(d.records.length==1?"":"s")+".");
+  S.stack=[]; S.screen="home"; S.draft={}; render();
+  return true;
+}
 
 function openRecord(id){
   var r=records().filter(function(x){return x.id==id})[0]; if(!r) return;
@@ -2167,11 +2352,11 @@ function pick(v,group){
 
 function onField(e){
   var t=e.target;
-  if(t.dataset.k){ S.w[t.dataset.k]=t.value; if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
-  else if(t.dataset.r){ S.r[t.dataset.r]=(t.type=="checkbox")?t.checked:t.value; if(t.type=="checkbox"||t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
+  if(t.dataset.k){ S.w[t.dataset.k]=t.value; autosave(); if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
+  else if(t.dataset.r){ S.r[t.dataset.r]=(t.type=="checkbox")?t.checked:t.value; autosave(); if(t.type=="checkbox"||t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); }
   else if(t.dataset.li){ var lp=t.dataset.li.split(":"); var arr=S.draft[lp[0]]||(S.draft[lp[0]]=[]); (arr[+lp[1]]||(arr[+lp[1]]={}))[lp[2]]=t.value; }
-  else if(t.dataset.c){ CFG[t.dataset.c]=t.value; }
+  else if(t.dataset.c){ S.draft[t.dataset.c]=t.value; }
 }
 /* Safari on iOS fires only "change" for select and checkbox, never "input" */
 document.addEventListener("input", function(e){
@@ -2180,7 +2365,8 @@ document.addEventListener("input", function(e){
 });
 document.addEventListener("change", function(e){
   var t=e.target;
-  if(t.id=="logofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ CFG.logo=d; render({keepScroll:true}); }); return; }
+  if(t.id=="logofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; render({keepScroll:true}); }); return; }
+  if(t.id=="impfile"&&t.files&&t.files[0]){ var fr=new FileReader(); fr.onload=function(){ if(!importBackup(readBackup(fr.result))) document.getElementById("imperr").style.display="block"; }; fr.readAsText(t.files[0]); return; }
   if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; render({keepScroll:true}); }); return; }
   if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
 });
@@ -2196,11 +2382,53 @@ function readLogo(file, done){
   img.onerror=function(){ URL.revokeObjectURL(url); toast("Couldn't read that image."); };
   img.src=url;
 }
-/* Enter in a sign-in field presses the button under it */
+/* Enter on the first-run form presses the button under it */
 document.addEventListener("keydown", function(e){
-  if(e.key!="Enter" || ["login","newpass","onboard"].indexOf(S.screen)<0 || e.target.tagName!="INPUT") return;
+  if(e.key!="Enter" || S.screen!="onboard" || e.target.tagName!="INPUT") return;
   var b=app.querySelector("button.primary"); if(b){ e.preventDefault(); b.click(); }
 });
+/* ---------- swipe to delete ----------
+   Drag a row left: past halfway it deletes, a shorter drag leaves the
+   Delete button showing. Vertical drags scroll as normal (touch-action:
+   pan-y hands only sideways moves to us). A drag never counts as a tap. */
+var SWIPE={ el:null, open:null, x0:0, y0:0, dx:0, axis:null, base:0, moved:false };
+function swClose(except){ if(SWIPE.open&&SWIPE.open!==except){ SWIPE.open.firstElementChild.nextElementSibling.style.transform=""; SWIPE.open=null; } }
+document.addEventListener("pointerdown", function(e){
+  var sw=e.target.closest(".sw");
+  if(!sw||e.target.closest(".sw-act")){ if(!sw) swClose(null); return; }
+  swClose(sw);
+  SWIPE.el=sw; SWIPE.x0=e.clientX; SWIPE.y0=e.clientY; SWIPE.dx=0; SWIPE.axis=null; SWIPE.moved=false;
+  SWIPE.base=SWIPE.open===sw?-88:0;
+});
+document.addEventListener("pointermove", function(e){
+  var sw=SWIPE.el; if(!sw) return;
+  var dx=e.clientX-SWIPE.x0, dy=e.clientY-SWIPE.y0;
+  if(!SWIPE.axis){ if(Math.abs(dx)<8&&Math.abs(dy)<8) return; SWIPE.axis=Math.abs(dx)>Math.abs(dy)?"x":"y"; if(SWIPE.axis=="x") sw.classList.add("drag"); }
+  if(SWIPE.axis!="x") return;
+  SWIPE.moved=true; SWIPE.dx=Math.min(0,SWIPE.base+dx);
+  sw.querySelector(".sub").style.transform="translateX("+SWIPE.dx+"px)";
+});
+function swEnd(){
+  var sw=SWIPE.el; SWIPE.el=null; if(!sw||SWIPE.axis!="x") return;
+  sw.classList.remove("drag");
+  var row=sw.querySelector(".sub"), w=sw.offsetWidth;
+  if(SWIPE.dx < -w*.5){
+    row.style.transform="translateX(-100%)"; SWIPE.open=null;
+    var k=sw.dataset.sw.split(":");
+    setTimeout(function(){ removeRow(k[0],k.slice(1).join(":")); render({keepScroll:true}); },180);
+  } else if(SWIPE.dx < -40){ row.style.transform="translateX(-88px)"; SWIPE.open=sw; }
+  else { row.style.transform=""; if(SWIPE.open===sw) SWIPE.open=null; }
+}
+document.addEventListener("pointerup", swEnd);
+document.addEventListener("pointercancel", swEnd);
+/* The click that ends a drag, or a tap on a row whose Delete is showing,
+   just closes it. */
+document.addEventListener("click", function(e){
+  var sw=e.target.closest(".sw");
+  if(SWIPE.moved){ SWIPE.moved=false; if(sw){ e.stopPropagation(); e.preventDefault(); } return; }
+  if(sw&&SWIPE.open===sw&&!e.target.closest(".sw-act")){ e.stopPropagation(); e.preventDefault(); swClose(null); }
+}, true);
+
 function refreshBar(){
   var p=bar.querySelector('button.primary[data-act=pdfrec]'); if(p) p.disabled=!(S.r.verified&&S.r.result);
   var n=bar.querySelector('[data-act=isend]'); if(n) n.disabled=missing().length>0;

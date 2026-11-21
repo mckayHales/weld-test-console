@@ -118,8 +118,25 @@ onboard  intake  sent  myticket  closed  landed
 ### Data flow
 
 Views read synchronously from localStorage (`db.get`, keys `wq.local.*`). Writes go
-through `putRow(table, obj)` / `delRow(table, id)`. Settings are `wq.local.cfg`; first run
-(no shop name) shows `onboard`.
+through `putRow(table, obj)` / `delRow(table, id)`; `getRow(table, id)` reads one. Settings
+are `wq.local.cfg`; first run (no shop name) shows `onboard`.
+
+**Deleting** goes through `removeRow(table, id)`: it deletes, then shows a toast with
+Undo for six seconds that puts the row back where it was. No "are you sure" dialogs.
+Every list row (records, companies, WPS/PQR, inspection reports) is wrapped by
+`swipe(table, id, rowHtml)`; drag left past halfway to delete, or a short drag to show
+the Delete button, as in Messages. The gesture code is the `SWIPE` block above
+`refreshBar()`; `touch-action: pan-y` on the row keeps vertical scrolling native, and a
+capture-phase click listener swallows the click that ends a drag.
+
+**Navigation.** `go(screen, opts)` pushes a frame holding every field in `FRAME`
+(screen, ids, step, `draft`, `viewWps`, `pdf`), and `back()` restores it, so a half-filled
+form survives a detour (New ticket → Add company → back). Each screen that edits a copy
+keeps it in `S.draft`: Settings edits a copy of `CFG` and only Save commits it.
+
+**The record screen saves as you go.** Every field change calls `autosave()` (400 ms
+debounce), and `go()` / `back()` call `flushSave()`. `upsertRecord()` merges into the
+stored row, so flags the screen doesn't own (`archived`, `_demo`) survive a save.
 
 `carryOver()` runs once: if there's no `wq.local.cfg` but the old signed-in version left a
 cache (`wq.profile.<user>` and `wq.<org id>.<table>`), it copies that in, so the phone
@@ -136,10 +153,12 @@ One delegated `click` listener on `document`, dispatching on data attributes
 
 ## 4. Backups
 
-There is no other copy of the data. Settings → Export everything gives a base64 blob to
-email to yourself; Import merges one back in (same id → the backup's copy wins). On a
-fresh phone, the first-run screen has "Restore from a backup instead", which also brings
-the letterhead settings.
+There is no other copy of the data. Settings → Export everything → **Save backup file**
+writes `WeldSync-backup-<date>.json` through the share sheet (Files, Mail); the same data
+can be copied as base64 text. Import takes the file or the text (`readBackup()` accepts
+either) and merges it in (same id → the backup's copy wins). On a fresh phone, the
+first-run screen has "Restore from a backup instead", which also brings the letterhead
+settings.
 
 ---
 
@@ -174,14 +193,27 @@ the org and the inspector as the tester and the org's inspector signs "Authorize
 that is the third party on the record, and it is the point. A ticket snapshots the WPS's
 brand (`t.wps.brand`) so the welder's copy matches.
 
-`wpqrPdf(draft)` is the **Welder Performance Qualification Record**, laid out line for
-line like Yeti Welding's Excel form (the AWS Annex "actual values | ranges qualified"
-style): identity block, photo box, test block; all eight base-metal columns; every
-variable as an actual value beside its range qualified, in two boxes with a gap; results
-with acceptance-criteria clause numbers; certification block with the result as a row;
-contractor and authorized-by lines; stamp box. Preview on an unverified record carries a
-DRAFT watermark; Save stays disabled until the verify gate is ticked. WPQR and WQTR are
-two names for the same document; the paper says WPQR, so the app does too.
+`wpqrPdf(draft)` is the **Welder Performance Qualification Record**, drawn to the
+shop's own WPQR (Matt's spreadsheet form) **rule for rule**. Every x and y in `WQ` and in
+`wpqrPdf` was measured off that PDF with PyMuPDF: 6.56 pt Helvetica body, 10.6 pt rows,
+text sitting 1.6 pt above the bottom rule the way a spreadsheet prints, grey fills where
+his are. It does not use autoTable; `ruled(d, {cols, y, rows})` draws one table at fixed
+column rules, with `{gap:1}` cells for the white space between the actual and qualified
+halves, and shrinks then wraps a cell that is too long (the row grows). `formHead()` is
+his letterhead: grey bar, 94 pt logo box left, name/address/phone centered at x 326.5.
+Values print his way through `pv()`: "-" for nothing, `3/8"` as "3/8 in", ranges as
+"1/8 in - 3/4 in"; dates as 7/2/2025. With no record number typed, `recNo()` writes it as
+he does ("Mckay Hales WPQR 3G FCAW"), and the same goes on the File Number line. Only
+the test-results table grows (one row per specimen set; a set with mixed results prints
+each specimen); a short remark goes in the Remarks column, a long one gets its own row.
+Where his sheet disagrees with the code, the code wins: filler spec by classification
+(E71T-1C is A5.20, not A5.1), groups in Roman numerals as D1.1 Table 5.3 prints them,
+thickness ranges from `suggest()`. Preview on an unverified record carries a DRAFT
+watermark; Save stays disabled until the verify gate is ticked. WPQR and WQTR are two
+names for the same document; the paper says WPQR, so the app does too.
+
+To re-check the layout against the reference: render both with PyMuPDF and compare span
+origins (`page.get_text("dict")`) — every label should land within a point of his.
 
 `wpsPdf(p)` is the WPS the same way: header strip, base metals beside the thickness
 table, joint details beside the sketch and the prequalified designation, a Procedure bar,
@@ -214,16 +246,29 @@ Positions and thickness ranges are computed in `suggest(w)` against **AWS D1.1:2
 (Clause 6, Part C — welder qualification).
 
 ```
-POS_MAP  groove-plate  1G→F  2G→F,H  3G→F,V  4G→F,OH  3G+4G→all
+POS_MAP  groove-plate  1G→F  2G→F,H  3G→F,H,V  4G→F,OH  3G+4G→all
          groove-pipe   1G→F  2G→F,H  5G→F,V,OH  6G→all  2G+5G→all
          fillet        1F→F  2F→F,H  3F→F,H,V  4F→F,H,OH  3F+4F→all
 
 thickness  min = 1/8" (or T if thinner)
            max = T >= 1" ? unlimited : 2T
 
-bend type  T >= 3/8" → four side bends
-           T <  3/8" → root + face
+bend set   plate  T < 1"   → 1 root + 1 face      (BEND_SETS.rf)
+                  T >= 1"  → 2 side               (s2)
+           pipe   t < 3/8" → 2 root + 2 face      (rf2)
+                  t >= 3/8"→ 4 side               (s4)
 ```
+
+The bend set is a default (`bendDefault(w)`), shown on the record screen as a select;
+the inspector's choice (`r.bendSet`) is what the result rows and the printed record use.
+Older records with no `bendSet` are read back from which results were filled in
+(`bendSet(r, w)`). It used to be "T ≥ 3/8 → four side bends" for everything, which put
+four side bends on a 3/8" plate — the shop's own 3/8" record is root + face.
+
+On pipe the coupon thickness is the wall: the intake asks "Wall thickness" and the OD,
+and `tVal()` falls back to the old `pipeWall` field for records from before. A vertical
+position (`isVertical()`: 3G, 5G, 6G, 3F and the combos) requires uphill or downhill
+from the welder unless the WPS fixes it; it prints on the Progression row.
 
 **This is the important part of the whole project.** These are drafts, never authority.
 Every computed range renders as an editable field, and the Print button stays disabled
@@ -288,6 +333,13 @@ matching against `innerHTML` needs `.replace(/&quot;/g,'"')` first.
 submit button in the body as well.
 
 **Silent returns.** Failed validation must show a message, never just return.
+
+**iOS date inputs have a built-in minimum width.** In a two-up `.row` the Date box pushed
+into the field beside it on the WPS editor. Fixed with `min-width:0` on row children and
+`-webkit-appearance:none` on `input[type=date]`; Chrome never showed it.
+
+**Shell heredocs eat backslashes** on this machine (Git Bash). Edit scripts that carry
+`\n` or `\'` must be written to a file, not piped in.
 
 **Testing on one machine.** Inspector and welder share localStorage when you open both
 links in the same browser. Welder mode overrides `CFG` in memory only and never saves it.
