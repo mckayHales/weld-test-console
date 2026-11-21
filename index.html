@@ -166,7 +166,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.10";
+var VERSION="2026-11-21.11";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -554,6 +554,23 @@ function addrFields(pre,label){
     +'<div class="field" style="flex:1.5"><label>ZIP</label><input type="text" inputmode="numeric" data-ad="'+pre+':Zip" value="'+v("Zip")+'" autocomplete="postal-code" placeholder="84663"></div></div>';
 }
 
+/* A ticket can cover more than one plate: 3G and 4G is the usual pair.
+   w.positions holds them on the welder's side; each becomes its own
+   record when the Finished Ticket comes in. w.position stays the first,
+   so everything that reads one position keeps working. */
+function posList(w){ return w.positions&&w.positions.length ? w.positions.slice() : (w.position?[w.position]:[]); }
+function anyVertical(w){ return posList(w).some(isVertical); }
+/* Tap a position to add it or take it off. A combined tile ("3G+4G" —
+   both plates on one record) stands alone. */
+function togglePos(list,v){
+  list=(list||[]).slice();
+  if(!v) return [];
+  if(/\+/.test(v)) return list.indexOf(v)>-1 ? [] : [v];
+  list=list.filter(function(x){ return !/\+/.test(x); });
+  var i=list.indexOf(v); if(i>-1) list.splice(i,1); else list.push(v);
+  var order=["1G","2G","3G","4G","5G","6G","1F","2F","3F","4F"];
+  return list.sort(function(a,b){ return order.indexOf(a)-order.indexOf(b); });
+}
 function isVertical(pos){ return /3G|5G|6G|3F/.test(pos||""); }
 function fmtDate(s){ if(!s)return ""; var p=String(s).split("-"); return p.length==3?p[1]+"/"+p[2]+"/"+p[0]:s; }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
@@ -825,7 +842,9 @@ function go(screen, opts){
 function back(){
   flushSave();
   if(S.screen=="pdfview"&&S.pdf&&S.pdf.url) URL.revokeObjectURL(S.pdf.url);
-  var p=S.stack.pop(); if(!p){ S.screen="home"; S.draft={}; } else { Object.assign(S,p); } render();
+  var p=S.stack.pop(); if(!p){ S.screen="home"; S.draft={}; } else { Object.assign(S,p); }
+  if(S.screen=="inspect"&&S.recId){ var rec=getRow("records",S.recId); if(rec){ S.w=Object.assign(blankW(),rec.w); S.r=Object.assign(blankR(),rec.r); } }
+  render();
 }
 
 var app=document.getElementById("view"), scroller=document.getElementById("app"), bar=document.getElementById("bar");
@@ -856,7 +875,8 @@ function tiles(list,cur,withIcons,group){
   var h='<div class="tiles'+(withIcons?"":" wide")+'">';
   list.forEach(function(o){
     var v=(o.v!==undefined?o.v:o), d=o.d||"", label=(v===""?(d||"Any"):v);
-    h+='<button class="tile" type="button" aria-pressed="'+((cur||"")===v)+'" data-pick="'+esc(v)+'"'
+    var on=Array.isArray(cur) ? (v===""?!cur.length:cur.indexOf(v)>-1) : (cur||"")===v;
+    h+='<button class="tile" type="button" aria-pressed="'+on+'" data-pick="'+esc(v)+'"'
       +(group?' data-group="'+esc(group)+'"':'')+'>'
       +(withIcons?icon(v):"")+'<span>'+esc(label)+'</span>'
       +(d&&v!==""?'<small>'+esc(d)+'</small>':'')+'</button>'; });
@@ -951,8 +971,8 @@ VIEWS.newticket = function(){
   if(wp) h += wpsCard(wp, "What the welder will see");
   h += '<div class="card"><h3>Lock the test, or let them pick</h3>'
     + '<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">If you already sold them a specific coupon, set it here and those screens are pre-filled.</p>'
-    + '<div class="field"><label>Position</label>'
-    + tiles([{v:"",d:"Welder picks"}].concat(GROOVE_PLATE,[{v:"5G",d:"Pipe fixed"},{v:"6G",d:"Pipe 45°"}],FILLET_POS), d.position||"", false, "tpos")+'</div>'
+    + '<div class="field"><label>Position — tap more than one for more than one plate</label>'
+    + tiles([{v:"",d:"Welder picks"}].concat(GROOVE_PLATE,[{v:"5G",d:"Pipe fixed"},{v:"6G",d:"Pipe 45°"}],FILLET_POS), d.positions||(d.position?[d.position]:[]), false, "tpos")+'</div>'
     + '<div class="field" style="margin:0"><label>Process</label>'
     + tiles([{v:"",d:"Welder picks"}].concat(PROCESSES), d.process||"", false, "tproc")+'</div></div>';
   return { body:h, bar:'<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="mklink">Create link</button>' };
@@ -995,7 +1015,7 @@ VIEWS.ticketlink = function(){
     +(pre.company?'<dt>Company</dt><dd>'+esc(pre.company)+'</dd>':'')
     +(pre.name?'<dt>Welder</dt><dd>'+esc(pre.name)+'</dd>':'')
     +(pre.wps?'<dt>WPS</dt><dd>'+esc(pre.wps)+'</dd>':'')
-    +'<dt>Position</dt><dd>'+esc(pre.position||"Welder picks")+'</dd>'
+    +'<dt>Position</dt><dd>'+esc((pre.positions||[]).join(" and ")||pre.position||"Welder picks")+'</dd>'
     +'<dt>Process</dt><dd>'+esc(pre.process||"Welder picks")+'</dd></dl></div>';
   h+='<p class="foot"><button class="mini" data-act="preview-intake">Open it as the welder</button></p>';
   return { body:h, bar:'<button class="primary" data-act="homeclear">Done</button>' };
@@ -1588,7 +1608,7 @@ function pipeFields(){
 /* Uphill or downhill matters on anything vertical, and the record prints
    it. Asked only when the position is vertical and the WPS didn't say. */
 function progressionField(){
-  var w=S.w; if(!isVertical(w.position)) return "";
+  var w=S.w; if(!anyVertical(w)) return "";
   if(S.wps&&S.wps.progression) return "";
   return '<div class="field"><label>Vertical progression <span class="req">*</span></label>'
     +tiles([{v:"Uphill",d:"Vertical up"},{v:"Downhill",d:"Vertical down"}],w.progression,false,"w:progression")+'</div>';
@@ -1597,9 +1617,17 @@ function positionField(withHeading){
   var w=S.w;
   var list = w.weldType=="fillet"?FILLET_POS:(w.product=="pipe"?GROOVE_PIPE:GROOVE_PLATE);
   var h = withHeading ? '' : '<div class="field"><label>Test position <span class="req">*</span></label>';
-  h+=tiles(list,w.position,true,"w:position");
-  if(w.position) h+='<div class="flag" style="margin-top:18px"><b>Draft range</b> — if you pass, this position typically qualifies you for '+esc(suggest(w).positions)+'. The inspector confirms it against the code book before signing.</div>';
+  h+='<p style="margin:-2px 0 10px;font-size:.86rem;color:var(--muted)">Welding more than one plate? Tap each position — 3G and 4G, say. Each one gets its own record.</p>';
+  h+=tiles(list,posList(w),true,"w:positions");
+  h+=posRanges(w,"margin-top:18px");
   return h + (withHeading ? '' : '</div>');
+}
+/* The draft range for each position picked. */
+function posRanges(w,style){
+  var ps=posList(w); if(!ps.length) return "";
+  var lines=ps.map(function(pos){ var r=suggest(Object.assign({},w,{position:pos})).positions; return r ? '<b>'+esc(pos)+'</b> typically qualifies '+esc(r) : ""; }).filter(Boolean);
+  if(!lines.length) return "";
+  return '<div class="flag" style="'+(style||"")+'"><b>Draft range</b> — if you pass: '+lines.join("; ")+'. The inspector confirms it against the code book before signing.</div>';
 }
 function stepPosition(){
   return '<h2 class="step">Test position</h2><p class="hint">This decides more of what you get qualified for than anything else on this form.</p>'+positionField(true)+progressionField();
@@ -1610,8 +1638,8 @@ function stepCoupon(){
   var w=S.w, p=S.wps, locked=S.lockedPos;
   var h='<h2 class="step">Your coupon</h2><p class="hint">The procedure below is set by your inspector. If what\'s on the rack doesn\'t match it, tell them — don\'t guess.</p>';
   h+=wpsCard(p, "Weld to this procedure");
-  if(locked) h+='<div class="card"><h3>Test position</h3><dl class="kv"><dt>Position</dt><dd>'+esc(w.position)+' · '+esc(w.product)+'</dd></dl>'
-    +'<div class="flag" style="margin:12px 0 0"><b>Draft range</b> — if you pass, this position typically qualifies you for '+esc(suggest(w).positions)+'. The inspector confirms it against the code book before signing.</div></div>';
+  if(locked) h+='<div class="card"><h3>Test position'+(posList(w).length>1?'s':'')+'</h3><dl class="kv"><dt>'+(posList(w).length>1?'Plates':'Position')+'</dt><dd>'+esc(posList(w).join(" and "))+' · '+esc(w.product)+'</dd></dl>'
+    +posRanges(w,"margin:12px 0 0")+'</div>';
   else h+=productField()+positionField(false);
   h+=progressionField();
   if(w.process=="GMAW"&&!(p&&p.transfer)) h+=transferField();
@@ -1651,10 +1679,10 @@ function stepReview(){
   h+='<div class="card"><h3>Welder</h3><dl class="kv">'+kv("Name",w.name)+kv("Employer",w.company)+kv("Date",fmtDate(w.date))+kv("Stamp",w.stamp||"To be assigned")+'</dl></div>';
   h+='<div class="card"><h3>Test coupon</h3><dl class="kv">'
     +kv("Type",(w.weldType=="fillet"?"Fillet":"Groove")+" on "+w.product)
-    +kv("Process",w.process+(w.transfer?" — "+w.transfer:""))+kv("Position",w.position)+kv("Base metal",w.base)
+    +kv("Process",w.process+(w.transfer?" — "+w.transfer:""))+kv(posList(w).length>1?"Plates":"Position",posList(w).join(" and "))+kv("Base metal",w.base)
     +kv("Thickness",frac(tVal(w)))
     +(w.product=="pipe"&&w.pipeOD?kv("Pipe OD",w.pipeOD+'"'):"")
-    +(isVertical(w.position)?kv("Progression",w.progression):"")
+    +(anyVertical(w)?kv("Progression",w.progression):"")
     +(w.weldType=="groove"?kv("Backing",w.backing=="with"?"With backing":"No backing"):"")+'</dl></div>';
   h+='<div class="card"><h3>Filler and gas</h3><dl class="kv">'
     +kv("Filler",(w.filler=="Other"?w.fillerOther:w.filler)+(w.fillerDia?" × "+w.fillerDia:""))
@@ -1672,8 +1700,8 @@ function missing(){
   if(!w.name)m.push("name");
   if(!w.process)m.push("process");
   if(w.process=="GMAW"&&!w.transfer)m.push("transfer mode");
-  if(!w.position)m.push("position");
-  if(isVertical(w.position)&&!w.progression)m.push("uphill or downhill");
+  if(!posList(w).length)m.push("position");
+  if(anyVertical(w)&&!w.progression)m.push("uphill or downhill");
   if(w.product=="pipe"&&!w.pipeOD)m.push("pipe OD");
   if(!w.thickness||(w.thickness=="custom"&&!w.thicknessCustom))m.push("thickness");
   if(!w.filler)m.push("filler metal");
@@ -1704,7 +1732,7 @@ function sendBack(){
 VIEWS.sent = function(){
   var h=previewBar()+'<div class="ticket"><div class="ticket-top"><div><div class="shop">'+esc(CFG.shop)+'</div>'
     +'<h1>One more step<span>'+(S.preview?'This is the link the welder texts back to you.':'Text the link below to '+esc(CFG.inspector||"the inspector")+'. That is what files your test.')+'</span></h1></div></div><div class="perf"></div>'
-    +'<div class="ticket-bottom">'+esc(S.w.name)+' · '+esc(S.w.position)+' · '+esc(S.w.process)+'</div></div>';
+    +'<div class="ticket-bottom">'+esc(S.w.name)+' · '+esc(posList(S.w).join(" and "))+' · '+esc(S.w.process)+'</div></div>';
   h+=sendBack();
   h+='<div class="card"><h3>Before you weld</h3><p style="margin:0;font-size:.9rem;color:var(--muted)">Bring your coupon to the booth. The inspector confirms the position and thickness ranges against the code book, then witnesses the test.</p></div>';
   if(S.wps) h+=wpsCard(S.wps, "Your procedure")+keepWps();
@@ -1789,6 +1817,9 @@ VIEWS.inspect = function(){
   }
   h+='</div>';
 
+  var sibs=S.w.group ? records().filter(function(x){ return x.w.group==S.w.group&&x.id!=S.recId; }) : [];
+  if(sibs.length) h+='<div class="card"><h3>Same test, other plate'+(sibs.length>1?'s':'')+'</h3>'
+    +sibs.map(function(x){ return '<button class="sub" data-rec="'+x.id+'"><span style="flex:1"><b>'+esc(x.w.position||"No position yet")+'</b><span>'+esc(x.r.result||"Awaiting test")+'</span></span><span class="go">'+CHEV+'</span></button>'; }).join("")+'</div>';
   h+=couponCard();
   h+='<div class="card"><h3>Record number and method</h3>'
     +'<div class="field"><label>Qualified to</label>'+editionSelect('data-k="code"', recCode(w))+'</div><div class="row">'
@@ -1896,6 +1927,7 @@ function couponCard(){
     +(w.filler=="Other"?txtK("AWS classification","fillerOther","e.g. E71T-1C/1M"):"")
     +(gs.length&&gs[0]!="None"?'<div class="row">'+selK("Shielding gas","gas",gs)+selK("Flow (CFH)","flow",FLOWS.map(function(f){return f.v}))+'</div>':"")
     +(w.gas=="Other"?txtK("Gas","gasOther","What is on the bottle"):"");
+  h+='<p style="margin:14px 0 0"><button class="mini" data-act="addplate">+ Another plate, same test (3G and 4G, say)</button></p>';
   return h+'</div>';
 }
 function resRow(label,key){
@@ -2683,6 +2715,14 @@ document.addEventListener("click", function(e){
   else if(a=="wpscopyto"){ var cur=Object.assign({},S.draft); go("wpscopyto",{copySrc:cur}); }
   else if(a=="copywpsto"){ var co2=getRow("companies",el.dataset.coId); if(co2&&S.copySrc){ S.stack.pop(); S.screen="wpsedit"; S.draft=wpsCopyFor(S.copySrc,co2); S.copySrc=null; render(); } }
   else if(a=="togglecoupon"){ S.couponOpen=!S.couponOpen; render({keepScroll:true}); }
+  else if(a=="addplate"){
+    // Same welder, coupon and WPS; a new record for the next position.
+    if(!S.w.name){ toast("Give the welder a name first.",{bad:1}); return; }
+    var grp=S.w.group||S.recId||uid(); S.w.group=grp; upsertRecord();
+    var nw=Object.assign({},S.w,{ position:"", group:grp }); delete nw.positions;
+    S.w=nw; S.r=blankR(); S.recId=null; S.couponOpen=true; render();
+    toast("New record for the next plate — pick its position.");
+  }
   else if(a=="savewps"){
     var d=S.draft;
     if(!d.no){ var se2=document.getElementById("saveerr"); if(se2) se2.style.display="block"; return; }
@@ -2796,7 +2836,8 @@ function importBackup(d){
 
 function openRecord(id){
   var r=records().filter(function(x){return x.id==id})[0]; if(!r) return;
-  S.w=Object.assign(blankW(),r.w); S.r=Object.assign(blankR(),r.r); S.recId=r.id; S.couponOpen=!r.w.process; go("inspect");
+  // Through go()'s options, so the screen being left is saved and framed first.
+  go("inspect",{ w:Object.assign(blankW(),r.w), r:Object.assign(blankR(),r.r), recId:r.id, couponOpen:!r.w.process });
 }
 function startIntake(pre,preview,wps){
   S.w=blankW(); S.r=blankR(); S.step=0; S.preview=!!preview; S.wps=wps||null;
@@ -2804,6 +2845,7 @@ function startIntake(pre,preview,wps){
     if(pre.name)S.w.name=pre.name; if(pre.wpsId)S.w.wpsId=pre.wpsId; if(pre.wps||pre.wpsLabel)S.w.wps=pre.wps||pre.wpsLabel;
     if(pre.position){ S.w.position=pre.position; if(/F$/.test(pre.position))S.w.weldType="fillet"; if(["5G","6G","2G+5G"].indexOf(pre.position)>-1)S.w.product="pipe"; }
     if(pre.process)S.w.process=pre.process; }
+  if(pre&&pre.positions&&pre.positions.length){ S.w.positions=pre.positions.slice(); S.w.position=pre.positions[0]; if(/F$/.test(S.w.position))S.w.weldType="fillet"; }
   S.lockedPos=!!(pre&&pre.position);
   if(wps) prefillFromWps(wps);
   if(pre&&pre.position){ S.w.position=pre.position; if(/F$/.test(pre.position))S.w.weldType="fillet"; }
@@ -2850,7 +2892,7 @@ function createTicket(btn){
   var d=S.draft, p=wpsById(d.wpsId);
   var t={ id:token(),
     data:lean({ companyId:d.companyId, company:coName(d.companyId), name:d.name,
-                wpsId:d.wpsId, wps:wpsLabel(p), position:d.position, process:d.process }),
+                wpsId:d.wpsId, wps:wpsLabel(p), position:d.position, positions:(d.positions||[]).length>1?d.positions:null, process:d.process }),
     wps: p ? Object.assign(lean(p), { brand:lean(Object.assign({}, wpsBrand(p), { logo:"" })) }) : null,
     org: lean({ shop:CFG.shop, city:CFG.city, inspector:CFG.inspector, phone:CFG.phone, code:CFG.code }) };
   if(btn){ btn.disabled=true; btn.textContent="Making the ticket…"; }
@@ -2920,12 +2962,18 @@ function takeReturn(txt){
   return readReturn(txt).then(function(d){
     if(!d) return false;
     if(d=="locked"){ toast("That Finished Ticket was locked to a different phone's key. Open it on the phone that sent the Weld Ticket, or import that phone's backup here.",{bad:1}); return true; }
-    var id=d.tid?"t"+d.tid:uid(), old=records().filter(function(x){return x.id==id})[0];
-    if(old){ toast("Already on file — opened it."); openRecord(id); return true; }
+    var base=d.tid?"t"+d.tid:uid(), ps=posList(d.w), many=ps.length>1;
+    var ids=many ? ps.map(function(pos){ return base+"-"+pos.replace(/[^A-Za-z0-9]/g,""); }) : [base];
+    if(getRow("records",ids[0])){ toast("Already on file — opened it."); openRecord(ids[0]); return true; }
     var w=Object.assign(blankW(),d.w), said=recognize(w);
-    putRow("records",{ id:id, w:w, r:blankR(), status:"Awaiting test", updated:Date.now() });
-    toast("Filed under Test records"+(said.length?" — matched "+said.join(", "):"")+".");
-    S.stack=[]; S.screen="records"; openRecord(id);
+    delete w.positions;
+    (many?ps:[w.position]).forEach(function(pos,n){
+      var wn=Object.assign({},w,{ position:pos });
+      if(many) wn.group=base;
+      putRow("records",{ id:ids[n], w:wn, r:blankR(), status:"Awaiting test", updated:Date.now() });
+    });
+    toast((many?"Filed "+ps.length+" tests — "+ps.join(" and "):"Filed under Test records")+(said.length?" — matched "+said.join(", "):"")+".");
+    S.stack=[]; S.screen="records"; openRecord(ids[0]);
     return true;
   });
 }
@@ -2939,7 +2987,7 @@ function finishOnboard(){
 }
 
 function pick(v,group){
-  if(group=="tpos"){ S.draft.position=v; render({keepScroll:true}); return; }
+  if(group=="tpos"){ S.draft.positions=togglePos(S.draft.positions,v); S.draft.position=S.draft.positions[0]||""; render({keepScroll:true}); return; }
   if(group=="tproc"||group=="wproc"){ S.draft.process=v; render({keepScroll:true}); return; }
   if(group&&group.slice(0,2)=="d:"){
     var k=group.slice(2); S.draft[k]=(S.draft[k]===v?"":v);
@@ -2947,10 +2995,11 @@ function pick(v,group){
     render({keepScroll:true}); return;
   }
   var w=S.w;
+  if(group=="w:positions"){ w.positions=togglePos(posList(w),v); w.position=w.positions[0]||""; render({keepScroll:true}); return; }
   if(group&&group.slice(0,2)=="w:"){
     var key=group.slice(2);
     w[key]=v;
-    if(key=="weldType"||key=="product") w.position="";
+    if(key=="weldType"||key=="product"){ w.position=""; w.positions=[]; }
     if(key=="process"){ w.filler=""; w.gas=""; w.transfer=""; w.fillerDia=""; w.flow=""; }
   }
   render({keepScroll:true});

@@ -357,6 +357,26 @@ clears what depended on a changed field (new process → filler and gas cleared)
 same as the welder's tiles. On a record that came from a welder the card starts closed
 as a one-line summary, and Edit opens it, so the inspector can fix a welder's mistake.
 
+### More than one plate on a ticket
+
+3G and 4G on the same day is the usual pair, and each plate gets its own WPQR. The
+welder's position tiles are multi-select (`w.positions`, kept sorted; `w.position` is the
+first, so single-position code keeps working); the combined tiles ("3G+4G" — both plates
+on one record, qualifying all positions) stand alone (`togglePos()`). The inspector can
+lock one or several positions on New ticket. Progression is asked if any plate is
+vertical (`anyVertical()`), and the draft ranges show per plate (`posRanges()`).
+
+When the Finished Ticket comes in, `takeReturn()` files one record per plate: ids
+`t<tid>-3G`, `t<tid>-4G`, the same `w` but each with its own `position`, linked by
+`w.group`; each has its own results, verify gate and WPQR (the record number differs by
+position). A record in a group shows **Same test, other plate** with a link to the rest.
+On a hand-entered record, **+ Another plate, same test** saves this one and opens a new
+record with the same welder, coupon and WPS, in the same group, position blank.
+
+`openRecord()` goes through `go()`'s options so the screen being left is saved and framed
+before `S.w` changes, and `back()` onto a record screen reloads that record from storage
+— together they make record → other plate → Back land on the right record.
+
 ### A client's own WPS
 
 A WPS with `companyId` belongs to that client and prints on their letterhead (`wpsBrand()`
