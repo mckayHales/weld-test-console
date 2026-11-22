@@ -225,7 +225,8 @@ he does ("Mckay Hales WPQR 3G FCAW"), and the same goes on the File Number line.
 the test-results table grows (one row per specimen set; a set with mixed results prints
 each specimen); a short remark goes in the Remarks column, a long one gets its own row.
 Where his sheet disagrees with the code, the code wins: filler spec by classification
-(E71T-1C is A5.20, not A5.1), groups in Roman numerals as D1.1 Table 5.3 prints them,
+(E71T-1C is A5.20, not A5.1), groups in Roman numerals as D1.1:2025 Table 5.6 prints them (`metalGroup()`: A36 is
+Group II over 3/4"),
 thickness ranges from `suggest()`. Preview on an unverified record carries a DRAFT
 watermark; Save stays disabled until the verify gate is ticked. WPQR and WQTR are two
 names for the same document; the paper says WPQR, so the app does too.
@@ -250,6 +251,18 @@ line (`reworkNote`), remarks on the dotted lines (`notes`, one per line, printed
 five fit, more close the lines up, past eleven they continue on page 2), standards, and
 the signature / CWI number / date row. Reports from before the questions keep their
 `items` and print them as remarks.
+
+Clause 8 fields on the report: report date and inspection date (`inspDate`, "Inspected:"
+in the job block), role (Contractor's 8.1.2 / Verification 8.1.3, "Role:"), loading
+(Static / Cyclic / Tubular — `visualTable()` picks Table 8.1's column or Table 10.14; the
+code's own 7.23 misprints 10.15), drawings (8.1.6), base metal, WPS used (8.3.3), welders
+with their WPQR (8.4.1), welds not on the drawings with the Engineer's approval reference
+(8.5.1). Those print as the first remarks (`autoRemarks()`); members and joints with
+specified and measured size (8.5.1, 8.5.3, 8.5.4) print as a table on the last page.
+`inspChecks()` warns on future dates, a client name that is a saved company's words in
+another order, missing loading, and A514/A517/HPS 100W (48 h, Table 8.1 (5)); welds off
+the drawings with no approval reference block Save until kept. Standards default to the
+edition and the contract documents only (8.7).
 
 **Previewing.** `pdfview` no longer shows the PDF in an iframe — iOS draws an iframe'd
 PDF at full size and clips it. `drawPdfPages()` renders each page with pdf.js
@@ -279,26 +292,58 @@ column). Side-by-side tables are two `grid()` calls at the same `y` with differe
 and `w`; continue from the larger of the two returned bottoms.
 
 The acceptance-criteria column takes its clause numbers from `CLAUSES`, keyed by code
-edition. Only D1.1:2020 is filled in (6.10.1 visual, 6.10.3.1/Fig. 6.8 bend specimens,
-6.10.3.3 bend acceptance — read off the shop's records). Any other edition prints
-"Clause 6, Part C" until someone checks the numbers against that book.
+edition. D1.1:2025 is checked against McKay's book: visual 6.10.1 (6.23.1), bends
+6.10.3.3 (6.23.5), specimens 6.10.3.1 with Fig. 6.8 (face/root) or Fig. 6.9 (side), RT in
+lieu of bends 8.12.2 except 8.12.2.2 (6.23.3.2; never for GMAW-S, 6.18.1.1). 2020 keeps
+the numbers read off the shop's records. Any other edition prints "Clause 6" — never
+"Clause 6, Part C" for criteria that live in 6.10 (Part B).
 
 Positions and thickness ranges are computed in `suggest(w)` against **AWS D1.1:2025**
-(Clause 6, Part C — welder qualification).
+(Tables 6.11–6.14 for plate, 10.8 and 10.12 for pipe). The code references live in
+`docs/d1.1-2025/` — read `CLAUDE.md` and that folder's README before changing any of it.
 
 ```
 POS_MAP  groove-plate  1G→F  2G→F,H  3G→F,H,V  4G→F,OH  3G+4G→all
          groove-pipe   1G→F  2G→F,H  5G→F,V,OH  6G→all  2G+5G→all
          fillet        1F→F  2F→F,H  3F→F,H,V  4F→F,H,OH  3F+4F→all
 
-thickness  min = 1/8" (or T if thinner)
-           max = T >= 1" ? unlimited : 2T
+thickness  plate (6.12)  min 1/8" (or T if thinner); max T >= 1" ? unlimited : 2T
+           pipe (10.12)  1/8" to 3/4"; unlimited on OD > 4" with wall > 3/8"
+diameter   plate groove  24" OD and up, with backing or backgouging only (6.11 fn b)
+           pipe (10.12)  OD <= 4": 3/4" to 4"; else max(OD/2, 4") and up (fn f)
 
-bend set   plate  T < 1"   → 1 root + 1 face      (BEND_SETS.rf)
-                  T >= 1"  → 2 side               (s2)
-           pipe   t < 3/8" → 2 root + 2 face      (rf2)
-                  t >= 3/8"→ 4 side               (s4)
+bend set   plate  T <= 3/8"  → 1 root + 1 face     (BEND_SETS.rf)
+                  T >  3/8"  → 2 side              (s2)
+           pipe   1G/2G: 1 root + 1 face, 2 side over 3/8" wall
+                  5G/6G: 2 root + 2 face (rf2), 4 side over 3/8" wall (s4)
 ```
+
+**Not welder variables.** Table 6.13 lists no base metal, filler classification (other
+than the SMAW F-number, Table 6.14), gas or filler diameter. Those print as tested, with
+"Any - not a welder variable (Table 6.13)" or "As tested - not a limit" in the qualified
+column. The process qualified is FCAW for FCAW-G or -S; GMAW-S is its own process.
+
+**Header and signatures.** "Qualified To" is "AWS D1.1/D1.1M:2025, Clause 6" (Clauses 6
+and 10 on pipe) — welders qualify to the clause, not a joint. The joint (designation,
+angle, root from the WPS) is the "Test Joint" row. The test number (`r.labNo`, 2026-001
+and on, `nextLabNo()`) is given the first time a final WPQR is saved and prints under
+Certification. The WPQR is the Contractor's certification (6.20, 6.2.2.2): left block
+"Certified by — <company> (Contractor)" with the signer's name and title (`r.certName`,
+`r.certTitle`), right block "Test witnessed and verified by" with the inspector and date.
+
+**What blocks Save WPQR** (`recordChecks()`): no test thickness, no pipe OD on pipe, RT on
+GMAW-S. Fig. 6.21 (welder coupon α 45° / R 1/4" with backing, 60° / 3/16" without, unless
+a prequalified Fig. 5.1 detail) is a warning only.
+
+**3G + 4G on two records.** `combinedWith(w,id)` finds the same welder (name + company),
+same process family, with the other plate of the pair passed (3G/4G, 3F/4F, 2G/5G pipe).
+Each record keeps its own ranges; a "Combined with 4G" row under Test Results says the two
+together qualify all positions (Table 6.11 / 10.8).
+
+**Continuity, not expiry** (6.2.3.1). Home → **Welders**: one row per welder and process
+family with the last date they welded with it (latest test, or a date logged on `r.cont`
+of their latest qualified record) and the date it lapses, six months on. No expiry
+prints on any document.
 
 The bend set is a default (`bendDefault(w)`), shown on the record screen as a select;
 the inspector's choice (`r.bendSet`) is what the result rows and the printed record use.
@@ -417,7 +462,8 @@ company (`#inspco`).
 
 ### The Clause 5 check on a prequalified WPS
 
-From D1.1:2025 Clause 5 (photos of 5.2, 5.3, 5.4.1, 5.8, Table 5.5 supplied by McKay):
+From D1.1:2025 Clause 5 (McKay's photos; the checklist is
+`docs/d1.1-2025/wps-prequalified-checklist.md`):
 5.2.1 says the Table 5.5 variables shall be on the written WPS and, where they have
 limits, within them. `wpsChecks(p)` runs on WPSs with basis "Prequalified" under a D1.1
 edition and returns findings; `wpsCheckCard()` shows them at the top of the editor only
@@ -434,11 +480,28 @@ must be stated         Table 5.5 items 1–21: process, positions, preheat, fill
                         so anything else is "check it's there").
 5.8.1.1                vertical progression upward, except undercut repair and tubulars.
 5.4.1.2 / 5.4.1.3      one-sided CJP needs steel backing, or backgouge and backweld.
+Fig. 5.1 (FIG51)       B-U2a (SMAW), B-U2a-GF, B-L2a-S, B-U2-S rows and the square grooves.
+                        R as detailed +1/16" −0, α +10° −0°; positions; T1 limits.
+5.6.4                  FCAW-G gas = the classification gas: a C wire on mixed gas needs -M
+                        or dual -C/-M (gasDesig). GMAW gas per Table 5.10.
+Table 5.7              FCAW -2, -3, -10, -13, -14, -GS out; -11 only to 1/2".
+Tables 5.1 / 5.3 / 5.4 electrode diameter limits by position and thickness.
+5.5.1, 5.5.4           GMAW-S isn't prequalified; GMAW/FCAW on CV.
+Table 5.11 / 5.7.1     preheat category (A or B — the only ones photographed) and the minimum
+                        for the thickest part; interpass must be stated.
 ```
+
+Findings have a kind: **rule** (breaks Clause 5), **missing** (Table 5.5 says state it),
+**info** (look in the book — never blocks). On a prequalified WPS a tapped tile that would
+add a rule finding is **refused**: the toast says why, with **Use it anyway** (`wpsGuard`).
+A typed value is kept, and the toast offers **Undo** (`wpsSnap`, taken on focus). Save
+refuses while any rule or missing finding stands, with **Save it anyway**; such a WPS
+prints marked DRAFT.
 
 A range finding offers **Make it …**: the widest range Table 5.5 allows about the same
 middle, rounded inward (`tolFix()`). 5.4.1.5 lets SMAW groove details (B-U2a, all
-positions) be used for GMAW/FCAW, so the dual-shield starter's "All" positions stand.
+positions) be used for GMAW/FCAW, so the dual-shield starter's "All" positions stand —
+B-U2a-GF itself is F, V, OH only, and a WPS that names it in All is told to call it B-U2a.
 PQR-qualified WPSs are judged against their PQR (Clause 6), not this.
 
 ### Starter procedures
@@ -552,7 +615,8 @@ links in the same browser. Welder mode overrides `CFG` in memory only and never 
 - **One phone per inspector.** Nothing syncs. A coworker with their own company just
   installs it on their own phone; their data never touches yours.
 - **Backups are manual.** Lose the phone without an export and the records are gone.
-- **No welder continuity or expiration tracking** (D1.1 six-month continuity, requal).
+- **Continuity is what you log.** The app knows the test dates and the dates you tap
+  "Welded today" on the Welders screen; it can't know what the welder did elsewhere.
 - **No photos.** The WPQR has the photo box; nothing fills it.
 - **Only D1.1 ranges are drafted.** D1.3 / D1.4 records print blank ranges.
 - **Inspection reports have no photos and no per-item sketches.**
@@ -563,7 +627,7 @@ links in the same browser. Welder mode overrides `CFG` in memory only and never 
 
 ## 8. Where it was going next
 
-1. **Continuity and expiration tracking** per welder — the feature another CWI would pay for.
+1. **Continuity reminders** — the Welders screen exists (6.2.3.1); a nudge before a lapse is next.
 2. **Trim the option lists** to what the shops actually stock.
 3. **Multi-process tickets** for combo qualifications.
 4. **Custom domain** for the hosted app.

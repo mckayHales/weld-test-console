@@ -4,6 +4,21 @@ These items came from reviewing real app output against D1.1:2025: WPS FCAW-38, 
 
 Before changing anything, check the current code. HANDOFF.md says some of this already exists, for example `wpsChecks(p)` for Clause 5 and `suggest(w)` for ranges. Treat each item as "verify, then fix if needed."
 
+## Status: v2026-11-22.2
+
+Items 1–21 are all done. HANDOFF.md §5 describes how each one works.
+
+There is one difference from item 11, on purpose:
+- 5.4.1.5 lets GMAW and FCAW use SMAW joint details.
+- The SMAW B-U2a row at 1/4 in / 45° is "All" positions.
+- So FCAW at 1/4 in / 45° in all positions is still prequalified when the WPS calls the joint **B-U2a**.
+- If the WPS calls it **B-U2a-GF**, the app flags it, because that row is F, V, OH only.
+- FCAW-38's 60° groove angle fails either way.
+
+McKay to confirm this reading.
+
+None of the "Do NOT encode yet" items below are encoded.
+
 ## WQTR / WPQR
 
 1. **"Qualified To" field.** Default to "AWS D1.1/D1.1M:2025, Clause 6". The joint designation (e.g. B-U2a) moves to a separate "Test joint / WPS detail" field. (6.3.1, 6.17)

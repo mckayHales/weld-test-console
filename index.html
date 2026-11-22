@@ -124,7 +124,10 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .rail i{flex:1;height:4px;background:var(--line);border-radius:2px}
 .rail i.on{background:var(--arc)}.rail i.done{background:#4a6f93}
 #toast{display:none;position:fixed;left:16px;right:16px;bottom:calc(84px + env(safe-area-inset-bottom));max-width:44rem;margin:0 auto;background:var(--panel2);border:1px solid var(--line);color:var(--paper);padding:12px 16px;border-radius:8px;font-size:.9rem;z-index:20;box-shadow:0 6px 24px rgba(0,0,0,.4);align-items:center;gap:12px}
+.controw{display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)}
+.controw:first-of-type{border-top:0}
 #toast.bad{background:var(--slag);border-color:var(--slag);color:#fff}
+#toast.bad button{color:#fff;text-decoration:underline;font-weight:700}
 #toast span{flex:1}
 #toast button{background:none;border:0;color:var(--arc);font:inherit;font-weight:650;padding:4px 2px;cursor:pointer}
 /* Swipe a row left for Delete, the way Messages and Mail do it. */
@@ -185,7 +188,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-22.1";
+var VERSION="2026-11-22.2";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -432,14 +435,14 @@ function toast(msg,opts){
   t.innerHTML='<span>'+esc(msg)+'</span>'+(act?'<button type="button">'+esc(act)+'</button>':'');
   t.className=opts.bad?"bad":""; t.style.display="flex";
   if(act) t.querySelector("button").onclick=function(){ t.style.display="none"; run(); };
-  clearTimeout(toastT); if(!opts.sticky) toastT=setTimeout(function(){ t.style.display="none"; },opts.undo?6000:4200);
+  clearTimeout(toastT); if(!opts.sticky) toastT=setTimeout(function(){ t.style.display="none"; },opts.ms||(opts.undo?6000:4200));
 }
 
 /* ---------- option data ---------- */
 var PROCESSES=[{v:"SMAW",d:"Stick"},{v:"GMAW",d:"MIG"},{v:"FCAW-G",d:"Dual shield"},{v:"FCAW-S",d:"Innershield"},{v:"GTAW",d:"TIG"}];
 var FILLERS={ "SMAW":["E6010","E6011","E7018","E7018-H4R","E308L-16","Other"],
   "GMAW":["ER70S-6","ER70S-3","ER308LSi","Other"],
-  "FCAW-G":["E71T-1C","E71T-9C","E70T-1","E81T1-Ni1","Other"],
+  "FCAW-G":["E71T-1C/1M","E71T-1C","E71T-1M","E71T-9C/9M","E71T-9C","E81T1-Ni1","Other"],
   "FCAW-S":["E71T-11","E71T-8","E70T-4","Other"],
   "GTAW":["ER70S-2","ER70S-6","ER308L","ER316L","Other"] };
 var GASES={ "SMAW":["None"], "GMAW":["75% Ar / 25% CO2","90% Ar / 10% CO2","100% CO2","98% Ar / 2% O2","Other"],
@@ -620,15 +623,16 @@ function tVal(w){
 var POS_MAP={ "groove-plate":{"1G":"F","2G":"F, H","3G":"F, H, V","4G":"F, OH","3G+4G":"F, H, V, OH (all)"},
   "groove-pipe":{"1G":"F","2G":"F, H","5G":"F, V, OH","6G":"F, H, V, OH (all)","2G+5G":"F, H, V, OH (all)"},
   "fillet":{"1F":"F","2F":"F, H","3F":"F, H, V","4F":"F, H, OH","3F+4F":"F, H, V, OH (all)"} };
-/* Fillet positions a groove test qualifies (D1.1 Table 6.10). */
+/* Fillet positions a groove test qualifies (D1.1:2025 Table 6.11). */
 var FILLET_FROM_GROOVE={ "1G":"F","2G":"F, H","3G":"F, H, V","4G":"F, H, OH","3G+4G":"F, H, V, OH (all)",
   "5G":"F, V, OH","6G":"F, H, V, OH (all)","2G+5G":"F, H, V, OH (all)" };
-/* D1.1 base metal groups (Table 5.3) and filler specs, for the record's
-   base-metals table and filler rows. Anything not listed prints blank. */
+/* D1.1 base metal groups (Table 5.6 in D1.1:2025; it was Table 5.3 in 2020)
+   and filler specs, for the base-metals tables and filler rows. A36 changes
+   group with thickness: metalGroup(). Anything not listed prints blank. */
 var METAL_GROUP={ "A36":"I","A572 Gr. 50":"II","A992":"II","A500 Gr. B/C":"I / II","A1011":"I" };
 var FILLER_SPEC={ "E6010":"A5.1","E6011":"A5.1","E7018":"A5.1","E7018-H4R":"A5.1","E308L-16":"A5.4",
   "ER70S-2":"A5.18","ER70S-3":"A5.18","ER70S-6":"A5.18","ER308LSi":"A5.9","ER308L":"A5.9","ER316L":"A5.9",
-  "E71T-1C":"A5.20","E71T-9C":"A5.20","E70T-1":"A5.20","E71T-11":"A5.20","E71T-8":"A5.20","E70T-4":"A5.20","E81T1-Ni1":"A5.29" };
+  "E71T-1C":"A5.20","E71T-1C/1M":"A5.20","E71T-1M":"A5.20","E71T-9C/9M":"A5.20","E71T-9C":"A5.20","E70T-1":"A5.20","E71T-11":"A5.20","E71T-8":"A5.20","E70T-4":"A5.20","E81T1-Ni1":"A5.29" };
 /* The AWS filler spec (the "book") for a classification: the table above,
    else the classification's own pattern. Typed-in fillers get it too. */
 function fillerSpecFor(cls){
@@ -644,8 +648,8 @@ function fillerSpecFor(cls){
   if(/^E[67]0\d{2}-|^E[89]0\d{2}|^E1\d0\d{2}/.test(cls)) return "A5.5";  // SMAW low-alloy
   return "";
 }
-/* SMAW electrode groups (Table 6.12): a test with a higher F-number
-   qualifies the lower ones. */
+/* SMAW electrode groups (D1.1:2025 Table 6.14): a test with a higher
+   F-number qualifies the lower ones (Table 6.13, row 2). */
 var F_NUMBER={ "E6010":"F3","E6011":"F3","E7018":"F4","E7018-H4R":"F4","E308L-16":"F5" };
 var F_RANGE={ "F1":"F1","F2":"F1, F2","F3":"F1, F2, F3","F4":"F1, F2, F3, F4","F5":"F5" };
 function suggest(w){
@@ -655,20 +659,136 @@ function suggest(w){
   var key = groove ? ("groove-"+w.product) : "fillet";
   var pos=(POS_MAP[key]||{})[w.position]||"";
   var fpos= groove ? (FILLET_FROM_GROOVE[w.position]||"") : pos;
-  var t=tVal(w), tMin="", tMax="";
-  if(!isNaN(t)&&t>0){ tMin = t<0.125?frac(t):'1/8"'; tMax = t>=1?"Unlimited":frac(t*2); }
-  var dia="";
-  if(pipe){ var od=parseFloat(w.pipeOD); if(!isNaN(od)) dia = od>=24?"All diameters":frac(od)+" OD and larger — verify"; }
-  else dia='24" Min';
-  var filler=w.filler=="Other"?w.fillerOther:w.filler, fn=F_NUMBER[filler];
+  var t=tVal(w), od=parseFloat(w.pipeOD), tMin="", tMax="", dia="";
+  if(!isNaN(t)&&t>0){
+    if(pipe&&groove){
+      // Table 10.12, CJP groove butt: 1/8" to 3/4", or unlimited on pipe over 4" with wall over 3/8".
+      if(!isNaN(od)){ tMin='1/8"'; tMax = od>4&&t>0.375+1e-9 ? "Unlimited" : '3/4"'; }
+    } else { tMin = t<0.125?frac(t):'1/8"'; tMax = t>=1?"Unlimited":frac(t*2); }   // Table 6.12
+  }
+  if(pipe){ if(!isNaN(od)) dia = od<=4 ? '3/4" to 4" OD' : frac(Math.max(od/2,4))+" OD and up"; }   // Table 10.12 fn f
+  else dia = groove ? '24" OD and up, with backing or backgouging only' : "Any";                   // Table 6.11 fn b
+  var filler=w.filler=="Other"?w.fillerOther:w.filler, fn=F_NUMBER[filler]||fNumberOf(filler);
   return { positions:pos, filletPositions:fpos, thickMin:tMin, thickMax:tMax, diameter:dia,
     grooveThick: groove&&tMin ? tMin+" to "+tMax : "",
-    filletThick: groove ? (pipe ? "Unlimited" : '1/8" Min') : (tMin ? tMin+" to Unlimited" : ""),
-    process: w.process ? w.process+(w.transfer?" ("+w.transfer+")":"") : "",
-    backing: groove ? (w.backing=="with" ? "With, or with backgouge" : "With or without") : "N/A",
-    joints: groove ? "Groove, fillet, plug, slot (PJP T-, K-, Y- groove)" : "Fillet, plug, slot",
-    base: METAL_GROUP[w.base] ? "Any D1.1 qualified base metal" : "",
-    filler: fn ? F_RANGE[fn] : fillerRange(filler) };
+    filletThick: groove ? "Any" : (tMin ? tMin+" to Unlimited" : ""),
+    process: qualProcess(w),
+    backing: groove ? (w.backing=="with" ? "With backing, or backgouged" : "With or without") : "N/A",
+    joints: groove ? "CJP and PJP groove, fillet, plug, slot, tack" : "Fillet, plug, slot, tack",
+    base: NOT_LIMIT,
+    filler: fn ? F_RANGE[fn] : NOT_LIMIT };
+}
+/* Table 6.13 lists no base metal, filler classification (other than the
+   SMAW F-number), gas or filler diameter. They go on the record as tested,
+   never as a limit. */
+var NOT_LIMIT="Any - not a welder variable (Table 6.13)";
+var AS_TESTED="As tested - not a limit (Table 6.13)";
+/* The process a test qualifies. FCAW-G and FCAW-S are both FCAW; GMAW-S
+   (short circuit) is its own process (Table 6.13, row 1). */
+function qualProcess(w){
+  var p=w.process||""; if(!p) return "";
+  if(/^FCAW/.test(p)) return "FCAW";
+  if(p=="GMAW") return /short/i.test(w.transfer||"") ? "GMAW-S" : "GMAW (not GMAW-S)";
+  return p;
+}
+function transferRange(w){
+  if(w.process!="GMAW") return "";
+  return /short/i.test(w.transfer||"") ? "Short circuit (GMAW-S) only" : "Spray, globular, pulsed - not GMAW-S";
+}
+/* F-number by pattern, Table 6.14, for a classification not in F_NUMBER. */
+function fNumberOf(cls){
+  var m=String(cls||"").toUpperCase().match(/^E\d{2}(\d{2})/); if(!m) return "";
+  var n=m[1];
+  if(/^(15|16|18|48)$/.test(n)) return "F4";
+  if(/^(10|11)$/.test(n)) return "F3";
+  if(/^(12|13|14)$/.test(n)) return "F2";
+  if(/^(20|24|27|28)$/.test(n)) return "F1";
+  return "";
+}
+/* "AWS D1.1/D1.1M:2025, Clause 6" — welders qualify to the clause, not to a
+   joint (6.3.1, 6.17). Pipe and tube come under Clause 10 Part D too. */
+function qualifiedTo(code,w){
+  var c=String(code||""); if(!isD11(c)) return c;
+  var y=(c.match(/20\d\d/)||[""])[0];
+  return "AWS D1.1/D1.1M"+(y?":"+y:"")+", Clause"+(w&&w.product=="pipe"?"s 6 and 10":" 6");
+}
+/* The test joint, from the WPS: designation, groove angle, root opening. */
+function testJoint(wp){
+  if(!wp) return "";
+  return [wp.jointDesig, wp.angle, wp.rootOpening?"R "+wp.rootOpening:""].filter(Boolean).join(", ");
+}
+/* Test numbers: 2026-001 and on, given the first time a WPQR is saved. */
+function nextLabNo(){
+  var y=String(new Date().getFullYear()), top=0;
+  records().forEach(function(x){ var m=String(x.r&&x.r.labNo||"").match(/^(\d{4})-(\d+)$/); if(m&&m[1]==y) top=Math.max(top,+m[2]); });
+  var n=top+1; return y+"-"+(n<10?"00":n<100?"0":"")+n;
+}
+
+/* ---------- the same welder, more than one test ----------
+   A welder's tests line up by name and company. Table 6.11: passing 3G
+   and 4G (or 3F and 4F) together qualify all positions; Table 10.8: 2G
+   and 5G on pipe. Each record still certifies its own plate, so the pair
+   is noted on both, not merged. */
+function welderKey(w){ return String(w.name||"").trim().toLowerCase().replace(/\s+/g," ")+"|"+(w.companyId||String(w.company||"").trim().toLowerCase()); }
+function procFam(w){ var p=w.process||""; if(/^FCAW/.test(p)) return "FCAW"; if(p=="GMAW"&&/short/i.test(w.transfer||"")) return "GMAW-S"; return p; }
+var PAIRS=[["3G","4G","plate","groove"],["3F","4F","","fillet"],["2G","5G","pipe","groove"]];
+function combinedWith(w,id){
+  if(!w.name||!w.position) return null;
+  var k=welderKey(w), fam=procFam(w), mine=null;
+  PAIRS.forEach(function(pr){ if(pr.indexOf(w.position)>-1&&pr.indexOf(w.position)<2&&(w.weldType||"groove")==pr[3]&&(!pr[2]||w.product==pr[2])) mine=pr; });
+  if(!mine) return null;
+  var other=mine[0]==w.position?mine[1]:mine[0];
+  var hit=records().filter(function(x){ return x.id!=id&&x.r.result=="Qualified"&&x.w.position==other&&welderKey(x.w)==k&&procFam(x.w)==fam
+    &&(x.w.weldType||"groove")==(w.weldType||"groove")&&(!mine[2]||x.w.product==w.product); })
+    .sort(function(a,b){ return (b.w.date||"").localeCompare(a.w.date||""); })[0];
+  return hit ? { rec:hit, pos:other, table:mine[2]=="pipe"?"Table 10.8":"Table 6.11" } : null;
+}
+
+/* ---------- continuity ----------
+   6.2.3.1: a welder's qualification stays in effect until they go more
+   than six months without welding in that process, or there's a reason
+   to question it. No expiry date. The log is the dates you saw them weld
+   with it, kept on their latest qualified record (r.cont). */
+function addMonths(s,n){ var p=String(s||"").split("-"); if(p.length<3) return ""; var d=new Date(+p[0],+p[1]-1+n,+p[2]);
+  if(d.getDate()!=+p[2]) d.setDate(0); return ymd(d); }
+function continuity(){
+  var by={};
+  records().filter(function(x){ return x.r.result=="Qualified"&&x.w.name; }).forEach(function(x){
+    var k=welderKey(x.w)+"|"+procFam(x.w), g=by[k]||(by[k]={ key:k, name:x.w.name, company:coName(x.w.companyId)||x.w.company||"", proc:procFam(x.w), recs:[], last:"", tested:"" });
+    g.recs.push(x);
+    if((x.w.date||"")>g.tested) g.tested=x.w.date||"";
+    [x.w.date].concat(x.r.cont||[]).forEach(function(d){ if(d&&d>g.last) g.last=d; });
+  });
+  return Object.keys(by).map(function(k){ var g=by[k];
+    g.recs.sort(function(a,b){ return (b.w.date||"").localeCompare(a.w.date||""); });
+    g.until=addMonths(g.last,6); g.lapsed=g.until&&g.until<today();
+    return g; }).sort(function(a,b){ return a.name.localeCompare(b.name)||a.proc.localeCompare(b.proc); });
+}
+function lapsingSoon(){ var soon=addMonths(today(),1); return continuity().filter(function(g){ return !g.lapsed&&g.until<=soon; }); }
+
+/* ---------- what keeps a record from printing as final ----------
+   block: Save WPQR refuses until it's settled. warn: shown, never blocks. */
+function recordChecks(w,r){
+  var out=[], t=tVal(w), pipe=w.product=="pipe";
+  if(isNaN(t)||t<=0) out.push({ block:1, msg:"No test "+(pipe?"wall ":"")+"thickness. Every range on the record comes from it ("+(pipe?"Table 10.12":"Table 6.12")+") — enter it in Test coupon." });
+  if(pipe&&isNaN(parseFloat(w.pipeOD))) out.push({ block:1, msg:"No pipe OD. Table 10.12 sets the diameter and thickness qualified from it — enter it in Test coupon." });
+  if(r.method=="rt"&&w.process=="GMAW"&&/short/i.test(w.transfer||"")) out.push({ block:1, msg:"RT can't stand in for the bend tests on GMAW-S (6.18.1.1). Bend this one." });
+  // Fig. 6.21: the coupon's α and R are maximums unless it's a prequalified detail.
+  var wp=wpsById(w.wpsId);
+  if(wp&&w.weldType!="fillet"&&!pipe){
+    var A=angleRange(wp.angle), R=rootRange(wp.rootOpening), backed=w.backing=="with";
+    var preq=wp.basis=="Prequalified"&&wp.jointDesig&&!fig51Check(wp).some(function(x){ return x.k=="rule"||x.k=="info"; });
+    var amax=backed?45:60, rmax=backed?1/4:3/16;
+    if(!preq&&((A&&A.hi>amax+1e-6)||(R&&R.hi>rmax+1e-6)))
+      out.push({ msg:"Fig. 6.21: a welder's coupon "+(backed?"with":"without")+" backing is "+amax+"° and "+frac(rmax)+" root at most, unless it's a prequalified Fig. 5.1 detail. "+wpsLabel(wp)+" calls for "+[wp.angle,wp.rootOpening?"R "+wp.rootOpening:""].filter(Boolean).join(", ")+" — check the coupon's actual bevel." });
+  }
+  return out;
+}
+function recordChecksCard(){
+  var c=recordChecks(S.w,S.r); if(!c.length) return "";
+  var hard=c.some(function(x){ return x.block; });
+  return '<div class="flag"'+(hard?' style="border-color:var(--slag);background:rgba(192,83,58,.1)"':'')+'><b'+(hard?' style="color:#E9876F"':'')+'>'+(hard?"Before this record can be saved":"Check the coupon")+'</b><ul style="margin:8px 0 0;padding-left:18px">'
+    +c.map(function(x){ return '<li style="margin:0 0 6px">'+esc(x.msg)+'</li>'; }).join("")+'</ul></div>';
 }
 /* What a non-SMAW filler qualifies, written the shop's way: E71T-1C → E7xT-xx. */
 function fillerRange(f){
@@ -823,16 +943,68 @@ function saveInvoice(strict){
   putRow("invoices",JSON.parse(JSON.stringify(v)));
   return true;
 }
+/* Table 8.1 has a column for statically and one for cyclically loaded
+   nontubular connections; tubulars go to Table 10.14 (8.9). The code's own
+   7.23 misprints it 10.15. */
+var LOADINGS=[{v:"Static",d:"Statically loaded"},{v:"Cyclic",d:"Cyclically loaded"},{v:"Tubular",d:"Table 10.14"}];
+function visualTable(i){
+  var l=String(i.loading||"").toLowerCase();
+  return l=="tubular" ? "Table 10.14 (tubular)" : l=="cyclic" ? "Table 8.1, cyclically loaded"
+    : l=="static" ? "Table 8.1, statically loaded" : "Table 8.1 (or 10.14 for tubulars)";
+}
 function nextReportNo(){
   var y=String(new Date().getFullYear()), n=inspections().filter(function(i){return (i.reportNo||"").indexOf(y)==0}).length+1;
   return y+"-"+(n<10?"00":n<100?"0":"")+n;
 }
+/* The edition as the code calls itself: "AWS D1.1/D1.1M:2025". */
+function codeTitle(code){ var c=String(code||""); return isD11(c) ? c.replace(/D1\.1(?!\/)/,"D1.1/D1.1M") : c; }
 /* A report on the shop's form: job block, three yes/no questions, re-work,
-   remarks one per line. "phone" is the client contact's phone. */
-function blankInspection(){ return { reportNo:nextReportNo(), date:today(), project:"", client:"", clientContact:"", address:"", address2:"", phone:"",
+   remarks one per line. "phone" is the client contact's phone. The rest is
+   what Clause 8 wants on record: who the inspector works for (8.1.2,
+   8.1.3), the loading that picks the Table 8.1 column, the drawings (8.1.6),
+   the WPSs (8.3.3) and welders (8.4.1), each member or joint with its
+   specified and measured size (8.5.1, 8.5.3, 8.5.4), and any weld that
+   isn't on the drawings with the Engineer's approval (8.5.1). 8.7: the
+   standards are the ones the contract invokes, nothing more. */
+function blankInspection(){ return { reportNo:nextReportNo(), date:today(), inspDate:today(), project:"", client:"", clientContact:"", address:"", address2:"", phone:"",
   siteContact:"", sitePhone:"", inspector:CFG.inspector, inspectorPhone:CFG.phone, cwi:CFG.cert, code:CFG.code,
+  role:"", loading:"", drawings:"", baseMetal:"", wpsUsed:"", welders:"", members:[], unspecified:"", unspecDesc:"", engApproval:"",
   meetsVisual:"", workmanship:"", rework:"", reworkNote:"", notes:"", items:[],
-  standards:"1. "+CFG.code.split(":")[0]+" Structural Welding Code - Steel: "+(CFG.code.split(":")[1]||"")+", API, ASTM, and ASME standards\n2. Client/Engineer standards or requirements\n3. Contract documents/specifications" }; }
+  standards:"1. "+codeTitle(CFG.code)+" Structural Welding Code - Steel\n2. Contract documents and drawings" }; }
+var ROLES=[{v:"Contractor's",d:"Fabrication / erection, 8.1.2"},{v:"Verification",d:"For the Owner, 8.1.3"}];
+function roleText(v){ v=String(v||"").toLowerCase(); return /^contractor/.test(v)?"Contractor's (8.1.2)":v=="verification"?"Verification (8.1.3)":""; }
+var MEMBER_COLS=[{k:"member",label:"Member / location",w:1.6,ph:"e.g. Col C-2 base plate"},{k:"weld",label:"Weld",w:1,ph:"5/16 fillet"},
+  {k:"spec",label:"Specified",w:.9,ph:'5/16"'},{k:"meas",label:"Measured",w:.9,ph:'5/16"'},{k:"result",label:"Result",w:1,opts:["","Accept","Reject","Repair"]}];
+/* Table 8.1 (5): these steels are inspected at least 48 h after the weld is done. */
+var HOLD48=/A514|A517|A709.*HPS\s*100W|HPS\s*100W/i;
+/* What's off on a report, said on the screen. block stops Save until kept. */
+function inspChecks(i){
+  var out=[], t=today();
+  if(i.date&&i.date>t) out.push({ msg:"The report date, "+fmtDate(i.date)+", is in the future." });
+  if(i.inspDate&&i.inspDate>t) out.push({ msg:"The inspection date, "+fmtDate(i.inspDate)+", is in the future." });
+  if(i.inspDate&&i.date&&i.inspDate>i.date) out.push({ msg:"The inspection date is after the report date." });
+  if(i.unspecified=="Yes"&&!String(i.engApproval||"").trim()) out.push({ block:1, msg:"There are welds that aren't on the drawings. 8.5.1: none may be added without the Engineer's approval — put the approval reference in, or note that it's still needed." });
+  if(i.unspecified=="Yes"&&i.workmanship=="Yes"&&!String(i.engApproval||"").trim()) out.push({ msg:"You answered Yes to \"workmanship reflects the plans\", but there are welds not on the drawings." });
+  // Same words as a saved company in another order: "West Weld" for Weld West.
+  var words=function(x){ return String(x||"").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean).sort().join(" "); }, cw=words(i.client);
+  if(cw) companies().forEach(function(c){ if(words(c.name)==cw&&String(c.name).trim().toLowerCase()!=String(i.client).trim().toLowerCase()) out.push({ msg:"The client is \""+i.client+"\" — did you mean "+c.name+"?" }); });
+  if(HOLD48.test(i.baseMetal||"")) out.push({ msg:"Table 8.1 (5): "+i.baseMetal+" is inspected at least 48 hours after the weld is finished. Note when they were finished." });
+  if(!i.loading&&(i.meetsVisual||(i.members||[]).length)) out.push({ msg:"Pick the loading — Table 8.1 has different limits for statically and cyclically loaded, and tubulars go to Table 10.14." });
+  return out;
+}
+/* Lines the report adds to the remarks from the fields above them. */
+function autoRemarks(i){
+  var out=[];
+  if(i.drawings) out.push("Drawings: "+i.drawings);
+  if(i.baseMetal) out.push("Base metal: "+i.baseMetal);
+  if(i.wpsUsed) out.push("WPS: "+String(i.wpsUsed).split(/\n+/).map(function(x){return x.trim();}).filter(Boolean).join("; "));
+  if(i.welders) out.push("Welders: "+String(i.welders).split(/\n+/).map(function(x){return x.trim();}).filter(Boolean).join("; "));
+  if(i.unspecified=="Yes") out.push("Welds not shown on the drawings"+(i.unspecDesc?": "+i.unspecDesc:"")+" - "+(i.engApproval?"Engineer approval: "+i.engApproval:"Engineer approval not on file (8.5.1)"));
+  if(i.unspecified=="No") out.push("All welds inspected are shown on the drawings");
+  if((i.members||[]).some(function(m){ return m.member||m.weld; })) out.push("Members and welds inspected: see the table on the last page");
+  return out;
+}
+function memberRows(i){ return (i.members||[]).filter(function(m){ return m.member||m.weld||m.spec||m.meas||m.result; }); }
 /* Where a report stands, for the list: the questions decide it; reports
    from before the questions keep their old result. */
 function inspStatus(i){
@@ -891,15 +1063,15 @@ function starterWps(){
   var joint={ weldType:"CJP groove", jointType:"Butt", jointDesig:"B-U2a", groove:"Single V", angle:"45°", rootOpening:'1/4"', rootFace:"0",
     backing:"With backing", backingMat:"Steel", backgouge:"None", base:"A36", baseTo:"A36", thickRange:'1/8" to 3/4"', diaRange:"Plate",
     positions:"All", progression:"Uphill", bead:"Either", passes:"Multiple pass", cleaning:"Chip, wire brush, grind", peening:"None",
-    preheat:"32 °F min", pwhtTemp:"None", basis:"Prequalified", rev:"0", date:today(), starter:true };
+    preheatCat:"B", preheat:"32 °F min", interpass:"32 °F min", pwhtTemp:"None", basis:"Prequalified", rev:"0", date:today(), starter:true };
   return [
     Object.assign({ id:"starter-smaw-38", no:"WPS-SMAW-38", title:'3/8" plate test, single V with backing — stick (E7018)',
       process:"SMAW", filler:"E7018", fillerSpec:"A5.1", fillerDia:'1/8"', polarity:"DCEP", powerSource:"CC",
       amps:"110–140", volts:"21–25", travel:"3–6", gas:"", notes:"Starter WPS. Check every value against the shop's own WPS before a welder tests to it." }, joint),
     Object.assign({ id:"starter-fcaw-38", no:"WPS-FCAW-38", title:'3/8" plate test, single V with backing — dual shield (E71T-1C/1M)',
-      process:"FCAW-G", filler:"E71T-1C", fillerSpec:"A5.20", fillerDia:'.045"', gas:"75% Ar / 25% CO2", flow:"35", nozzle:'5/8"', ctwd:'3/4" to 1"',
+      process:"FCAW-G", filler:"E71T-1C/1M", fillerSpec:"A5.20", fillerDia:'.045"', gas:"75% Ar / 25% CO2", flow:"35", nozzle:'5/8"', ctwd:'3/4" to 1"',
       polarity:"DCEP", powerSource:"CV", amps:"170–200", volts:"22–25", wfs:"270–330", travel:"6–9",
-      notes:"Starter WPS. E71T-1C wire run on 75/25 should be dual classified -1C/-1M — check the box label. Check every value against the shop's own WPS before a welder tests to it." }, joint)
+      notes:"Starter WPS. On 75/25 the wire has to be classified -1M or dual -1C/1M (5.6.4) — check the box label. Check every value against the shop's own WPS before a welder tests to it." }, joint)
   ];
 }
 function addStarters(){ starterWps().forEach(function(p){ if(!getRow("wps",p.id)) putRow("wps",p); }); raw.set(ns("starters"),"2"); }
@@ -921,10 +1093,10 @@ function demoData(){
           {id:"demo-co-2",name:"Canyon Mechanical",contact:"Dee Parker",phone:"801-555-0188",_demo:true}];
 
   var ps=[{id:"demo-wps-1",no:"WPS-01",rev:"0",basis:"Prequalified",date:"2025-05-01",contact:"Dillon Hales",process:"FCAW-G",base:"A36",baseTo:"A36",
-           title:"CJP butt, single V, steel backing",weldType:"CJP groove",jointType:"Butt",jointDesig:"B-U2a-GF",groove:"Single V",angle:"45°–60°",rootOpening:'3/16" ± 1/16"',rootFace:"0",
-           backing:"With backing",backingMat:"Steel",backgouge:"None",interpass:"550 °F max",progression:"Uphill",travel:"7–12",bead:"Either",passes:"Multiple pass",cleaning:"Chipping hammer, hand brush, grinder",peening:"None",wfs:"250–320",fillerSpec:"A5.20",
-           filler:"E71T-1C",fillerDia:'.045" to 1/16"',gas:"75% Ar / 25% CO2",flow:"30–40",nozzle:'3/4"',ctwd:'1/2" to 1"',amps:"See wire feed",volts:"25–30",polarity:"DCEP",powerSource:"CV",preheat:"32 °F min",
-           thickRange:'3/8" to 3/4"',positions:"F, V",notes:"",_demo:true},
+           title:"CJP butt, single V, steel backing",weldType:"CJP groove",jointType:"Butt",jointDesig:"B-U2a-GF",groove:"Single V",angle:"45°",rootOpening:'1/4"',rootFace:"0",
+           backing:"With backing",backingMat:"Steel",backgouge:"None",interpass:"32 °F min, 550 °F max",progression:"Uphill",travel:"7–11",bead:"Either",passes:"Multiple pass",cleaning:"Chipping hammer, hand brush, grinder",peening:"None",wfs:"260–310",fillerSpec:"A5.20",
+           filler:"E71T-1C/1M",fillerDia:'.045" to 1/16"',gas:"75% Ar / 25% CO2",flow:"30–40",nozzle:'3/4"',ctwd:'1/2" to 1"',amps:"See wire feed",volts:"25–30",polarity:"DCEP",powerSource:"CV",preheatCat:"B",preheat:"32 °F min",pwhtTemp:"None",
+           thickRange:'3/8" to 3/4"',positions:"F, V, OH",notes:"",_demo:true},
           {id:"demo-wps-2",no:"WPS-07",rev:"1",basis:"Qualified by PQR",pqr:"PQR-03",process:"GTAW",base:"304/304L",
            title:"Open-root pipe, single V, purged",weldType:"CJP groove",jointType:"Butt",groove:"Single V",angle:"37.5°",rootOpening:'1/8"',rootFace:'1/16"',
            backing:"No backing",diaRange:'2" and up',progression:"Uphill",travel:"3–5",bead:"Stringer",passes:"Multiple pass",cleaning:"Wire brush",fillerSpec:"A5.9",
@@ -974,6 +1146,8 @@ function sampleInspection(){
     clientContact:"Ray Alder", phone:"801-555-0142", address:"1200 N Airport Rd", address2:"Provo, UT",
     siteContact:"Jared Moss - Foreman", sitePhone:"801-555-0199",
     meetsVisual:"Yes", workmanship:"Yes", rework:"Yes", reworkNote:'Undercut 1/16" x 2" at B-13 top flange toe; grind and re-weld, re-inspect before decking.',
+    role:"Verification", loading:"Static", drawings:"S-101 to S-104, Rev 2", baseMetal:"A992, A36", wpsUsed:"WPS-SMAW-38 Rev 0", welders:"Tanner Wood, stamp TW-14 — WPQR 2026-018",
+    unspecified:"No", members:[{member:"Beam B-12 to col C-2",weld:"CJP, top flange",spec:"CJP",meas:"Full pen, flush",result:"Accept"},{member:"B-13 top flange",weld:'5/16" fillet',spec:'5/16"',meas:'5/16"',result:"Repair"}],
     notes:"Met with Jared on site, inspected welds on beams, plates, and columns\nWelds completed with applicable 7018 low hydrogen electrodes\nWelds showed adequate fusion and appropriate leg length and size\nNo visible porosity, cracks, or overlap" });
 }
 function seedDemo(){
@@ -1067,6 +1241,8 @@ VIEWS.home = function(){
     + '<span><b>Enter a test by hand</b><span>No link went out — type the whole record yourself</span></span><span class="go">'+CHEV+'</span></button>'
     + mi("inbox","Test records", recs.length ? (pending? pending+" waiting on results" : recs.length+" on file") : "Empty — tap to load sample data","records")
     + mi("company","Companies","Who you've qualified, and their welders","companies")
+    + mi("ticket","Welders",(function(){ var g=continuity(), soon=lapsingSoon().length, gone=g.filter(function(x){return x.lapsed;}).length;
+        return soon ? soon+" lapse"+(soon==1?"s":"")+" within a month — log their welding" : g.length ? g.length+" qualification"+(g.length==1?"":"s")+(gone?", "+gone+" lapsed":"")+" · continuity (6.2.3.1)" : "Continuity: when each qualification lapses"; })(),"welders")
     + mi("inbox","Inspection reports",(inspections().length?inspections().length+" report"+(inspections().length==1?"":"s")+" on file":"Job-site visual inspections"),"inspections")
     + mi("money","Invoices",(function(){ var o=owed(); return o.count ? money(o.total)+" owed on "+o.count+" invoice"+(o.count==1?"":"s") : (invoices().length?invoices().length+" on file, all paid":"Bill a company for the work"); })(),"invoices")
     + mi("wps","Procedures",wpsOnly().length+" WPS"+(pqrAll().length?", "+pqrAll().length+" PQR"+(pqrAll().length==1?"":"s"):"")+" on file","wpslist")
@@ -1237,8 +1413,12 @@ function ynField(label,key,opts){
 VIEWS.inspedit = function(){
   var d=S.draft, bk=String(d.code||CFG.code).split(":")[0];
   var h=nav(d.id?"Inspection report":"New report", '<button data-act="previewinsp">Preview PDF</button>');
+  var ck=inspChecks(d);
+  if(ck.length) h+='<div class="flag"'+(ck.some(function(x){return x.block;})?' style="border-color:var(--slag);background:rgba(192,83,58,.1)"':'')+'><b>Check before it goes out</b><ul style="margin:8px 0 0;padding-left:18px">'
+    +ck.map(function(x){ return '<li style="margin:0 0 6px">'+esc(x.msg)+'</li>'; }).join("")+'</ul></div>';
   h+='<div class="card"><h3>Report</h3>'
-    +'<div class="row">'+dfield("Report number","reportNo","text","")+'<div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div></div></div>';
+    +'<div class="row">'+dfield("Report number","reportNo","text","")+'<div class="field"><label>Date of report</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div></div>'
+    +'<div class="row" style="margin-bottom:-18px"><div class="field"><label>Date inspected</label><input type="date" data-d="inspDate" value="'+esc(d.inspDate||"")+'"></div><div></div></div></div>';
   var cs=companies();
   h+='<div class="card"><h3>Job</h3>'
     +(cs.length?'<div class="field"><label>Fill the client from a company</label><select id="inspco"><option value="">— Pick to fill client, contact and phone —</option>'
@@ -1248,20 +1428,37 @@ VIEWS.inspedit = function(){
     +addrFields("ja","Job site address")
     +'<div class="row">'+dfield("Client contact","clientContact","text","Name")+dfield("Their phone","phone","tel","")+'</div>'
     +'<div class="row" style="margin-bottom:-18px">'+dfield("Site contact","siteContact","text","e.g. Jase Lawson - Foreman")+dfield("Site phone","sitePhone","tel","")+'</div></div>';
+
+  // What was inspected, and against what (Clause 8 Part A).
+  var wpsOpts=wpsFor(d.clientCoId).slice(0,8), recOpts=d.clientCoId?recsFor(d.clientCoId).filter(function(r){ return r.r.result=="Qualified"; }).slice(0,10):[];
+  h+='<div class="card"><h3>What you inspected</h3>'
+    +'<div class="field"><label>You inspected as</label>'+dtiles("role",ROLES)+'</div>'
+    +'<div class="field"><label>Loading — picks the Table 8.1 column</label>'+dtiles("loading",LOADINGS)+'</div>'
+    +dfield("Drawings and revision you inspected to (8.1.6)","drawings","text","e.g. S-101 to S-104, Rev 2")
+    +dfield("Base metal","baseMetal","text","e.g. A36, A992")
+    +'<div class="field"><label>WPS used (8.3.3) — one per line</label><textarea data-d="wpsUsed" style="min-height:60px" placeholder="FCAW-38 Rev 0">'+esc(d.wpsUsed||"")+'</textarea>'
+    +(wpsOpts.length?'<p style="margin:6px 0 0;font-size:.84rem">'+wpsOpts.map(function(p){ return '<button class="mini" data-act="inspadd" data-f="wpsUsed" data-v="'+esc(wpsLabel(p))+'" style="padding:2px 10px 2px 0">+ '+esc(wpsLabel(p))+'</button>'; }).join("")+'</p>':'')+'</div>'
+    +'<div class="field"><label>Welders, with their WPQR (8.4.1) — one per line</label><textarea data-d="welders" style="min-height:60px" placeholder="Quinn Morley, stamp QM — WPQR 2026-014">'+esc(d.welders||"")+'</textarea>'
+    +(recOpts.length?'<p style="margin:6px 0 0;font-size:.84rem">'+recOpts.map(function(r){ var t=[r.w.name+(r.w.stamp?", stamp "+r.w.stamp:""), "WPQR "+(r.r.labNo||recNo(r.w,r.r))].join(" — ");
+      return '<button class="mini" data-act="inspadd" data-f="welders" data-v="'+esc(t)+'" style="padding:2px 10px 2px 0">+ '+esc(r.w.name+" "+(r.w.position||""))+'</button>'; }).join("")+'</p>':'')+'</div>'
+    +'<div class="field" style="margin:0"><label>Members and joints — specified and measured size (8.5.1, 8.5.3, 8.5.4)</label>'+listEditor("members",MEMBER_COLS,"+ Add a member or joint")+'</div></div>';
+
   h+='<div class="card"><h3>Inspection</h3>'
-    +ynField("Finished welds meet the visual acceptance criteria of "+bk+" Table 8.1 (or 10.15)","meetsVisual",["Yes","No"])
+    +ynField("Finished welds meet the visual acceptance criteria of "+bk+" "+visualTable(d),"meetsVisual",["Yes","No"])
+    +ynField("Welds on the work that aren't on the drawings? (8.5.1)","unspecified",["Yes","No"])
+    +(d.unspecified=="Yes"?dfield("Which welds, and where","unspecDesc","text","e.g. stiffener fillets at grid C, no callout")+dfield("Engineer's approval — reference","engApproval","text","RFI #, email date, or leave blank if still needed"):'')
     +ynField("Welding and workmanship reflect the plans as designated by the engineer / client","workmanship",["Yes","No"])
     +ynField("Repairs or re-work, if necessary, were communicated to the contractor","rework",["Yes","Not Necessary"])
     +(d.rework=="Yes"?'<div class="field"><label>Re-work needed</label><textarea data-d="reworkNote" placeholder="What has to be fixed, and where">'+esc(d.reworkNote||"")+'</textarea></div>':'')
     +'<div class="field" style="margin:0"><label>Remarks — one per line</label><textarea data-d="notes" style="min-height:150px" placeholder="Met with Jace on site, inspected welds on beams, plates, and columns&#10;Welds completed with 7018 low hydrogen electrodes&#10;No visible porosity, cracks, or overlap">'+esc(d.notes||"")+'</textarea>'
-    +'<p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">Each line prints as its own "- " remark. Five fit on the form; more close up the lines.</p></div>'
+    +'<p style="margin:6px 0 0;font-size:.82rem;color:var(--muted)">Each line prints as its own "- " remark. The drawings, base metal, WPS and welders above print first. Members go in a table on the last page.</p></div>'
     +((d.items||[]).length?'<div style="margin-top:14px"><label style="font-size:.9rem;color:#C6D2DB">Items from before (print as remarks)</label>'+listEditor("items",ITEM_COLS,"+ Add an item")+'</div>':'')
     +'</div>';
-  h+='<div class="card"><h3>Standards applied</h3><textarea data-d="standards" style="min-height:90px">'+esc(d.standards||"")+'</textarea></div>';
+  h+='<div class="card"><h3>Standards applied</h3><p style="margin:-4px 0 8px;font-size:.84rem;color:var(--muted)">Only what the contract invokes (8.7).</p><textarea data-d="standards" style="min-height:90px">'+esc(d.standards||"")+'</textarea></div>';
   h+='<div class="card"><h3>Inspector</h3><div class="row">'+dfield("Inspector","inspector","text",CFG.inspector)+dfield("Phone","inspectorPhone","tel",CFG.phone)+'</div>'
     +'<div class="row" style="margin-bottom:-18px">'+dfield("CWI number","cwi","text",CFG.cert)+'<div></div></div></div>';
   h+='<button class="primary" data-act="saveinsp" style="width:100%">Save report</button>'
-    +'<p id="saveerr" class="err" style="display:none">Give the report a project or client name first.</p>';
+    +'<div id="saveerr" class="err" style="display:none">Give the report a project or client name first.</div>';
   var b='<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="saveinsp">Save report</button>';
   if(d.id) b='<button class="ghost" data-act="delinsp">Delete</button><button class="primary" data-act="saveinsp">Save report</button>';
   return { body:h, bar:b };
@@ -1428,7 +1625,7 @@ VIEWS.wpslist = function(){
   ps.forEach(function(p){
     h += swipe("wps",p.id,'<button class="sub" data-wps="'+p.id+'"><span style="flex:1"><b>'+esc(p.no)+(p.rev?" Rev "+esc(p.rev):"")+'</b>'
       + '<span>'+esc([coName(p.companyId),p.process,p.base,p.positions,p.thickRange].filter(Boolean).join(" · "))+'</span></span>'
-      + (wpsChecks(p).length?'<span class="pill wait">Check</span>':'<span class="go">'+CHEV+'</span>')+'</button>');
+      + (wpsBlocking(p).length?'<span class="pill wait">Check</span>':'<span class="go">'+CHEV+'</span>')+'</button>');
   });
   h += '<h2 class="step" style="margin-top:22px">PQR</h2><p class="hint">Procedure qualification records — the test that proves a WPS. Start one from a WPS, or from scratch.</p>';
   if(!qs.length) h += '<div class="empty">No PQRs on file.</div>';
@@ -1473,12 +1670,19 @@ function pqrFromWps(p){
   return d;
 }
 
-/* ---------- D1.1 Clause 5: is this prequalified WPS within the rules? ----------
-   Table 5.5 (D1.1:2025) lists what a prequalified WPS must state and how
-   far the welding variables may range. 5.2.1: a range on the WPS has to
-   sit inside the tolerance around one value, so 160–200 A is ±11% about
-   180 — wider than the ±10% allowed. The check only speaks when something
-   is off, and every finding is advice: the inspector decides. */
+/* ---------- D1.1:2025 Clause 5: is this prequalified WPS within the rules? ----------
+   Every row and limit below is copied from the pages McKay photographed
+   out of his D1.1:2025 book (docs/d1.1-2025/wps-prequalified-checklist.md).
+   Anything marked [VERIFY] or [GAP] there is not encoded; where a page
+   is missing, the check says to look in the book instead of guessing.
+   5.2.1: the Table 5.5 variables shall be on the written WPS and, where
+   they have limits, within them.
+   Each finding has a kind:
+     rule     breaks Clause 5 — blocks Save (unless kept) and a tapped
+              tile that would cause one is refused
+     missing  Table 5.5 says it has to be stated — blocks Save
+     info     look in the book; never blocks
+   The inspector decides; every block has a way past it. */
 var TOL55={ amps:{t:.10,label:"Amperage",item:22}, volts:{t:.15,label:"Voltage",item:23}, wfs:{t:.10,label:"Wire feed speed",item:24},
   travel:{t:.25,label:"Travel speed",item:25} };
 function numRange(v){
@@ -1495,41 +1699,295 @@ function tolFix(r,t){
   return fmtNum(lo,r.dec)+"–"+fmtNum(hi,r.dec);
 }
 function wireOrGas(proc){ return proc=="GMAW"||proc=="FCAW-G"||proc=="FCAW-S"; }
+
+/* Positions as a set of F, H, V, OH. "All" is all four. */
+var POS4=["F","H","V","OH"];
+function posSet(s){
+  s=String(s||"").toUpperCase(); if(/ALL/.test(s)) return POS4.slice();
+  return POS4.filter(function(x){ return new RegExp("(^|[^A-Z])"+x+"([^A-Z]|$)").test(s); });
+}
+function posText(a){ return a.length==4 ? "All" : a.join(", "); }
+/* Thickest part the WPS covers, in inches; NaN if it can't be read. */
+function thickMax(p){
+  var r=inchRange(p.thickRange); if(r) return r.hi;
+  return inchVal(p.thickRange);
+}
+function stated(v){ v=String(v==null?"":v).trim(); return !!v&&!/^(—|-|–|n\/?a|tbd|\?)$/i.test(v); }
+function hasPwht(p){ var v=String(p.pwhtTemp||"").trim(); return !!v&&!/^(none|n\/?a|no|—|-|0)$/i.test(v); }
+/* Root opening as detailed. '3/16" ± 1/16"' reads as its nominal 3/16". */
+function rootRange(v){
+  var s=String(v||"").split("±")[0].trim(); if(s==="") return null;
+  var r=inchRange(s); if(r) return r;
+  var n=inchVal(s); return isNaN(n) ? null : {lo:n,hi:n};
+}
+function angleRange(v){ return numRange(String(v||"").replace(/°/g,"").replace(/deg(rees)?/i,"")); }
+
+/* Fig. 5.1 (pp. 86–87). p: S = SMAW, GF = GMAW/FCAW, SAW. R and a are the
+   as-detailed root opening and groove angle; their tolerance is R +1/16"
+   −0 and α +10° −0°. gas: FCAW gas shielding required. Square grooves
+   (sq) take R from T1, so only thickness and positions are checked. */
+var FIG51=[
+  {d:"B-U2a",    p:"S",   R:1/4,  a:45, pos:"All"},
+  {d:"B-U2a",    p:"S",   R:3/8,  a:30, pos:"F, V, OH"},
+  {d:"B-U2a",    p:"S",   R:1/2,  a:20, pos:"F, V, OH"},
+  {d:"B-U2a-GF", p:"GF",  R:3/16, a:30, pos:"F, V, OH", gas:1},
+  {d:"B-U2a-GF", p:"GF",  R:3/8,  a:30, pos:"F, V, OH"},
+  {d:"B-U2a-GF", p:"GF",  R:1/4,  a:45, pos:"F, V, OH"},
+  {d:"B-L2a-S",  p:"SAW", R:1/4,  a:30, pos:"F", tmax:2},
+  {d:"B-U2-S",   p:"SAW", R:5/8,  a:20, pos:"F"},
+  {d:"B-L1a",    p:"S",   sq:1, tmax:1/4, pos:"All"},
+  {d:"C-L1a",    p:"S",   sq:1, tmax:1/4, pos:"All"},
+  {d:"B-L1a-GF", p:"GF",  sq:1, tmax:3/8, pos:"All"},
+  {d:"B-L1b",    p:"S",   sq:1, tmax:1/4, pos:"All"},
+  {d:"B-L1b-GF", p:"GF",  sq:1, tmax:3/8, pos:"All"},
+  {d:"B-L1-S",   p:"SAW", sq:1, tmax:3/8, pos:"F"},
+  {d:"B-L1a-S",  p:"SAW", sq:1, tmax:5/8, pos:"F"},
+  {d:"TC-L1b",   p:"S",   sq:1, tmax:1/4, pos:"All"},
+  {d:"TC-L1-GF", p:"GF",  sq:1, tmax:3/8, pos:"All"},
+  {d:"TC-L1-S",  p:"SAW", sq:1, tmax:3/8, pos:"F"} ];
+var PCLASS_NAME={S:"SMAW",GF:"GMAW/FCAW",SAW:"SAW"};
+function procClass(proc){ return proc=="SMAW"?"S":wireOrGas(proc)?"GF":proc=="SAW"?"SAW":""; }
+/* 5.4.1.5: SMAW joint details may be used for prequalified GMAW and FCAW. */
+function rowFits(row,proc){
+  var c=procClass(proc); if(!c) return false;
+  if(row.p==c) return !(row.gas&&proc=="FCAW-S");
+  return row.p=="S"&&c=="GF";
+}
+function desigKey(s){ return String(s||"").toUpperCase().replace(/\s+/g,""); }
+function desigBase(s){ return desigKey(s).replace(/-(GF|S)$/,""); }
+function fig51Check(p){
+  var out=[]; if((p.weldType||"CJP groove")!="CJP groove") return out;
+  var proc=p.process, des=String(p.jointDesig||"").trim(), base=desigBase(des);
+  var known=FIG51.filter(function(r){ return desigBase(r.d)==base; });
+  if(des&&!known.length){
+    out.push({ k:"info", key:"jointDesig", msg:des+" isn't in the app's Fig. 5.1 table yet (it has B-U2a, B-U2a-GF, B-L2a-S, B-U2-S and the square grooves). Check its root opening, angle and positions in the book." });
+    return out;
+  }
+  if(!des){
+    if(!(p.groove=="Single V"&&p.backing=="With backing")) return out;
+    known=FIG51.filter(function(r){ return desigBase(r.d)=="B-U2A"; });
+  }
+  if(!proc) return out;
+  var rows=known.filter(function(r){ return rowFits(r,proc); });
+  if(!rows.length){
+    out.push({ k:"rule", key:"jointDesig", ref:"Fig. 5.1", msg:(des||known[0].d)+" is a "+PCLASS_NAME[known[0].p]+" detail in Fig. 5.1, so it isn't prequalified for "+proc+"." });
+    return out;
+  }
+  var A=angleRange(p.angle), R=rootRange(p.rootOpening), tm=thickMax(p), want=posSet(p.positions), label=des||rows[0].d;
+  var geo=rows.filter(function(r){
+    if(r.sq) return true;
+    return A&&R && A.lo>=r.a-1e-6 && A.hi<=r.a+10+1e-6 && R.lo>=r.R-1e-6 && R.hi<=r.R+1/16+1e-6;
+  });
+  if(!geo.length){
+    if(!A||!R) return out;     // Table 5.5 says they're missing
+    var combos=rows.filter(function(r){ return !r.sq; }), seen={}, list=[];
+    combos.forEach(function(r){ var t=frac(r.R)+" at "+r.a+"°"; if(!seen[t]){ seen[t]=1; list.push(t); } });
+    var sameR=combos.filter(function(r){ return Math.abs(r.R-R.lo)<1e-6; })[0];
+    var said=String(p.angle).replace(/°?$/,"°");
+    out.push({ k:"rule", key:sameR?"angle":"rootOpening", ref:"Fig. 5.1", msg: sameR
+        ? "Fig. 5.1 "+label+": a "+frac(sameR.R)+" root opening goes with a "+sameR.a+"° groove angle ("+sameR.a+"° to "+(sameR.a+10)+"° as detailed). "+said+" isn't prequalified."
+        : "Fig. 5.1 "+label+" for "+proc+" lists "+list.join(", ")+" (as detailed: R +1/16\" −0, α +10° −0°). "+frac(R.lo)+" at "+said+" isn't one of them.",
+      fix: sameR ? {key:"angle", val:sameR.a+"°"} : null });
+    return out;
+  }
+  var thk=geo.filter(function(r){ return !r.tmax||!(tm>r.tmax+1e-6); });
+  if(!thk.length){
+    out.push({ k:"rule", key:"thickRange", ref:"Fig. 5.1", msg:label+" is limited to "+frac(geo[0].tmax)+" thick (T1) in Fig. 5.1; this WPS goes to "+p.thickRange+"." });
+    return out;
+  }
+  var posOk=thk.filter(function(r){ var s=posSet(r.pos); return want.every(function(x){ return s.indexOf(x)>-1; }); });
+  if(want.length&&!posOk.length){
+    var best=thk[0];
+    out.push({ k:"rule", key:"positions", ref:"Fig. 5.1", msg:label+(best.sq?"":" at "+frac(best.R)+" / "+best.a+"°")+" is prequalified in "+best.pos+" only (Fig. 5.1). "+posText(want)+" isn't.",
+      fix:{key:"positions", val:best.pos} });
+    return out;
+  }
+  var use=posOk.length?posOk:thk;
+  var exact=use.filter(function(r){ return desigKey(r.d)==desigKey(des); })[0];
+  if(!exact){
+    var hit=use.filter(function(r){ return r.p==procClass(proc); })[0]||use[0];
+    var why = !des ? "This joint matches Fig. 5.1 "+hit.d+". Put the designation on the WPS (Table 5.5, item 20)."
+      : hit.p=="S"&&procClass(proc)=="GF" ? "In "+(want.length==4?"all positions":posText(want))+" this joint is prequalified only as the SMAW detail "+hit.d+" (5.4.1.5 lets GMAW and FCAW use SMAW details). "+des+" itself is "+use.concat(thk).filter(function(r){return desigKey(r.d)==desigKey(des);}).map(function(r){return r.pos;})[0]+" only."
+      : "For "+proc+" this detail is "+hit.d+" in Fig. 5.1, not "+des+".";
+    out.push({ k:des?"rule":"missing", key:"jointDesig", ref:"Fig. 5.1", msg:why, fix:{key:"jointDesig", val:hit.d} });
+  }
+  return out;
+}
+
+/* 5.6.4: on FCAW-G the gas must be the one the electrode was classified
+   with. The designator after the usability number says which: C is 100%
+   CO2, M is mixed. A dual classification (E71T-1C/1M) carries both. */
+function gasDesig(cls){
+  var u=String(cls||"").toUpperCase().replace(/\s/g,""), c=false, m=false;
+  if(/-M2\d/.test(u)) m=true; if(/-C1\b/.test(u)) c=true;          // A5.36 open classifications
+  u.split("/").forEach(function(part){
+    var x=part.replace(/-?H\d+R?$/,"").replace(/J$/,"");
+    if(/(^|\d)CM$/.test(x)){ c=true; m=true; return; }
+    if(/(^|\d|-)C$/.test(x)) c=true;
+    if(/(^|\d|-)M$/.test(x)) m=true;
+  });
+  return { c:c, m:m };
+}
+function gasKind(g){
+  var u=String(g||"").toUpperCase().replace(/\s/g,""); if(!u||u=="NONE") return "";
+  if(/^(100%?)?CO2$/.test(u)) return "C";
+  if(/AR|ARGON/.test(u)) return "M";
+  return "?";
+}
+/* Table 5.10, GMAW to A5.18. true / false, or null when it can't tell. */
+function gmawGasOk(g){
+  var u=String(g||"").toUpperCase().replace(/\s/g,"");
+  if(/^(100%?)?CO2$/.test(u)) return true;
+  var ar=u.match(/(\d+)%?AR/), pct=ar?+ar[1]:NaN;
+  if(/CO2/.test(u)&&/AR/.test(u)) return isNaN(pct)?null:pct>=75&&pct<=90;
+  if(/O2/.test(u)&&/AR/.test(u)) return isNaN(pct)?null:pct>=95&&pct<=98;
+  return null;
+}
+/* The usability number of an FCAW classification: E71T-1C → "1", E71T-GS → "GS". */
+function fcawSuffix(cls){ var m=String(cls||"").toUpperCase().match(/^E\d{2}T-?(GS|G|\d+)/); return m?m[1]:""; }
+function lowHydrogen(proc,filler){
+  if(wireOrGas(proc)||proc=="SAW") return true;
+  if(proc=="SMAW") return /^E\d{2}(15|16|18|48)/i.test(String(filler||""));
+  return false;
+}
+/* Table 5.11 (p. 81), the two categories photographed. Bands are the
+   thickest part at the point of welding, in inches, with the minimum
+   preheat and interpass in °F. Category C and on, and footnote a, are on
+   p. 82 — not photographed, so not here. */
+var T511={ A:[[3/4,32],[1.5,150],[2.5,225],[Infinity,300]], B:[[3/4,32],[1.5,50],[2.5,150],[Infinity,225]] };
+var T511_BANDS=['1/8" to 3/4"','over 3/4" to 1-1/2"','over 1-1/2" to 2-1/2"','over 2-1/2"'];
+/* Category B steels named on the photographed page (A36, A500, A572 Gr
+   42/50/55, A709 Gr 36/50/50W "and others"). */
+var CAT_B_STEEL=/^(A36|A500|A572(\s*GR\.?\s*(42|50|55))?|A709(\s*GR\.?\s*(36|50W?))?)(\b|$)/i;
+function preheatCatFor(p){
+  if(!CAT_B_STEEL.test(String(p.base||"").trim())) return "";
+  if(p.baseTo&&!CAT_B_STEEL.test(String(p.baseTo).trim())) return "";
+  return lowHydrogen(p.process,p.filler) ? "B" : "";
+}
+function t511(cat,tmax){
+  var t=T511[cat]; if(!t||isNaN(tmax)||!isFinite(tmax)) return null;
+  for(var i=0;i<t.length;i++) if(tmax<=t[i][0]+1e-9) return { f:t[i][1], band:T511_BANDS[i] };
+  return null;
+}
+/* Base metal group, Table 5.6. A36 is Group I up to 3/4" and Group II at
+   any thickness, so a WPS or coupon over 3/4" is Group II. */
+function metalGroup(base,t){
+  if(String(base||"").trim().toUpperCase()=="A36") return !isNaN(t)&&t>0.75+1e-9 ? "II" : "I";
+  return METAL_GROUP[base]||"";
+}
+var GROUP_NOTE="Table 5.6";
+
 function wpsChecks(p){
   if(isPqr(p)||p.basis!="Prequalified"||!isD11(p.code||CFG.code)) return [];
   var out=[], proc=p.process, wire=wireOrGas(proc), gas=proc=="GMAW"||proc=="FCAW-G";
-  var groove=(p.weldType||"CJP groove")!="Fillet";
+  var groove=(p.weldType||"CJP groove")!="Fillet", want=posSet(p.positions), tm=thickMax(p);
+  var fillerU=String(p.filler||"").toUpperCase();
+
+  // 5.5.1 / 5.5.2 — GMAW-S is not prequalified.
+  if(proc=="GMAW"&&/short/i.test(p.transfer||"")) out.push({ k:"rule", key:"transfer", ref:"5.5.1", msg:"GMAW short circuit (GMAW-S) isn't prequalified (5.5.1, 5.5.2). It needs a PQR." });
+  // 5.5.4 — CV for GMAW and FCAW.
+  if(wire&&p.powerSource=="CC") out.push({ k:"rule", key:"powerSource", ref:"5.5.4", msg:"GMAW and FCAW on a prequalified WPS run on a constant-voltage power source (5.5.4).", fix:{key:"powerSource",val:"CV"} });
+
   // Ranges, Table 5.5 items 22–26.
   Object.keys(TOL55).forEach(function(k){
     var T=TOL55[k]; if(!wire) return;   // 22–25 apply to SAW, FCAW, GMAW
     var r=numRange(p[k]); if(!r||r.lo==r.hi) return;
     var mid=(r.lo+r.hi)/2, half=(r.hi-r.lo)/2/mid;
-    if(half>T.t+1e-9) out.push({ msg:T.label+" "+p[k]+" is ±"+Math.round(half*100)+"% about "+fmtNum(mid,r.dec)+". Table 5.5 ("+T.item+") allows ±"+Math.round(T.t*100)+"%.",
+    if(half>T.t+1e-9) out.push({ k:"rule", key:k, ref:"Table 5.5", msg:T.label+" "+p[k]+" is ±"+Math.round(half*100)+"% about "+fmtNum(mid,r.dec)+". Table 5.5 ("+T.item+") allows ±"+Math.round(T.t*100)+"%.",
       fix:{ key:k, val:tolFix(r,T.t) } });
   });
   if(gas){ var g=numRange(p.flow);
-    if(g&&g.lo!=g.hi&&g.hi>g.lo*2+1e-9) out.push({ msg:"Gas flow "+p.flow+" is wider than Table 5.5 (26) allows: +50% / −25% about one value.", fix:{ key:"flow", val:fmtNum(g.lo,g.dec)+"–"+fmtNum(g.lo*2,g.dec) } }); }
+    if(g&&g.lo!=g.hi&&g.hi>g.lo*2+1e-9) out.push({ k:"rule", key:"flow", ref:"Table 5.5", msg:"Gas flow "+p.flow+" is wider than Table 5.5 (26) allows: +50% / −25% about one value.", fix:{ key:"flow", val:fmtNum(g.lo,g.dec)+"–"+fmtNum(g.lo*2,g.dec) } }); }
+
+  // Filler: Table 5.7, and the gas it was classified with (5.6.4).
+  if(/^FCAW/.test(proc||"")&&fillerU){
+    var sfx=fcawSuffix(fillerU);
+    if(["2","3","10","13","14","GS"].indexOf(sfx)>-1) out.push({ k:"rule", key:"filler", ref:"Table 5.7", msg:"Table 5.7 leaves -"+sfx+" FCAW electrodes out of prequalified WPSs (-2C, -2M, -3, -10, -13, -14, -GS). "+p.filler+" needs a PQR." });
+    if(sfx=="11"&&tm>0.5+1e-6) out.push({ k:"rule", key:"thickRange", ref:"Table 5.7", msg:"Table 5.7 allows -11 electrodes only up to 1/2\" thick. This WPS goes to "+p.thickRange+".", fix:{key:"thickRange",val:'1/8" to 1/2"'} });
+  }
+  if(proc=="FCAW-G"&&fillerU&&p.gas){
+    var gd=gasDesig(fillerU), gk=gasKind(p.gas);
+    if(!gd.c&&!gd.m) out.push({ k:"info", key:"filler", ref:"5.6.4", msg:"Can't tell from "+p.filler+" which gas it was classified with. 5.6.4: the gas has to be the one the electrode was classified with — check the box label." });
+    else if(gk=="M"&&!gd.m) out.push({ k:"rule", key:"gas", ref:"5.6.4", msg:p.filler+" is classified on 100% CO2 (the C). 5.6.4: to run it on mixed gas the maker has to classify it -M, or dual -C/-M. Use 100% CO2, or a wire labeled -1M or -1C/1M.", fix:{key:"gas",val:"100% CO2"} });
+    else if(gk=="C"&&!gd.c) out.push({ k:"rule", key:"gas", ref:"5.6.4", msg:p.filler+" is classified on mixed gas (the M). 5.6.4: to run it on 100% CO2 it needs a C classification.", fix:{key:"gas",val:"75% Ar / 25% CO2"} });
+  }
+  if(proc=="GMAW"&&p.gas){ var ok=gmawGasOk(p.gas);
+    if(ok===false) out.push({ k:"rule", key:"gas", ref:"Table 5.10", msg:p.gas+" isn't a Table 5.10 gas for A5.18 wire: Ar/CO2 with 75–90% Ar, Ar/O2 with 95–98% Ar, or 100% CO2." });
+    else if(ok===null) out.push({ k:"info", key:"gas", ref:"Table 5.10", msg:"Check "+p.gas+" against Table 5.10: Ar/CO2 with 75–90% Ar, Ar/O2 with 95–98% Ar, or 100% CO2." });
+  }
+
+  // Electrode diameter, Tables 5.1, 5.3 and 5.4.
+  var dr=inchRange(p.fillerDia), dia=dr?dr.hi:inchVal(p.fillerDia), dlo=dr?dr.lo:dia;
+  if(!isNaN(dia)){
+    if(/^FCAW/.test(proc||"")){
+      if(tm>3/8+1e-6&&dlo<0.045-1e-6) out.push({ k:"rule", key:"fillerDia", ref:"Table 5.4", msg:"Table 5.4: on material over 3/8\", FCAW wire has to be .045\" or larger.", fix:{key:"fillerDia",val:'.045"'} });
+      var fmax=want.indexOf("OH")>-1?5/64:want.indexOf("V")>-1?3/32:1/8, fwhere=want.indexOf("OH")>-1?"overhead":want.indexOf("V")>-1?"vertical":"flat and horizontal";
+      if(want.length&&dia>fmax+1e-6) out.push({ k:"rule", key:"fillerDia", ref:"Table 5.4", msg:"Table 5.4 limits FCAW wire to "+frac(fmax)+" "+fwhere+". "+p.fillerDia+" is bigger." });
+    }
+    if(proc=="GMAW"&&dia>1/16+1e-6) out.push({ k:"rule", key:"fillerDia", ref:"Table 5.3", msg:"Table 5.3 limits GMAW solid wire to 1/16\"." });
+    if(proc=="SMAW"&&want.length){
+      var lh=lowHydrogen(proc,p.filler)||/^E\d{2}14/.test(fillerU), lim={F:groove?1/4:5/16, H:groove?3/16:1/4, V:lh?5/32:3/16, OH:lh?5/32:3/16};
+      var smax=Math.min.apply(null,want.map(function(x){ return lim[x]; }));
+      if(dia>smax+1e-6) out.push({ k:"rule", key:"fillerDia", ref:"Table 5.1", msg:"Table 5.1 limits a "+(groove?"groove":"fillet")+" electrode in "+posText(want)+" to "+frac(smax)+(lh&&(want.indexOf("V")>-1||want.indexOf("OH")>-1)?" (low hydrogen, vertical and overhead)":"")+". "+p.fillerDia+" is bigger." });
+    }
+  }
+
+  // Joint, Fig. 5.1.
+  out=out.concat(fig51Check(p));
+
+  // Preheat and interpass, Table 5.11 and 5.7.1.
+  var cat=p.preheatCat||"", sugg=preheatCatFor(p), need511=t511(cat||sugg,tm), have=parseFloat(String(p.preheat||"").replace(/[^\d.\-]/g," "));
+  var fixed={};
+  if(!cat){ fixed.preheatCat=1; out.push({ k:"missing", key:"preheatCat", ref:"Table 5.5", msg:"Table 5.5 (4): state the base metal preheat category from Table 5.11."+(sugg?" "+p.base+" with "+(proc=="SMAW"?"low-hydrogen electrodes":proc)+" is Category "+sugg+".":""), fix:sugg?{key:"preheatCat",val:sugg}:null }); }
+  if(need511&&(cat=="A"||cat=="B"||(!cat&&sugg))){
+    var note=need511.f==32?" (Table 5.11 footnote a covers this band; it's on p. 82, not photographed yet.)":"";
+    if(!stated(p.preheat)){ fixed.preheat=1; out.push({ k:"missing", key:"preheat", ref:"Table 5.11", msg:"No minimum preheat. Table 5.11 Category "+(cat||sugg)+", thickest part "+need511.band+": "+need511.f+" °F."+note, fix:{key:"preheat",val:need511.f+" °F min"} }); }
+    else if(!isNaN(have)&&have<need511.f-1e-6) out.push({ k:"rule", key:"preheat", ref:"Table 5.11", msg:"Table 5.11 Category "+(cat||sugg)+", thickest part "+need511.band+": "+need511.f+" °F minimum. This WPS says "+p.preheat+".", fix:{key:"preheat",val:need511.f+" °F min"} });
+  }
+  if(!stated(p.interpass)){ fixed.interpass=1;
+    var ip=need511?need511.f+" °F min":(stated(p.preheat)?p.preheat:"");
+    out.push({ k:"missing", key:"interpass", ref:"5.7.1", msg:"No interpass temperature. 5.7.1: the Table 5.11 minimum is for preheat and interpass both.", fix:ip?{key:"interpass",val:ip}:null });
+  }
+  if(cat&&cat!="A"&&cat!="B") out.push({ k:"info", key:"preheatCat", ref:"Table 5.11", msg:"Only Categories A and B of Table 5.11 are photographed. Check Category "+cat+" on p. 82." });
+
   // What a prequalified WPS has to say, Table 5.5 items 1–21.
-  var need=[["process","welding process"],["positions","positions"],["preheat","preheat (category, Table 5.11)"],
-    ["filler","filler classification"],["fillerDia","electrode diameter"],["polarity","current and polarity"],["travel","travel speed"],
+  var needs=[["process","welding process"],["positions","positions"],["preheat","minimum preheat (Table 5.11)"],
+    ["filler","filler classification"],["fillerDia","electrode diameter"],["polarity","current type and polarity"],["travel","travel speed"],
     ["weldType","weld type"],["pwhtTemp","PWHT (write None if none)"]];
-  if(wire) need.push(["amps","amperage"],["volts","voltage"],["wfs","wire feed speed"]);
-  if(proc=="GMAW") need.push(["transfer","mode of transfer"]);
-  if(gas) need.push(["gas","shielding gas"],["flow","gas flow rate"]);
-  if(groove) need.push(["groove","groove type"],["angle","groove angle"],["rootOpening","root opening"]);
-  var miss=need.filter(function(n){ return !String(p[n[0]]||"").trim(); }).map(function(n){ return n[1]; });
-  if(miss.length) out.push({ msg:"Table 5.5 says a prequalified WPS must state: "+miss.join(", ")+"." });
-  if(p.base&&!METAL_GROUP[p.base]) out.push({ msg:"Base metal "+p.base+" must be one listed in Table 5.6 (5.3). Check it's there." });
+  if(wire) needs.push(["amps","amperage"],["volts","voltage"],["wfs","wire feed speed"]);
+  if(proc=="GMAW") needs.push(["transfer","mode of transfer"]);
+  if(gas) needs.push(["gas","shielding gas"],["flow","gas flow rate"]);
+  if(groove) needs.push(["groove","groove type"],["angle","groove angle"],["rootOpening","root opening"]);
+  var miss=needs.filter(function(n){ return !fixed[n[0]]&&!stated(p[n[0]]); }).map(function(n){ return n[1]; });
+  if(miss.length) out.push({ k:"missing", key:"", ref:"Table 5.5", msg:"Table 5.5 says a prequalified WPS must state: "+miss.join(", ")+"." });
+
+  if(p.base&&!METAL_GROUP[p.base]&&!/^A36$/i.test(String(p.base).trim())) out.push({ k:"info", key:"base", ref:"Table 5.6", msg:"Base metal "+p.base+" must be one listed in Table 5.6 (5.3). Check it's there." });
   // 5.8.1.1 — vertical is uphill, except tubulars.
   var tub=/pipe|tube|tubular|"/i.test(p.diaRange||"")&&!/^plate$/i.test(p.diaRange||"");
-  if(p.progression=="Downhill"&&/All|V/.test(p.positions||"")&&!tub) out.push({ msg:"Vertical welding on a prequalified WPS must progress upward (5.8.1.1). Downhill is only for undercut repair, or tubulars.", fix:{ key:"progression", val:"Uphill" } });
+  if(p.progression=="Downhill"&&want.indexOf("V")>-1&&!tub) out.push({ k:"rule", key:"progression", ref:"5.8.1.1", msg:"Vertical welding on a prequalified WPS must progress upward (5.8.1.1). Downhill is only for undercut repair, or tubulars.", fix:{ key:"progression", val:"Uphill" } });
   // 5.4.1.2 / 5.4.1.3 — one-sided CJP.
   if((p.weldType||"CJP groove")=="CJP groove"){
     var gouged=p.backgouge&&p.backgouge!="None";
-    if(p.backing=="No backing"&&!gouged) out.push({ msg:"A CJP groove welded from one side needs steel backing to be prequalified (5.4.1.2) — or backgouge and backweld." });
-    if(p.backing=="With backing"&&p.backingMat&&p.backingMat!="Steel"&&!gouged) out.push({ msg:"Backing other than steel is prequalified only when it's removed and the root is backgouged and backwelded (5.4.1.3)." });
+    if(p.backing=="No backing"&&!gouged) out.push({ k:"rule", key:"backing", ref:"5.4.1.2", msg:"A CJP groove welded from one side needs steel backing to be prequalified (5.4.1.2) — or backgouge and backweld." });
+    if(p.backing=="With backing"&&p.backingMat&&p.backingMat!="Steel"&&!gouged) out.push({ k:"rule", key:"backingMat", ref:"5.4.1.3", msg:"Backing other than steel is prequalified only when it's removed and the root is backgouged and backwelded (5.4.1.3)." });
   }
+  // 5.9 — PWHT.
+  if(hasPwht(p)) out.push({ k:"info", key:"pwhtTemp", ref:"5.9", msg:"PWHT on a prequalified WPS needs the Engineer's approval, steel with yield 50 ksi or less that isn't Q&T, QST, TMCP or cold-worked, no CVN requirement, and strength and ductility data in the PWHT condition (5.9)." });
   return out;
+}
+/* The findings that keep a WPS from being prequalified (not the "look in
+   the book" notes). */
+function wpsBlocking(p){ return wpsChecks(p).filter(function(x){ return x.k=="rule"||x.k=="missing"; }); }
+function ruleMsgs(p){ return wpsChecks(p).filter(function(x){ return x.k=="rule"; }).map(function(x){ return x.msg; }); }
+/* A tapped tile on a prequalified WPS that would break Clause 5 isn't
+   applied: the toast says why, and "Use it anyway" applies it. */
+function wpsGuard(apply){
+  var d=S.draft; if(S.screen!="wpsedit"||isPqr(d)||d.basis!="Prequalified"||!isD11(d.code||CFG.code)) return false;
+  var before=ruleMsgs(d), t=JSON.parse(JSON.stringify(d)); apply(t);
+  var fresh=wpsChecks(t).filter(function(x){ return x.k=="rule"&&before.indexOf(x.msg)<0; });
+  if(!fresh.length) return false;
+  toast("Not prequalified — "+fresh[0].msg, { bad:1, ms:12000, action:"Use it anyway", run:function(){ apply(S.draft); render({keepScroll:true}); } });
+  return true;
 }
 /* ---------- a test record against its WPS ----------
    A test is run to a WPS; a reading or a coupon detail outside it makes a
@@ -1626,9 +2084,13 @@ function wpsDiffCard(){
 
 function wpsCheckCard(p){
   var c=wpsChecks(p); if(!c.length) return "";
-  return '<div class="flag"><b>Not prequalified as written — D1.1 Clause 5</b><ul style="margin:8px 0 0;padding-left:18px">'
-    +c.map(function(x,i){ return '<li style="margin:0 0 6px">'+esc(x.msg)+(x.fix?' <button class="mini" data-act="wpsfix" data-i="'+i+'" style="padding:0">Make it '+esc(x.fix.val)+'</button>':'')+'</li>'; }).join("")
-    +'</ul></div>';
+  var block=c.some(function(x){ return x.k!="info"; });
+  var li=function(x){ var i=c.indexOf(x); return '<li style="margin:0 0 6px">'+esc(x.msg)+(x.fix?' <button class="mini" data-act="wpsfix" data-i="'+i+'" style="padding:0">Make it '+esc(x.fix.val)+'</button>':'')+'</li>'; };
+  var hard=c.filter(function(x){ return x.k!="info"; }), soft=c.filter(function(x){ return x.k=="info"; });
+  return '<div class="flag"'+(block?' style="border-color:var(--slag);background:rgba(192,83,58,.1)"':'')+'><b'+(block?' style="color:#E9876F"':'')+'>'+(block?"Not prequalified as written — D1.1 Clause 5":"Check these in the book")+'</b>'
+    +(hard.length?'<ul style="margin:8px 0 0;padding-left:18px">'+hard.map(li).join("")+'</ul>':'')
+    +(soft.length?(hard.length?'<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">Check in the book:</p>':'')+'<ul style="margin:6px 0 0;padding-left:18px;font-size:.88rem">'+soft.map(li).join("")+'</ul>':'')
+    +'</div>';
 }
 
 /* WPS option lists. Tiles for what's usually one of a few values; a
@@ -1744,7 +2206,7 @@ VIEWS.wpsedit = function(){
   h += '<div class="card"><h3>Joint design</h3>'
     + '<div class="field"><label>Weld type</label>'+dtiles("weldType",WPS_WELD)+'</div>'
     + '<div class="field"><label>Joint type</label>'+dtiles("jointType",WPS_JOINT)+'</div>';
-  if(groove&&d.basis!="Qualified by PQR") h += '<div class="field"><label>Prequalified joint designation</label>'+dtext("jointDesig","e.g. B-U2a-GF, from D1.1 Figure 5.1 / 5.2")+'</div>';
+  if(groove&&d.basis!="Qualified by PQR") h += '<div class="field"><label>Prequalified joint designation</label>'+dtext("jointDesig","e.g. B-U2a or B-U2a-GF, from Fig. 5.1")+'</div>';
   if(groove) h += '<div class="field"><label>Groove</label>'+dtiles("groove",WPS_GROOVE)+'</div>'
     + '<div class="field"><label>Groove angle</label>'+dtiles("angle",WPS_ANGLE)+dtext("angle","or type it, e.g. 50°")+'</div>'
     + '<div class="field"><label>Root opening</label>'+dtiles("rootOpening",WPS_ROOT)+dtext("rootOpening","or type it")+'</div>'
@@ -1788,8 +2250,9 @@ VIEWS.wpsedit = function(){
     + '<div class="field" style="margin:14px 0 0"><label>Power source</label>'+dtiles("powerSource",WPS_POWER)+'</div></div>';
 
   h += '<div class="card"><h3>Preheat, interpass, PWHT</h3>'
+    + (pq?'':'<div class="field"><label>Preheat category, Table 5.11'+(preheatCatFor(d)&&!d.preheatCat?' — '+esc(d.base)+' here is Category '+preheatCatFor(d):'')+'</label>'+dtiles("preheatCat",[{v:"A",d:"Non-low-H SMAW"},{v:"B",d:"Low-H SMAW, wire"},{v:"Other",d:"C and on"}])+'</div>')
     + '<div class="row"><div class="field"><label>Preheat, min</label><input type="text" data-d="preheat" value="'+esc(d.preheat||"")+'" placeholder="50 °F"></div>'
-    + '<div class="field"><label>Interpass</label><input type="text" data-d="interpass" value="'+esc(d.interpass||"")+'" placeholder="550 °F max"></div></div>'
+    + '<div class="field"><label>Interpass</label><input type="text" data-d="interpass" value="'+esc(d.interpass||"")+'" placeholder="Min = preheat"></div></div>'
     + '<div class="row"><div class="field" style="margin:0"><label>PWHT temperature</label><input type="text" data-d="pwhtTemp" value="'+esc(d.pwhtTemp||"")+'" placeholder="None"></div>'
     + '<div class="field" style="margin:0"><label>PWHT time at temp</label><input type="text" data-d="pwhtTime" value="'+esc(d.pwhtTime||"")+'" placeholder="—"></div></div></div>';
 
@@ -1809,7 +2272,7 @@ VIEWS.wpsedit = function(){
   }
   h += '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>'
     + '<button class="primary" data-act="savewps" style="width:100%">Save '+kindName+'</button>'
-    + '<p id="saveerr" class="err" style="display:none">Give the '+kindName+' a number first.</p>'
+    + '<div id="saveerr" class="err" style="display:none">Give the '+kindName+' a number first.</div>'
     + (!pq&&d.id?'<p class="foot"><button class="mini" data-act="wpscopyto">Copy for a company</button></p>':'');
   var b = '<button class="ghost" data-act="back">Cancel</button><button class="primary" data-act="savewps">Save '+kindName+'</button>';
   if(d.id) b = '<button class="ghost" data-act="delwps">Delete</button><button class="primary" data-act="savewps">Save '+kindName+'</button>';
@@ -2268,14 +2731,17 @@ VIEWS.inspect = function(){
   if(sibs.length) h+='<div class="card"><h3>Same test, other plate'+(sibs.length>1?'s':'')+'</h3>'
     +sibs.map(function(x){ return '<button class="sub" data-rec="'+x.id+'"><span style="flex:1"><b>'+esc(x.w.position||"No position yet")+'</b><span>'+esc(x.r.result||"Awaiting test")+'</span></span><span class="go">'+CHEV+'</span></button>'; }).join("")+'</div>';
   h+=couponCard();
-  h+='<div id="wpsdiff">'+wpsDiffCard()+'</div>';
+  h+='<div id="wpsdiff">'+wpsDiffCard()+'</div><div id="reccheck">'+recordChecksCard()+'</div>';
   h+='<div class="card"><h3>Record number and method</h3>'
     +'<div class="field"><label>Qualified to</label>'+editionSelect('data-k="code"', recCode(w))+'</div><div class="row">'
     +'<div class="field" style="margin:0"><label>Record no.</label><input type="text" data-r="testNo" value="'+esc(r.testNo)+'" placeholder="'+esc(recNo(w,{}))+'"></div>'
-    +'<div class="field" style="margin:0"><label>Std. test no.</label><input type="text" data-r="stdTestNo" value="'+esc(r.stdTestNo||"")+'" placeholder="optional"></div>'
+    +'<div class="field" style="margin:0"><label>Test no.</label><input type="text" data-r="labNo" value="'+esc(r.labNo||r.stdTestNo||"")+'" placeholder="Given on save"></div>'
     +'<div class="field" style="margin:0"><label>Method</label><select data-r="method">'
     +[["bend","Bend test"],["rt","Radiographic"],["macro","Macroetch / break"]].map(function(o){return '<option value="'+o[0]+'" '+(r.method==o[0]?"selected":"")+'>'+o[1]+'</option>'}).join("")
-    +'</select></div></div></div>';
+    +'</select></div></div>'
+    +'<p style="margin:14px 0 8px;font-size:.86rem;color:var(--muted)">The WPQR is the contractor\'s certification (6.20, 6.2.2.2). Who signs it for '+esc(coName(w.companyId)||w.company||"them")+'? You sign as the witness.</p>'
+    +'<div class="row" style="margin-bottom:-18px"><div class="field"><label>Signs for the contractor</label><input type="text" data-r="certName" value="'+esc(r.certName||"")+'" placeholder="'+esc((companyById(w.companyId)||{}).contact||"Name")+'"></div>'
+    +'<div class="field"><label>Their title</label><input type="text" data-r="certTitle" value="'+esc(r.certTitle||"")+'" placeholder="QC manager"></div></div></div>';
 
   var wp=wpsById(w.wpsId);
   if(wp) h+=wpsCard(wp, "Tested to");
@@ -2321,15 +2787,19 @@ VIEWS.inspect = function(){
     +qrow("Backing","qBack",s.backing)
     +qrow("Filler","qFiller",s.filler)
     +qrow("Groove positions","qPos",s.positions)
-    +qrow("Fillet positions","qFPos",s.filletPositions)+'</div>';
+    +qrow("Fillet positions","qFPos",s.filletPositions)
+    +(function(){ var cw=combinedWith(w,S.recId); return cw&&r.result=="Qualified" ? '<p style="margin:4px 0 0;font-size:.86rem;color:var(--ok)">With '+esc(cw.pos)+' ('+esc(fmtDate(cw.rec.w.date))+', '+esc(cw.rec.r.labNo||recNo(cw.rec.w,cw.rec.r))+') this welder is qualified in all positions for '+esc(procFam(w))+' — '+cw.table+'. It prints under Test Results.</p>' : ''; })()
+    +'</div>';
 
   if(s.other) h+='<div class="flag"><b>'+esc(recCode(w))+' ranges aren\'t drafted by the app yet.</b> Every range above is blank on purpose — fill each one in from the book. Only D1.1 has a lookup table so far.</div>';
-  else h+='<div class="flag"><b>These are drafts.</b> They come from a lookup table in this app, not from the code book. Check each one against '+esc(recCode(w))+' Clause 6, Part C before you sign. You are the one stamping it.</div>';
+  else h+='<div class="flag"><b>These are drafts.</b> They come from a lookup table in this app, not from the code book. Check each one against '+esc(recCode(w))+' Tables 6.11–6.14'+(w.product=="pipe"?' and Tables 10.8 and 10.12':'')+' before you sign. You are the one stamping it.</div>';
   h+='<div class="field"><label>Remarks on the record</label><textarea data-r="remarks">'+esc(r.remarks)+'</textarea></div>';
   h+='<label class="check"><input type="checkbox" data-r="verified" '+(r.verified?"checked":"")+'><span>I verified every qualified range above against '+esc(recCode(w))+' and the results are correctly recorded.</span></label>';
   h+='<div class="field"><label>Overall result</label><div class="seg">'
     +'<button class="p" data-result="Qualified" aria-pressed="'+(r.result=="Qualified")+'" style="flex:1;padding:14px">Qualified</button>'
-    +'<button class="f" data-result="Not qualified" aria-pressed="'+(r.result=="Not qualified")+'" style="flex:1;padding:14px">Not qualified</button></div></div>';
+    +'<button class="f" data-result="Not qualified" aria-pressed="'+(r.result=="Not qualified")+'" style="flex:1;padding:14px">Not qualified</button></div>'
+    +(r.result=="Qualified"&&w.date?'<p style="margin:8px 0 0;font-size:.84rem;color:var(--muted)">No expiry date. In effect while they weld with '+esc(procFam(w))+' at least every six months (6.2.3.1) — through '+esc(fmtDate(addMonths(w.date,6)))+' unless you log more on <button class="mini" data-go="welders" style="padding:0">Welders</button>.</p>':'')
+    +'</div>';
   var cur=records().filter(function(x){return x.id==S.recId})[0];
   h+='<p class="foot">'
     +(cur ? (cur.archived
@@ -2383,6 +2853,36 @@ function resRow(label,key){
   return '<div class="res"><span>'+esc(label)+'</span><span class="seg">'
     +'<button class="p" data-res="'+key+'" data-val="Pass" aria-pressed="'+(v=="Pass")+'">Pass</button>'
     +'<button class="f" data-res="'+key+'" data-val="Fail" aria-pressed="'+(v=="Fail")+'">Fail</button></span></div>';
+}
+
+/* ---------- welders: continuity (6.2.3.1) ----------
+   One row per welder and process they're qualified in: the last date
+   you know they welded with it, and the date it lapses if nobody logs
+   another. Tap "Welded today", or set an earlier date you saw them weld. */
+VIEWS.welders = function(){
+  var list=continuity(), h=nav("Welders");
+  h+='<p class="hint">6.2.3.1: a qualification stays in effect unless the welder goes more than six months without welding in that process, or there\'s a reason to question their ability. There is no expiry date. Log the days you see them weld.</p>';
+  if(!list.length) h+='<div class="empty">No qualified welders yet.<br>A record marked Qualified shows up here.</div>';
+  var lastName="";
+  list.forEach(function(g){
+    if(g.name+"|"+g.company!=lastName){ if(lastName) h+='</div>'; lastName=g.name+"|"+g.company;
+      h+='<div class="card"><h3>'+esc(g.name)+(g.company?' <small>'+esc(g.company)+'</small>':'')+'</h3>'; }
+    var st=g.lapsed?{t:"Lapsed",c:"no"}:(g.until<=addMonths(today(),1)?{t:"Lapses soon",c:"wait"}:{t:"In effect",c:"ok"});
+    h+='<div class="controw"><div style="flex:1"><b style="color:var(--paper)">'+esc(g.proc)+'</b> <span class="pill '+st.c+'" style="margin-left:6px">'+st.t+'</span>'
+      +'<p style="margin:4px 0 0;font-size:.86rem;color:var(--muted)">Last welded '+esc(fmtDate(g.last))+' · '+(g.lapsed?'lapsed '+esc(fmtDate(g.until))+' — requalify (6.25.1.3; a 3/8" test covers 1/8" and up)':'in effect through '+esc(fmtDate(g.until)))
+      +'<br>Tested '+esc(fmtDate(g.tested))+' · '+g.recs.map(function(x){ return esc(x.w.position||""); }).filter(Boolean).join(", ")+'</p></div>'
+      +'<div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end"><button class="mini" data-act="contlog" data-key="'+esc(g.key)+'">Welded today</button>'
+      +'<input type="date" data-cont="'+esc(g.key)+'" max="'+today()+'" aria-label="Or the date you saw them weld" style="font-size:13px;padding:6px 8px;width:140px"></div></div>';
+  });
+  if(lastName) h+='</div>';
+  return { body:h, bar:'<button class="primary" data-act="back">Done</button>' };
+};
+function logWelded(key,date){
+  var g=continuity().filter(function(x){ return x.key==key; })[0]; if(!g||!date) return;
+  var rec=getRow("records",g.recs[0].id); if(!rec) return;
+  rec.r.cont=(rec.r.cont||[]).filter(function(d){ return d!=date; }).concat([date]).sort();
+  putRow("records",rec);
+  toast(g.name+" — "+g.proc+" logged "+fmtDate(date)+". In effect through "+fmtDate(addMonths(date>g.last?date:g.last,6))+".");
 }
 
 /* ---------- settings ---------- */
@@ -2475,8 +2975,13 @@ function pdfName(s){ return String(s||"sheet").replace(/[^\w.-]+/g,"_")+".pdf"; 
 /* Acceptance-criteria clause numbers on the results table. Only the
    editions checked against a book are filled in; any other edition
    prints the part reference and the inspector writes the clause in. */
-var CLAUSES={ "2020":{ visual:"6.10.1", bendTest:"6.10.3.1 and Fig. 6.8", bend:"6.10.3.3" } };
-function clauseRefs(code){ code=code||CFG.code; var y=(String(code).match(/20\d\d/)||[])[0]; return (isD11(code)&&CLAUSES[y])||{ visual:"Clause 6, Part C", bendTest:"Clause 6, Part C", bend:"Clause 6, Part C" }; }
+/* D1.1:2025 numbers are from McKay's book: 6.23.1 sends coupon visual to
+   6.10.1, 6.23.5 sends bends to 6.10.3.3, 6.23.3.2 sends RT to 8.12.2
+   except 8.12.2.2. Specimens: face/root Fig. 6.8, side Fig. 6.9. */
+var CLAUSES={ "2020":{ visual:"6.10.1", bendTest:"6.10.3.1 and Fig. 6.8", sideTest:"6.10.3.1 and Fig. 6.9", bend:"6.10.3.3", rt:"Clause 6", macro:"Clause 6" },
+  "2025":{ visual:"6.10.1", bendTest:"6.10.3.1 and Fig. 6.8", sideTest:"6.10.3.1 and Fig. 6.9", bend:"6.10.3.3", rt:"8.12.2 (not 8.12.2.2)", macro:"6.23.2.2 / 6.23.4" } };
+function clauseRefs(code){ code=code||CFG.code; var y=(String(code).match(/20\d\d/)||[])[0];
+  return (isD11(code)&&CLAUSES[y])||{ visual:"Clause 6", bendTest:"Clause 6", sideTest:"Clause 6", bend:"Clause 6", rt:"Clause 6", macro:"Clause 6" }; }
 function accept(v){ return v=="Pass"?"Acceptable":v=="Fail"?"Unacceptable":""; }
 
 /* ---- page geometry and drawing helpers (points; letter is 612 x 792) ---- */
@@ -2536,7 +3041,7 @@ function greyBar(d,y,t){
 }
 /* Signature block: an optional contractor line on the left, the
    authorized-by and date lines in the middle, the stamp box on the right. */
-function signature(d,y,leftName,leftLabel){
+function signature(d,y,leftName,leftLabel,midLabel){
   var x=PG.m, W=PG.w-2*PG.m, mid=x+W*.42, stamp=x+W-96;
   d.setLineWidth(.5); d.setDrawColor(0); d.setTextColor(0);
   if(leftLabel){
@@ -2544,7 +3049,7 @@ function signature(d,y,leftName,leftLabel){
     d.setFont("helvetica","normal"); d.line(x,y+26,x+W*.36,y+26); d.setFontSize(7); d.text(leftLabel, x, y+34);
   }
   d.setFontSize(7);
-  d.line(mid,y+26,stamp-14,y+26); d.text("Authorized by — "+[CFG.inspector,CFG.cert].filter(Boolean).join(", "), mid, y+34, {maxWidth:stamp-14-mid});
+  d.line(mid,y+26,stamp-14,y+26); d.text((midLabel||"Authorized by")+" — "+[CFG.inspector,CFG.cert].filter(Boolean).join(", "), mid, y+34, {maxWidth:stamp-14-mid});
   d.line(mid,y+52,stamp-14,y+52); d.text("Date", mid, y+60);
   d.setDrawColor(120); d.setLineDashPattern([2,2],0); d.rect(stamp,y,96,62); d.setLineDashPattern([],0);
   d.setTextColor(120); d.text("Inspector stamp", stamp+48, y+56, {align:"center"}); d.setTextColor(0); d.setDrawColor(0);
@@ -2631,17 +3136,20 @@ function formHead(d,title,b){
   d.setFont("helvetica","normal");
 }
 /* Which bend specimens a coupon gets, and the result keys they fill.
-   The default follows D1.1 Table 6.11 for welders; the inspector can
+   The default follows D1.1:2025 Table 6.12 (plate) and Table 10.12 (pipe); the inspector can
    change it on the record, and that choice is what prints. */
 var BEND_SETS={
   rf:{ label:"1 root + 1 face", rows:[["Root bend","bendRootFace1"],["Face bend","bendRootFace2"]] },
   s2:{ label:"2 side", rows:[["Side bend 1","bendSide1"],["Side bend 2","bendSide2"]] },
   rf2:{ label:"2 root + 2 face", rows:[["Root bend 1","bendRootFace1"],["Root bend 2","bendRoot2"],["Face bend 1","bendRootFace2"],["Face bend 2","bendFace2"]] },
   s4:{ label:"4 side", rows:[["Side bend 1","bendSide1"],["Side bend 2","bendSide2"],["Side bend 3","bendSide3"],["Side bend 4","bendSide4"]] } };
+/* Table 6.12, plate: 3/8" gets a face and a root, over 3/8" two side bends.
+   Table 10.12, pipe: 1G and 2G get a face and a root (two side over 3/8"
+   wall); 5G, 6G and 6GR twice that. */
 function bendDefault(w){
-  var t=tVal(w);
-  if(w.product=="pipe") return !isNaN(t)&&t>=0.375 ? "s4" : "rf2";
-  return !isNaN(t)&&t>=1 ? "s2" : "rf";
+  var t=tVal(w), thick=!isNaN(t)&&t>0.375+1e-9;
+  if(w.product=="pipe") return /^(1G|2G)$/.test(w.position||"") ? (thick?"s2":"rf") : (thick?"s4":"rf2");
+  return thick ? "s2" : "rf";
 }
 /* Records from before the choice existed carry results under the old
    keys; read the set back from what was filled in. */
@@ -2666,7 +3174,7 @@ function wpqrPdf(draft){
   var employer=coName(w.companyId)||w.company;
   var filler=w.filler=="Other"?w.fillerOther:w.filler;
   var gas=w.gas=="Other"?(w.gasOther||"Other"):(w.gas||"None");
-  var thick=frac(t), grp=METAL_GROUP[w.base]||"", odTxt=!isNaN(od)?frac(od):"";
+  var thick=frac(t), grp=metalGroup(w.base,t), odTxt=!isNaN(od)?frac(od):"";
   var bm=String(w.base||"").match(/^(A\d+)\s*(.*)$/), spec=bm?"ASTM "+bm[1]:w.base, grade=bm?bm[2]:"";
   var jointType=(pipe?"Pipe":"Plate")+" - "+(groove
     ? [wp.groove,"Groove"].filter(Boolean).join(" ")+(w.backing=="with"?" w/ Backing":" w/o Backing") : "Fillet");
@@ -2686,8 +3194,8 @@ function wpqrPdf(draft){
   var y0=166.2, rowsL=[["Name",w.name],["ID Number",w.stamp],["Company",employer],["Division",w.division]];
   ruled(d,{cols:[L,A,M],y:y0,rows:rowsL.map(function(x,i){ return {cells:[{t:x[0],b:i==0},x[1]||""]}; })
     .concat([{h:11.6,cells:[{t:"Photo ID:",c:2,a:"r"}]}])});
-  var yI=ruled(d,{cols:[R,RA,E],y:y0,rows:[["Test Date",pdate(w.date)],["Record No.",no],["Std. Test No.",g("stdTestNo","")],
-    ["WPS No.",wpsNo],["Qualified To",[codeBook(code),wp.jointDesig].filter(Boolean).join(" ")]].map(function(x,i){ return {h:i==4?11.6:WQ.ROW,cells:x}; })});
+  var yI=ruled(d,{cols:[R,RA,E],y:y0,rows:[["Test Date",pdate(w.date)],["Record No.",no],["Test Joint",pv(testJoint(wpsById(w.wpsId)))],
+    ["WPS No.",wpsNo],["Qualified To",qualifiedTo(code,w)]].map(function(x,i){ return {h:i==4?11.6:WQ.ROW,cells:x}; })});
   d.setLineWidth(.5); d.line(M,y0,R,y0); d.line(M,yI,R,yI);
 
   // Base metals.
@@ -2723,9 +3231,9 @@ function wpqrPdf(draft){
     prow(IND+"Fillet - Plate and Pipe > 24 in",SH,pv(qFPos)),
     prow(IND+"Fillet - Pipe < 24 in",SH,pv(qFPos)),
     prow("Progression",pv(prog),pv(prog)),
-    prow("GMAW Transfer Mode",pv(w.transfer),pv(w.transfer)),
+    prow("GMAW Transfer Mode",pv(w.transfer),pv(transferRange(w))),
     prow("Single or Multiple Electrodes","Single","Single"),
-    prow("Gas/Flux Type",pv(gas),pv(gas))]});
+    prow("Gas/Flux Type",pv(gas),gas=="None"?"-":AS_TESTED)]});
 
   // Test results: one row per specimen set; a set that split prints each.
   var res=[];
@@ -2736,13 +3244,15 @@ function wpqrPdf(draft){
     set.rows.forEach(function(x){ var k=x[0].replace(/ \d$/,""); (kinds[k]=kinds[k]||[]).push(r[x[1]]); });
     Object.keys(kinds).forEach(function(k){
       var vals=kinds[k], n=vals.length, same=vals.every(function(v){return v==vals[0]});
-      var what=k.replace(/ bend$/," Bend");
-      if(same) push("Each Position: "+n+" "+what+(n>1?"s":"")+" per "+cl.bendTest, cl.bend, vals[0]);
-      else vals.forEach(function(v,i){ push(what+" "+(i+1)+" per "+cl.bendTest, cl.bend, v); });
+      var what=k.replace(/ bend$/," Bend"), how=/side/i.test(k)?cl.sideTest:cl.bendTest;
+      if(same) push("Each Position: "+n+" "+what+(n>1?"s":"")+" per "+how, cl.bend, vals[0]);
+      else vals.forEach(function(v,i){ push(what+" "+(i+1)+" per "+how, cl.bend, v); });
     });
   }
-  if(r.method=="rt") push("Radiographic Examination","Clause 6, Part C",r.rt);
-  if(r.method=="macro") push("Macroetch / Fillet Break","Clause 6, Part C",r.macro);
+  if(r.method=="rt") push("Radiographic Examination in lieu of bends (6.18.1.1)",cl.rt,r.rt);
+  if(r.method=="macro") push("Macroetch / Fillet Break",cl.macro,r.macro);
+  var cw=r.result=="Qualified"&&!draft?combinedWith(w,S.recId):null;
+  if(cw) res.push({cells:["Combined with "+cw.pos,{t:"With "+(cw.rec.r.labNo||recNo(cw.rec.w,cw.rec.r))+" ("+cw.pos+", "+pdate(cw.rec.w.date)+"), qualified in all positions for "+procFam(w)+" - "+cw.table,c:3}]});
   // A short remark fits the Remarks column; a longer one gets its own row.
   d.setFontSize(WQ.FS);
   if(r.remarks&&d.getTextWidth(r.remarks)<E-RA-4) res[0].cells[3]=r.remarks;
@@ -2756,20 +3266,23 @@ function wpqrPdf(draft){
   y=ruled(d,{cols:[L,A,E],y:y+18.4,rows:[
     {h:11.1,fill:F,cells:[{t:"Test Conducted By",c:2}]},
     {cells:["Laboratory",[CFG.shop,[CFG.inspector,CFG.cert].filter(Boolean).join(", ")].filter(Boolean).join("   -   ")]},
-    {cells:["Test Number",""]},
+    {cells:["Test Number",r.labNo||r.stdTestNo||""]},
     {cells:["File Number",no]}]});
   d.setFont("helvetica","italic"); d.setFontSize(WQ.FS);
-  var stmt=d.splitTextToSize("We, the undersigned, certify that the statements in this record are correct and that the test welds were prepared, welded, and tested in accordance with the requirements of clause 6 of "+String(code).replace(":"," ")+".", E-79.3);
+  var stmt=d.splitTextToSize("We, the undersigned, certify that the statements in this record are correct and that the test welds were prepared, welded, and tested in accordance with the requirements of "+(isD11(code)?(pipe?"Clauses 6 and 10":"Clause 6")+" of "+codeTitle(code):"clause 6 of "+String(code).replace(":"," "))+".", E-79.3);
   d.text(stmt, 79.3, y+12.3, {lineHeightFactor:1.15});
 
-  // Signatures.
-  var ys=y+12.3+(stmt.length-1)*7.5;
-  d.setFont("helvetica","normal"); d.text(String(employer||""), 79.3, ys+22.7);
-  d.setLineWidth(.5); d.line(L,ys+23.6,262.6,ys+23.6); d.line(R,ys+23.6,504.7,ys+23.6);
-  d.setFont("helvetica","italic"); d.text("Manufacturer or Contractor", 79.3, ys+33.3); d.text("Authorized by", 375.4, ys+33.3);
-  d.setFont("helvetica","normal"); d.text(pdate(today()), 390.2, ys+43.9);
-  d.line(R,ys+44.8,460.4,ys+44.8);
-  d.setFont("helvetica","italic"); d.text("Date", 375.4, ys+54.5);
+  // Signatures. Left: the Contractor certifies (6.20, 6.2.2.2). Right: the
+  // inspector witnessed and verified the test.
+  var ys=y+12.3+(stmt.length-1)*7.5, who=[r.certName,r.certTitle].filter(Boolean).join(", ");
+  d.setLineWidth(.5); d.line(L,ys+23.6,262.6,ys+23.6); d.line(R,ys+23.6,E,ys+23.6);
+  d.setFont("helvetica","italic"); fitText(d,"Certified by - "+(employer||"Contractor")+" (Contractor)",79.3,ys+31.9,262.6-79.3,WQ.FS);
+  fitText(d,"Test witnessed and verified by",375.4,ys+31.9,E-375.4,WQ.FS);
+  d.setFont("helvetica","normal"); fitText(d,[CFG.inspector,CFG.cert].filter(Boolean).join(", "),375.4,ys+40.2,E-375.4,WQ.FS);
+  if(who) fitText(d,who,79.3,ys+51.9,262.6-79.3,WQ.FS);
+  d.text(pdate(today()), 390.2, ys+51.9);
+  d.line(L,ys+52.8,262.6,ys+52.8); d.line(R,ys+52.8,460.4,ys+52.8);
+  d.setFont("helvetica","italic"); d.text("Name and title", 79.3, ys+61.1); d.text("Date", 375.4, ys+61.1);
   d.setFont("helvetica","normal");
   if(draft) watermark(d);
   return d;
@@ -2828,7 +3341,7 @@ function inspectionPdf(i){
   d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
   var rows=[199.4,212.2,225.0,237.8,250.6,263.3];
   var left=[["Project Name:",i.project],["Client:",i.client],["Address:",i.address],["",i.address2],["Contact:",i.clientContact],["",prPhone(i.phone)]];
-  var right=[["Inspector:",i.inspector||CFG.inspector],["",""],["Phone:",prPhone(i.inspectorPhone||CFG.phone)],["",""],["Site Contact:",i.siteContact],["Phone:",prPhone(i.sitePhone)]];
+  var right=[["Inspector:",i.inspector||CFG.inspector],["Inspected:",i.inspDate?shortDate(i.inspDate):""],["Phone:",prPhone(i.inspectorPhone||CFG.phone)],["Role:",roleText(i.role)],["Site Contact:",i.siteContact],["Phone:",prPhone(i.sitePhone)]];
   rows.forEach(function(y,k){
     if(left[k][0]) d.text(left[k][0],152.0,y,{align:"right"}); fitText(d,left[k][1],156.3,y,150,IR.FS);
     if(right[k][0]) d.text(right[k][0],409.4,y,{align:"right"}); fitText(d,right[k][1],413.7,y,110,IR.FS);
@@ -2842,7 +3355,7 @@ function inspectionPdf(i){
   var bk=String(i.code||CFG.code||"AWS D1.1").split(":")[0];
   d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
   var yn=function(y,a,b2,bx,val,yes,no){ d.text("Yes",176.2,y); d.text(no,b2,y); checkBox(d,206.5,y-7.6,val==yes); checkBox(d,bx,y-7.6,val!=""&&val!=null&&val!=yes); };
-  fitText(d,"Finished welds meet the visual inspection acceptance criteria of "+bk+" Table 8.1 (or 10.15 for tubulars)",IR.X,slot(1),R-IR.X-4,IR.FS);
+  fitText(d,"Finished welds meet the visual inspection acceptance criteria of "+bk+" "+visualTable(i),IR.X,slot(1),R-IR.X-4,IR.FS);
   yn(slot(2),0,255.9,283.2,i.meetsVisual,"Yes","No");
   fitText(d,"Welding and workmanship reflect the plans as designated by the engineer / client",IR.X,slot(3),R-IR.X-4,IR.FS);
   yn(slot(4),0,255.9,283.2,i.workmanship,"Yes","No");
@@ -2856,7 +3369,7 @@ function inspectionPdf(i){
 
   // Remarks: five dotted lines on the form, plus the blank one under them.
   // More than that and the lines close up; past eleven they go to page 2.
-  var rem=[]; remarkLines(i).forEach(function(r){ d.splitTextToSize(r,R-IR.X-6).forEach(function(x,n){ rem.push(n?"   "+x:x); }); });
+  var rem=[]; autoRemarks(i).map(function(x){ return "- "+x; }).concat(remarkLines(i)).forEach(function(r){ d.splitTextToSize(r,R-IR.X-6).forEach(function(x,n){ rem.push(n?"   "+x:x); }); });
   var top=lines[9], room=574.3-top, fit=Math.min(rem.length,11), step=Math.min(IR.DOT,room/Math.max(6,fit));
   d.setLineWidth(.61); d.setLineDashPattern([1.22,1.22],0);
   lines.slice(0,10).forEach(function(y){ d.line(77.8,y,525.7,y); });
@@ -2876,10 +3389,25 @@ function inspectionPdf(i){
   d.setLineWidth(.61); d.line(77.8,651.3,525.7,651.3);
   d.setFontSize(7.91); d.text("Signature of Inspector",173,659.7,{align:"center"}); d.text("CWI Number",339.8,659.7,{align:"center"}); d.text("Date",413.7,659.7);
 
+  var y2=0;
   if(rem.length>fit){
     d.addPage(); d.setFont("helvetica","bold"); d.setFontSize(11); d.text("Report "+(i.reportNo||"")+" — remarks, continued",L,72);
     d.setFont("helvetica","normal"); d.setFontSize(IR.FS);
     rem.slice(fit).forEach(function(r,n){ d.text(r,L,94+n*14); });
+    y2=94+(rem.length-fit)*14;
+  }
+  // Each member or joint inspected, with its sizes (8.5.1, 8.5.3, 8.5.4).
+  var mr=memberRows(i);
+  if(mr.length){
+    if(!y2){ d.addPage(); y2=60; }
+    d.setFont("helvetica","bold"); d.setFontSize(11); d.text("Report "+(i.reportNo||"")+" — members and welds inspected",L,y2+12);
+    d.setFont("helvetica","normal");
+    d.autoTable({ startY:y2+20, margin:{left:L,right:PG.w-R}, head:[["Member / location","Weld","Specified size","Measured size","Result"]],
+      body:mr.map(function(m){ return [m.member||"",m.weld||"",m.spec||"",m.meas||"",m.result||""]; }), theme:"grid",
+      styles:{ font:"helvetica", fontSize:8, cellPadding:3, lineColor:0, lineWidth:.5, textColor:0, fillColor:false },
+      headStyles:{ fontStyle:"bold", fillColor:[225,228,231], textColor:0 }, rowPageBreak:"avoid" });
+    var fy=d.lastAutoTable.finalY+14; d.setFontSize(7.5);
+    d.text("Sizes measured with weld gages (8.5.3). Accepted members and joints are identified as listed above (8.5.4). Criteria: "+bk+" "+visualTable(i)+".",L,fy,{maxWidth:R-L});
   }
   return d;
 }
@@ -3009,7 +3537,7 @@ function pqrPdf(p){
     ["Root Opening",dash(groove?p.rootOpening:"")],["Root Face",dash(groove?p.rootFace:"")],["Backing",dash(p.backing)],["Backing Material",dash(p.backing=="With backing"?p.backingMat:"")],["Backgouging",dash(p.backgouge)]]})+PG.gap;
   yl=grid(d,{x:x,w:half,y:yl,col:lab,body:[["Process",dash(p.process+(p.transfer?" — "+p.transfer:""))],["Type",manual],["Position",dash(p.positions)],["Progression",dash(p.progression)]]})+PG.gap;
   yl=grid(d,{x:x,w:half,y:yl,col:lab,head:[{content:"Base Metal",colSpan:2}],body:[
-    ["Base Material",dash(p.base)],["Welded To",dash(p.baseTo||p.base)],["AWS Group No.",dash(METAL_GROUP[p.base]||"")],["Thickness",dash(p.thickRange)],["Diameter",dash(p.diaRange)]]})+PG.gap;
+    ["Base Material",dash(p.base)],["Welded To",dash(p.baseTo||p.base)],["AWS Group No.",dash(metalGroup(p.base,thickMax(p)))],["Thickness",dash(p.thickRange)],["Diameter",dash(p.diaRange)]]})+PG.gap;
   yl=grid(d,{x:x,w:half,y:yl,col:lab,head:[{content:"Filler Metal",colSpan:2}],body:[
     ["AWS Specification",dash(fillerSpecFor(p.filler)||p.fillerSpec)],["Classification",dash(p.filler)],["Electrode Diameter",dash(p.fillerDia)],["Manufacturer",dash(p.fillerMfr)],["Supplemental Filler",dash(p.suppFiller||"None")]]})+PG.gap;
   yr=grid(d,{x:xr,w:half,y:yr,col:lab,head:[{content:"Shielding Gas",colSpan:2}],body:[["Composition",dash(gasProc?p.gas:"N/A")],["Flow Rate",dash(gasProc&&p.flow?p.flow+" cfh":"")],["Nozzle Size",dash(p.nozzle)],["Contact Tube to Work",dash(p.ctwd)]]})+PG.gap;
@@ -3160,15 +3688,15 @@ function wpsPdf(p){
       else { c.cell.styles.fontSize=6; c.cell.styles.lineWidth={top:0,left:.5,right:.5,bottom:.5}; c.cell.styles.cellPadding={top:0,bottom:2,left:3,right:3}; }
     }})+PG.gap;
 
-  var metal=function(k,m){ return [k,dash(m),"—",dash(METAL_GROUP[m]||"")]; };
+  var tmx=thickMax(p), metal=function(k,m){ return [k,dash(m),"—",dash(metalGroup(m,tmx))]; };
   var yl=grid(d,{x:x,w:half,y:y,center:1,head:["Base Metals","Specification","Type or Grade","AWS Group No."],
     body:[metal("Base Material",p.base),metal("Welded To",p.baseTo||p.base),metal("Backing Material",backMat),["Other","—","—","—"]]});
   var tr=function(k,v,pw){ return [k,dash(v),dash(pw)]; };
   var yr=grid(d,{x:xr,w:half,y:y,center:1,head:["Base Metal Thickness","As-Welded","With PWHT"],body:[
-    tr("CJP Groove Welds", cjp?p.thickRange:"", cjp&&p.pwhtTemp?p.thickRange:""),
+    tr("CJP Groove Welds", cjp?p.thickRange:"", cjp&&hasPwht(p)?p.thickRange:""),
     tr("CJP Groove Weld w/CVN", cjp&&p.cvn?p.thickRange:"", ""),
-    tr("PJP Groove Welds", pjp?p.thickRange:"", pjp&&p.pwhtTemp?p.thickRange:""),
-    tr("Fillet Welds", groove?"":p.thickRange, !groove&&p.pwhtTemp?p.thickRange:""),
+    tr("PJP Groove Welds", pjp?p.thickRange:"", pjp&&hasPwht(p)?p.thickRange:""),
+    tr("Fillet Welds", groove?"":p.thickRange, !groove&&hasPwht(p)?p.thickRange:""),
     tr("Diameter (If Applicable)", p.diaRange, "")]});
   y=Math.max(yl,yr)+PG.gap;
 
@@ -3201,10 +3729,12 @@ function wpsPdf(p){
     ["Stringer",boxCell(p.bead=="Stringer"||p.bead=="Either"),"Weave",boxCell(p.bead=="Weave"||p.bead=="Either")],
     ["Peening",{content:dash(p.peening||"None"),colSpan:3}],
     ["Interpass Cleaning",{content:dash(p.cleaning),colSpan:3}]]})+PG.gap;
-  yR=grid(d,{x:xr,w:half,y:yR,col:lab,head:["Preheat Temperature",dash(p.preheat)],body:[["Interpass Temperature",dash(p.interpass)]]})+PG.gap;
+  yR=grid(d,{x:xr,w:half,y:yR,col:lab,head:["Preheat Temperature",dash(p.preheat)],body:[["Preheat Category (Table 5.11)",dash(p.preheatCat)],["Interpass Temperature",dash(p.interpass)]]})+PG.gap;
   y=Math.max(yL,yR);
   if(p.notes) y=grid(d,{x:x,w:W,y:y,bold:[],head:["Notes"],body:[[p.notes]]})+PG.gap;
-  signature(d,y,"",null);
+  // 5.2.1: the Contractor prepares the WPS; the inspector's line is the review.
+  signature(d,y,p.companyId?coName(p.companyId):"","Prepared by — Contractor (5.2.1)","Reviewed by");
+  if(wpsBlocking(p).length) watermark(d);
   return d;
 }
 function currentWps(){ return S.viewWps || S.wps || (S.ticket&&S.ticket.wps) || null; }
@@ -3265,13 +3795,17 @@ document.addEventListener("click", function(e){
     showPdf(invoicePdf(dv), pdfName("Invoice "+dv.no+" "+dv.billName), "Invoice "+dv.no, "", {email:invEmail(dv)}); }
   else if(a=="pdfemail") emailPdf();
   else if(a=="saveinsp"){
-    var di=S.draft;
-    if(!di.project&&!di.client){ var se3=document.getElementById("saveerr"); if(se3) se3.style.display="block"; return; }
+    var di=S.draft, se3=document.getElementById("saveerr");
+    if(!di.project&&!di.client){ if(se3){ se3.textContent="Give the report a project or client name first."; se3.style.display="block"; } return; }
+    var ib=inspChecks(di).filter(function(x){ return x.block; });
+    if(ib.length&&!el.dataset.force){ if(se3){ se3.innerHTML=esc(ib[0].msg)+'<br><button class="mini" data-act="saveinsp" data-force="1" style="padding:6px 0 0">Save it anyway — approval still needed</button>'; se3.style.display="block"; se3.scrollIntoView({block:"center"}); } return; }
     if(!di.id) di.id=uid();
     putRow("inspections", di); back();
   }
   else if(a=="delinsp"){ removeRow("inspections",S.draft.id); S.stack=[]; S.screen="inspections"; render(); }
-  else if(a=="previewinsp"){ if(!needPdf()) return; var di2=S.draft; showPdf(inspectionPdf(di2), pdfName("Inspection "+(di2.reportNo||"")+" "+(di2.project||di2.client||"")), "Report "+(di2.reportNo||"")); }
+  else if(a=="previewinsp"){ if(!needPdf()) return; var di2=S.draft, ic=inspChecks(di2); showPdf(inspectionPdf(di2), pdfName("Inspection "+(di2.reportNo||"")+" "+(di2.project||di2.client||"")), "Report "+(di2.reportNo||""), ic.length?ic[0].msg:""); }
+  else if(a=="inspadd"){ var fk=el.dataset.f, cur2=String(S.draft[fk]||"").trim(); if(cur2.split(/\n+/).indexOf(el.dataset.v)<0) S.draft[fk]=(cur2?cur2+"\n":"")+el.dataset.v; render({keepScroll:true}); }
+  else if(a=="contlog"){ logWelded(el.dataset.key,today()); render({keepScroll:true}); }
   else if(a=="delco"){ removeRow("companies",S.draft.id); S.stack=[]; S.screen="companies"; render(); }
   else if(a=="ticketfor"){ go("newticket",{draft:{companyId:S.coId}}); }
   else if(a=="newwps") go("wpsedit",{draft:{basis:"Prequalified"}});
@@ -3296,8 +3830,15 @@ document.addEventListener("click", function(e){
     toast("New record for the next plate — pick its position.");
   }
   else if(a=="savewps"){
-    var d=S.draft;
-    if(!d.no){ var se2=document.getElementById("saveerr"); if(se2) se2.style.display="block"; return; }
+    var d=S.draft, se2=document.getElementById("saveerr");
+    if(!d.no){ if(se2){ se2.textContent="Give the "+(isPqr(d)?"PQR":"WPS")+" a number first."; se2.style.display="block"; se2.scrollIntoView({block:"center"}); } return; }
+    var blk=wpsBlocking(d);
+    if(blk.length&&!el.dataset.force){
+      if(se2){ se2.innerHTML='<b>Not prequalified as written.</b> '+esc(blk.length==1?blk[0].msg:blk.length+" things in the box at the top break D1.1 Clause 5 or are missing.")
+        +'<br><button class="mini" data-act="savewps" data-force="1" style="padding:6px 0 0">Save it anyway — it prints marked DRAFT</button>';
+        se2.style.display="block"; se2.scrollIntoView({block:"center"}); }
+      return;
+    }
     if(!d.id) d.id=uid();
     if(isPqr(d)){ var wq=wpsById(d.wpsQualId); d.wpsQual=wq?wpsLabel(wq):(d.wpsQual||""); }
     putRow("wps", d); back();
@@ -3335,8 +3876,11 @@ document.addEventListener("click", function(e){
   else if(a=="pdfrec"){
     var open=wpsDiffs(S.w).length&&S.r.wpsAck!=diffSig(wpsDiffs(S.w));
     if(open){ toast("This record is outside its WPS. Fix it, switch WPS, or keep it as tested first.",{bad:1}); var wd=document.getElementById("wpsdiff"); if(wd) wd.scrollIntoView({behavior:"smooth",block:"center"}); return; }
+    var rb=recordChecks(S.w,S.r).filter(function(x){ return x.block; });
+    if(rb.length){ toast(rb[0].msg,{bad:1,ms:8000}); var rc=document.getElementById("reccheck"); if(rc) rc.scrollIntoView({behavior:"smooth",block:"center"}); return; }
     if(!needPdf()) return;
     var final=S.r.verified&&S.r.result;
+    if(final&&!S.r.labNo) S.r.labNo=S.r.stdTestNo||nextLabNo();
     upsertRecord();
     deliverPdf(wpqrPdf(!final), pdfName(recNo(S.w,S.r)));
   }
@@ -3350,13 +3894,14 @@ document.addEventListener("click", function(e){
     if(!needPdf()) return;
     deliverPdf(isPqr(wp)?pqrPdf(wp):wpsPdf(wp), pdfName(wpsBrand(wp).name+" "+docLabel(wp)));
   }
-  else if(a=="previewwps"){ var wp3=currentWps(); if(!wp3||!needPdf()) return; showPdf(isPqr(wp3)?pqrPdf(wp3):wpsPdf(wp3), pdfName(wpsBrand(wp3).name+" "+docLabel(wp3)), docLabel(wp3)); }
+  else if(a=="previewwps"){ var wp3=currentWps(); if(!wp3||!needPdf()) return; showPdf(isPqr(wp3)?pqrPdf(wp3):wpsPdf(wp3), pdfName(wpsBrand(wp3).name+" "+docLabel(wp3)), docLabel(wp3),
+      !isPqr(wp3)&&wpsBlocking(wp3).length?"Marked DRAFT — it isn't prequalified as written. The box at the top of the WPS says why.":""); }
   else if(a=="previewrec"){
     if(!needPdf()) return;
-    var wd=wpsDiffs(S.w), wpsOpen=wd.length&&S.r.wpsAck!=diffSig(wd);
-    var fin=S.r.verified&&S.r.result&&!wpsOpen;
+    var wd=wpsDiffs(S.w), wpsOpen=wd.length&&S.r.wpsAck!=diffSig(wd), rcb=recordChecks(S.w,S.r).filter(function(x){ return x.block; });
+    var fin=S.r.verified&&S.r.result&&!wpsOpen&&!rcb.length;
     showPdf(wpqrPdf(!fin), pdfName(recNo(S.w,S.r)), "WPQR preview",
-      fin?"":wpsOpen?"Marked DRAFT — this record is outside its WPS. Settle that on the record first.":"Marked DRAFT until you verify the ranges and pick a result.");
+      fin?"":rcb.length?"Marked DRAFT — "+rcb[0].msg:wpsOpen?"Marked DRAFT — this record is outside its WPS. Settle that on the record first.":"Marked DRAFT until you verify the ranges and pick a result.");
   }
   else if(a=="pdfsave"){ if(S.pdf&&S.pdf.doc) deliverPdf(S.pdf.doc, S.pdf.name); }
   else if(a=="pdfprint"){ printPdf(el); }
@@ -3565,11 +4110,13 @@ function finishOnboard(){
 
 function pick(v,group){
   if(group=="tpos"){ S.draft.positions=togglePos(S.draft.positions,v); S.draft.position=S.draft.positions[0]||""; render({keepScroll:true}); return; }
-  if(group=="tproc"||group=="wproc"){ S.draft.process=v; render({keepScroll:true}); return; }
+  if(group=="tproc"){ S.draft.process=v; render({keepScroll:true}); return; }
+  if(group=="wproc"){ var setP=function(o){ o.process=v; }; if(wpsGuard(setP)) return; setP(S.draft); render({keepScroll:true}); return; }
   if(group&&group.slice(0,2)=="d:"){
-    var k=group.slice(2); S.draft[k]=(S.draft[k]===v?"":v);
-    if(k=="filler"){ var sp=fillerSpecFor(S.draft.filler); if(sp) S.draft.fillerSpec=sp; }
-    render({keepScroll:true}); return;
+    var k=group.slice(2), nv=(S.draft[k]===v?"":v);
+    var setD=function(o){ o[k]=nv; if(k=="filler"){ var sp=fillerSpecFor(o.filler); if(sp) o.fillerSpec=sp; } };
+    if(nv!==""&&wpsGuard(setD)) return;
+    setD(S.draft); render({keepScroll:true}); return;
   }
   var w=S.w;
   if(group=="w:positions"){ w.positions=togglePos(posList(w),v); w.position=w.positions[0]||""; render({keepScroll:true}); return; }
@@ -3625,8 +4172,22 @@ document.addEventListener("change", function(e){
   if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; logoColor(d).then(function(col){ S.draft.lhLogoColor=col; render({keepScroll:true}); }); }); return; }
   if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
   else if(S.screen=="invedit"&&t.dataset.d=="date") render({keepScroll:true});
-  else if(S.screen=="inspect"&&t.dataset.k&&/^(amps|volts|wfs|flow|thicknessCustom|pipeOD)$/.test(t.dataset.k)){ var wd2=document.getElementById("wpsdiff"); if(wd2) wd2.innerHTML=wpsDiffCard(); }
-  else if(S.screen=="wpsedit"&&t.dataset.d&&/^(amps|volts|wfs|travel|flow|preheat|base|positions|pwhtTemp|filler|fillerDia|gas|angle|rootOpening)$/.test(t.dataset.d)) render({keepScroll:true});
+  else if(S.screen=="inspedit"&&t.dataset.d&&/^(date|inspDate|baseMetal|engApproval)$/.test(t.dataset.d)) render({keepScroll:true});
+  else if(S.screen=="inspect"&&t.dataset.k&&/^(amps|volts|wfs|flow|thicknessCustom|pipeOD)$/.test(t.dataset.k)){ var wd2=document.getElementById("wpsdiff"); if(wd2) wd2.innerHTML=wpsDiffCard(); var rc2=document.getElementById("reccheck"); if(rc2) rc2.innerHTML=recordChecksCard(); }
+  else if(t.dataset.cont&&t.value){ logWelded(t.dataset.cont,t.value); render({keepScroll:true}); }
+  else if(S.screen=="wpsedit"&&t.dataset.d&&!/^(no|rev|title|notes|contact|cvn|pqr|nozzle|ctwd|fillerMfr|suppFiller|heatInput|welder|testedBy|testFile|fillerSpec|date)$/.test(t.dataset.d)){
+    var sn=S.wpsSnap; S.wpsSnap=null; render({keepScroll:true});
+    if(sn&&sn.k==t.dataset.d&&S.draft.basis=="Prequalified"){
+      var fresh=wpsChecks(S.draft).filter(function(x){ return x.k=="rule"&&sn.msgs.indexOf(x.msg)<0; });
+      if(fresh.length) toast("Not prequalified — "+fresh[0].msg,{bad:1,ms:12000,action:"Undo",run:function(){ S.draft[sn.k]=sn.v; render({keepScroll:true}); }});
+    }
+  }
+});
+/* What a WPS field held when it was tapped into, so a typed value that
+   breaks Clause 5 can be undone. */
+document.addEventListener("focusin", function(e){
+  var t=e.target; if(S.screen!="wpsedit"||!t.dataset||!t.dataset.d) return;
+  S.wpsSnap={ k:t.dataset.d, v:S.draft[t.dataset.d], msgs:ruleMsgs(S.draft) };
 });
 /* Shrink a chosen image to a small PNG data URL for the letterhead. */
 function readLogo(file, done){
