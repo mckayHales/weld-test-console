@@ -142,6 +142,13 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .lhead{display:flex;gap:6px;font-size:.7rem;color:var(--muted);margin-bottom:4px;padding:0 2px}
 .lrow{display:flex;gap:6px;margin-bottom:6px;align-items:center}
 .lrow input,.lrow select{padding:8px 6px;font-size:14px;min-width:0;flex:1}
+.invline{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:10px;background:var(--panel2)}
+.invline>textarea{width:100%;font-size:15px;padding:9px 10px;min-height:0;height:auto;resize:vertical;line-height:1.35}
+.lmini{display:flex;flex-direction:column;gap:3px;font-size:.72rem;color:var(--muted);flex:1;min-width:0}
+.lmini input{width:100%}
+.lamt{flex:1.2;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;align-self:flex-end;padding-bottom:9px}
+.rates{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.rates input{padding:9px 8px;font-size:15px}
 .pdfframe{width:100%;height:calc(100vh - 230px);height:calc(100dvh - 230px);min-height:420px;border:1px solid var(--line);border-radius:8px;background:#fff}
 /* The PDF preview: every page drawn to the screen's width, whole page in
    view; zoom widens the pages and the box scrolls both ways. */
@@ -178,7 +185,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-21.16";
+var VERSION="2026-11-22.1";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -282,7 +289,7 @@ function token(){ var a=new Uint8Array(12); (window.crypto||window.msCrypto).get
 function standalone(){ return !!(navigator.standalone || (window.matchMedia&&matchMedia("(display-mode: standalone)").matches)); }
 
 /* ---------- settings ---------- */
-var CFG = Object.assign({ shop:"", city:"", address:"", phone:"", logo:"", inspector:"", cert:"", code:"AWS D1.1:2025" }, db.get("cfg",{}));
+var CFG = Object.assign({ shop:"", city:"", address:"", phone:"", email:"", logo:"", inspector:"", cert:"", code:"AWS D1.1:2025", terms:"Net 30", payTo:"" }, db.get("cfg",{}));
 /* The editions the app knows. The clause numbers on the printed WPQR
    come from CLAUSES, keyed by the year in this string. */
 var EDITIONS=["AWS D1.1:2020","AWS D1.1:2025","AWS D1.3:2018","AWS D1.4:2018"];
@@ -391,7 +398,7 @@ function wpsCopyFor(p,c){
 function wpsBrand(p){ if(p.brand) return p.brand; var c=companyById(p.companyId); return c ? companyBrand(c) : orgBrand(); }
 function hexRgb(h){ var m=/^#?([0-9a-f]{6})$/i.exec(h||""); if(!m) return hexRgb(BRAND_RED); var n=parseInt(m[1],16); return [n>>16&255,n>>8&255,n&255]; }
 
-var TABLES=["companies","wps","records","inspections"];
+var TABLES=["companies","wps","records","inspections","invoices"];
 function putRow(table,obj){
   var all=db.get(table,[]), i=-1;
   for(var k=0;k<all.length;k++) if(all[k].id==obj.id) i=k;
@@ -405,7 +412,7 @@ function delRow(table,id){
   db.set(table, db.get(table,[]).filter(function(x){return x.id!=id}));
 }
 /* Delete with an Undo in the toast instead of an "are you sure". */
-var NOUNS={ records:"Record", companies:"Company", wps:"Procedure", inspections:"Report" };
+var NOUNS={ records:"Record", companies:"Company", wps:"Procedure", inspections:"Report", invoices:"Invoice" };
 function removeRow(table,id){
   var all=db.get(table,[]), at=-1;
   for(var i=0;i<all.length;i++) if(all[i].id==id) at=i;
@@ -473,6 +480,7 @@ function mIcon(k){
     wps:'<path d="M7 3h8l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v6h6M9 13h6M9 17h4"/>',
     inbox:'<path d="M4 13h5l1 3h4l1-3h5"/><path d="M5 5h14l2 8v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5z"/>',
     eye:'<path d="M2 12s3.8-6 10-6 10 6 10 6-3.8 6-10 6-10-6-10-6z"/><circle cx="12" cy="12" r="2.6"/>',
+    money:'<rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.6"/><path d="M6.5 9.5v5M17.5 9.5v5"/>',
     gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/>' }[k]||"";
   return '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#7FB8FF" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">'+p+'</svg>';
 }
@@ -522,7 +530,8 @@ var STATE_NAMES={alabama:"AL",alaska:"AK",arizona:"AZ",arkansas:"AR",california:
 var ADDR={
   a:  { line:"address", cityLine:"city" },    // settings: the shop's letterhead
   lha:{ line:"lhAddress" },                    // a client's letterhead
-  ja: { street:"address", line2:"address2" }   // an inspection report's job site
+  ja: { street:"address", line2:"address2" },  // an inspection report's job site
+  ba: { line:"billAddress" }                   // a company's mailing address, and an invoice's bill-to
 };
 function cityStateZip(c,st,z){ return [c,[st,z].filter(Boolean).join(" ")].filter(Boolean).join(", "); }
 /* Best-effort split of "1680 W 1600 S - Springville Utah 84663" or
@@ -687,6 +696,133 @@ function coName(id){ var c=companies().filter(function(x){return x.id==id})[0]; 
 function wpsById(id){ return wpsAll().filter(function(p){return p.id==id})[0]; }
 function wpsOnly(){ return wpsAll().filter(function(p){return p.kind!="PQR"}); }
 function inspections(){ return db.get("inspections",[]).slice().sort(function(a,b){return (b.date||"").localeCompare(a.date||"")}); }
+/* ---------- invoices ----------
+   Bill a company for the work: pick them and the bill-to fills from the
+   company; tap what you did (each service remembers the last rate you
+   charged); finished tests on file for them can be added a line each.
+   Saved on the phone like everything else; the PDF goes out by email
+   from the share sheet. */
+var SERVICES=[
+  {k:"bendpass", label:"Bend test — qualified", desc:"Welder qualification test — bend test, qualified"},
+  {k:"bendfail", label:"Bend test — failed", desc:"Welder qualification test — bend test, not qualified"},
+  {k:"visual", label:"Visual test", desc:"Visual examination of test coupon"},
+  {k:"onsite", label:"On-site inspection", desc:"On-site visual weld inspection"},
+  {k:"wps", label:"WPS", desc:"Welding procedure specification (WPS)"},
+  {k:"pqr", label:"PQR", desc:"Procedure qualification record (PQR)"},
+  {k:"retest", label:"Retest", desc:"Welder qualification retest"},
+  {k:"travel", label:"Travel", desc:"Travel / mileage"},
+  {k:"other", label:"Other", desc:""}];
+var TERMS=[{v:"Due on receipt"},{v:"Net 15"},{v:"Net 30"},{v:"Net 45"}];
+function svcBy(k){ return SERVICES.filter(function(s){ return s.k==k; })[0]; }
+function invoices(){ return db.get("invoices",[]).slice().sort(function(a,b){ return (b.date||"").localeCompare(a.date||"") || (b.no||"").localeCompare(a.no||""); }); }
+function nextInvoiceNo(){
+  var y=String(new Date().getFullYear()), top=0;
+  invoices().forEach(function(v){ var m=String(v.no||"").match(/^(\d{4})-(\d+)$/); if(m&&m[1]==y) top=Math.max(top,+m[2]); });
+  var n=top+1; return y+"-"+(n<10?"00":n<100?"0":"")+n;
+}
+function num(v){ var n=parseFloat(String(v==null?"":v).replace(/[$,\s]/g,"")); return isNaN(n)?0:n; }
+function money(n){ var neg=n<0, s=Math.abs(Math.round(n*100)/100).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,","); return (neg?"-$":"$")+s; }
+function lineQty(ln){ return ln.qty===undefined||ln.qty===null||String(ln.qty).trim()==="" ? 1 : num(ln.qty); }
+function lineAmt(ln){ return Math.round(lineQty(ln)*num(ln.rate)*100)/100; }
+function invTotals(v){
+  var sub=0; (v.lines||[]).forEach(function(ln){ sub+=lineAmt(ln); });
+  sub=Math.round(sub*100)/100;
+  var tax=Math.round(sub*num(v.taxRate))/100;
+  return { sub:sub, tax:tax, total:Math.round((sub+tax)*100)/100 };
+}
+function dueDate(v){
+  var m=String(v.terms||"").match(/(\d+)/); if(!m||!v.date) return v.date||"";
+  var p=v.date.split("-"), d=new Date(+p[0],+p[1]-1,+p[2]); d.setDate(d.getDate()+(+m[1])); return ymd(d);
+}
+function invStatus(v){
+  if(v.status=="Paid") return {t:"Paid",c:"ok"};
+  if(dueDate(v)&&dueDate(v)<today()) return {t:"Overdue",c:"no"};
+  return {t:"Unpaid",c:"wait"};
+}
+function blankInvoice(coId){
+  var v={ no:nextInvoiceNo(), date:today(), terms:CFG.terms||"Net 30", status:"Unpaid", paidDate:"", coId:"", billName:"", billContact:"", billEmail:"",
+    billPhone:"", billAddress:"", project:"", lines:[], taxRate:"", notes:"" };
+  if(coId) fillBillTo(v,companyById(coId));
+  return v;
+}
+/* The bill-to block from a company: their mailing address, else the
+   one on their letterhead. */
+function fillBillTo(v,c){
+  if(!c) return;
+  v.coId=c.id; v.billName=c.name||""; v.billContact=c.contact||""; v.billEmail=c.email||""; v.billPhone=fmtPhone(c.phone||c.lhPhone||"");
+  v.billAddress=c.billAddress||c.lhAddress||"";
+  ["Init","Street","City","State","Zip"].forEach(function(k){ delete v["ba"+k]; });
+}
+/* Finished tests for a company that are on no invoice yet. */
+function billedRecIds(skipId){
+  var ids={}; invoices().forEach(function(v){ if(v.id!=skipId) (v.lines||[]).forEach(function(ln){ if(ln.recId) ids[ln.recId]=v.no||1; }); }); return ids;
+}
+function unbilledRecs(v){
+  if(!v.coId) return [];
+  var ids=billedRecIds(v.id); (v.lines||[]).forEach(function(ln){ if(ln.recId) ids[ln.recId]=1; });
+  return recsFor(v.coId).filter(function(r){ return r.r.result&&!ids[r.id]; })
+    .sort(function(a,b){ return (a.w.date||"").localeCompare(b.w.date||""); });
+}
+function recLine(r){
+  var ok=r.r.result=="Qualified", vis=!ok&&r.r.visual=="Fail", k=ok?"bendpass":vis?"visual":"bendfail";
+  var what=ok?"qualified":vis?"failed visual":"not qualified";
+  var desc="Welder qualification test — "+[r.w.name||"welder", [r.w.position,r.w.process].filter(Boolean).join(" ")].filter(Boolean).join(", ")
+    +(r.w.date?", "+fmtDate(r.w.date):"")+" — "+what;
+  return { svc:k, desc:desc, qty:"1", rate:CFG["rate_"+k]||"", recId:r.id };
+}
+function invAddLine(k){
+  var s=svcBy(k)||{}; (S.draft.lines=S.draft.lines||[]).push({ svc:k, desc:s.desc||"", qty:"1", rate:CFG["rate_"+k]||"" });
+}
+/* Totals change as you type, without redrawing the form under your thumb. */
+function invRefresh(){
+  var v=S.draft; (v.lines||[]).forEach(function(ln,i){ var el=document.getElementById("amt"+i); if(el) el.textContent=money(lineAmt(ln)); });
+  var t=document.getElementById("invtot"); if(t) t.innerHTML=invTotalsHtml(v);
+}
+function invTotalsHtml(v){
+  var t=invTotals(v);
+  return '<dl class="kv" style="grid-template-columns:1fr auto">'
+    +(t.tax?'<dt>Subtotal</dt><dd style="text-align:right">'+money(t.sub)+'</dd><dt>Tax '+esc(v.taxRate)+'%</dt><dd style="text-align:right">'+money(t.tax)+'</dd>':'')
+    +'<dt style="color:var(--paper);font-weight:600">Total</dt><dd style="text-align:right;font-weight:700;font-size:1.1rem">'+money(t.total)+'</dd></dl>';
+}
+function owed(){ var n=0, c=0; invoices().forEach(function(v){ if(v.status!="Paid"){ n+=invTotals(v).total; c++; } }); return {total:n,count:c}; }
+function invRow(v,noCo){
+  var st=invStatus(v);
+  return swipe("invoices",v.id,'<button class="sub" data-inv="'+esc(v.id)+'"><span style="flex:1"><b>'+esc(noCo?"Invoice "+v.no:(v.billName||"No company"))+'</b>'
+    +'<span>'+esc([noCo?"":v.no, fmtDate(v.date), money(invTotals(v).total)].filter(Boolean).join(" · "))+'</span></span>'
+    +'<span class="pill '+st.c+'">'+esc(st.t)+'</span></button>');
+}
+/* What the email says over the PDF. */
+function invEmail(v){
+  var t=invTotals(v), first=String(v.billContact||"").trim().split(/\s+/)[0];
+  var due=v.terms=="Due on receipt"?"due on receipt":"due "+fmtDate(dueDate(v));
+  return { to:v.billEmail||"", subject:"Invoice "+v.no+" from "+(CFG.shop||CFG.inspector||""),
+    body:(first?"Hi "+first+",":"Hello,")+"\n\nAttached is invoice "+v.no+" for "+money(t.total)+", "+due+"."
+      +(CFG.payTo?"\n\n"+CFG.payTo:"")+"\n\nThank you,\n"+[CFG.inspector,CFG.shop,prPhone(CFG.phone)].filter(Boolean).join("\n") };
+}
+/* Save the invoice on screen. Returns false (and says why) when it
+   isn't ready. The rate on each line becomes that service's rate next
+   time; a company missing an email or address gets the one typed here. */
+function saveInvoice(strict){
+  var v=S.draft, err=document.getElementById("saveerr");
+  function no(m){ if(err){ err.textContent=m; err.style.display="block"; err.scrollIntoView({block:"center"}); } return false; }
+  if(!v.billName) return no("Who is it for? Pick a company or type their name.");
+  if(strict&&!(v.lines||[]).length) return no("Add at least one line — tap what you did.");
+  if(!v.no) v.no=nextInvoiceNo();
+  if(v.status=="Paid"&&!v.paidDate) v.paidDate=today();
+  if(!v.id) v.id=uid();
+  var cfgChanged=false;
+  (v.lines||[]).forEach(function(ln){ if(ln.svc&&ln.svc!="other"&&String(ln.rate||"").trim()&&CFG["rate_"+ln.svc]!==ln.rate){ CFG["rate_"+ln.svc]=ln.rate; cfgChanged=true; } });
+  if(cfgChanged) saveCfg();
+  var c=companyById(v.coId);
+  if(c&&((!c.email&&v.billEmail)||(!c.billAddress&&!c.lhAddress&&v.billAddress)||(!c.contact&&v.billContact))){
+    if(!c.email&&v.billEmail) c.email=v.billEmail;
+    if(!c.billAddress&&!c.lhAddress&&v.billAddress) c.billAddress=v.billAddress;
+    if(!c.contact&&v.billContact) c.contact=v.billContact;
+    putRow("companies",c);
+  }
+  putRow("invoices",JSON.parse(JSON.stringify(v)));
+  return true;
+}
 function nextReportNo(){
   var y=String(new Date().getFullYear()), n=inspections().filter(function(i){return (i.reportNo||"").indexOf(y)==0}).length+1;
   return y+"-"+(n<10?"00":n<100?"0":"")+n;
@@ -932,6 +1068,7 @@ VIEWS.home = function(){
     + mi("inbox","Test records", recs.length ? (pending? pending+" waiting on results" : recs.length+" on file") : "Empty — tap to load sample data","records")
     + mi("company","Companies","Who you've qualified, and their welders","companies")
     + mi("inbox","Inspection reports",(inspections().length?inspections().length+" report"+(inspections().length==1?"":"s")+" on file":"Job-site visual inspections"),"inspections")
+    + mi("money","Invoices",(function(){ var o=owed(); return o.count ? money(o.total)+" owed on "+o.count+" invoice"+(o.count==1?"":"s") : (invoices().length?invoices().length+" on file, all paid":"Bill a company for the work"); })(),"invoices")
     + mi("wps","Procedures",wpsOnly().length+" WPS"+(pqrAll().length?", "+pqrAll().length+" PQR"+(pqrAll().length==1?"":"s"):"")+" on file","wpslist")
     + '<button class="mi" data-act="previewwelder"><span class="ic">'+mIcon("eye")+'</span>'
     + '<span><b>Welder\'s view</b><span>Open the intake form the way they see it</span></span><span class="go">'+CHEV+'</span></button>'
@@ -1130,6 +1267,63 @@ VIEWS.inspedit = function(){
   return { body:h, bar:b };
 };
 
+/* ---------- invoices ---------- */
+VIEWS.invoices = function(){
+  var list=invoices(), o=owed();
+  var h=nav("Invoices");
+  if(o.count) h+='<div class="card"><dl class="kv"><dt>Owed to you</dt><dd style="font-weight:700">'+money(o.total)+'</dd><dt>Unpaid</dt><dd>'+o.count+' invoice'+(o.count==1?"":"s")+'</dd></dl></div>';
+  if(!list.length) h+='<div class="empty">No invoices yet.<br>Pick a company, tap what you did, and email them the PDF.</div>';
+  list.forEach(function(v){ h+=invRow(v); });
+  if(list.length) h+='<p class="foot">Swipe an invoice left to delete it.</p>';
+  return { body:h, bar:'<button class="primary" data-act="newinv">New invoice</button>' };
+};
+VIEWS.invedit = function(){
+  var d=S.draft, cs=companies();
+  var h=nav(d.id?"Invoice "+(d.no||""):"New invoice", '<button data-act="previewinv">Preview</button>');
+  h+='<div class="card"><h3>Invoice</h3>'
+    +'<div class="row">'+dfield("Invoice number","no","text","")+'<div class="field"><label>Date</label><input type="date" data-d="date" value="'+esc(d.date||"")+'"></div></div>'
+    +'<div class="field" style="margin:0"><label>Terms'+(d.terms&&d.terms!="Due on receipt"?' — due '+esc(fmtDate(dueDate(d))):'')+'</label>'+dtiles("terms",TERMS)+'</div></div>';
+  h+='<div class="card"><h3>Bill to</h3>'
+    +(cs.length?'<div class="field"><label>Company</label><select id="invco"><option value="">— Pick a company to fill this in —</option>'
+      +cs.map(function(c){ return '<option value="'+esc(c.id)+'" '+(d.coId==c.id?"selected":"")+'>'+esc(c.name)+'</option>'; }).join("")+'</select></div>':'')
+    +dfield("Company name","billName","text","Who pays")
+    +'<div class="row">'+dfield("Contact","billContact","text","Name")+dfield("Phone","billPhone","tel","")+'</div>'
+    +'<div class="field"><label>Email — where the invoice goes</label><input type="email" inputmode="email" autocapitalize="off" data-d="billEmail" value="'+esc(d.billEmail||"")+'" placeholder="billing@company.com"></div>'
+    +addrFields("ba","Mailing address")
+    +'<div class="field" style="margin:0"><label>Job or PO number, if they want one on it</label><input type="text" data-d="project" value="'+esc(d.project||"")+'"></div></div>';
+  h+='<div class="card"><h3>What you did</h3>'
+    +'<p style="margin:-4px 0 10px;font-size:.84rem;color:var(--muted)">Tap to add a line. Each one starts at the last rate you charged for it.</p>'
+    +'<div class="tiles" style="margin-bottom:14px">'+SERVICES.map(function(s){ return '<button class="tile" type="button" data-act="invadd" data-svc="'+s.k+'"><span>'+esc(s.label)+'</span>'
+      +(CFG["rate_"+s.k]?'<small>'+esc(money(num(CFG["rate_"+s.k])))+'</small>':'')+'</button>'; }).join("")+'</div>';
+  (d.lines||[]).forEach(function(ln,i){
+    h+='<div class="invline"><textarea rows="2" data-li="lines:'+i+':desc" placeholder="Description" aria-label="Description">'+esc(ln.desc||"")+'</textarea>'
+      +'<div class="lrow" style="margin:6px 0 0"><label class="lmini">Qty<input type="text" inputmode="decimal" data-li="lines:'+i+':qty" value="'+esc(ln.qty==null?"1":ln.qty)+'"></label>'
+      +'<label class="lmini">Rate $<input type="text" inputmode="decimal" data-li="lines:'+i+':rate" value="'+esc(ln.rate||"")+'" placeholder="0.00"></label>'
+      +'<span class="lamt" id="amt'+i+'">'+money(lineAmt(ln))+'</span>'
+      +'<button class="mini" data-act="delli" data-li="lines:'+i+'" aria-label="Remove line" style="width:28px;text-decoration:none">✕</button></div></div>';
+  });
+  if(!(d.lines||[]).length) h+='<p style="margin:0 0 12px;font-size:.9rem;color:var(--muted)">No lines yet.</p>';
+  h+='<div class="row" style="align-items:flex-end;margin-top:6px"><div class="field" style="margin:0;flex:0 0 96px"><label>Tax %</label><input type="text" inputmode="decimal" data-d="taxRate" value="'+esc(d.taxRate||"")+'" placeholder="None"></div>'
+    +'<div id="invtot" style="flex:1">'+invTotalsHtml(d)+'</div></div></div>';
+  var un=unbilledRecs(d);
+  if(un.length){
+    h+='<div class="card"><h3 style="display:flex;justify-content:space-between;align-items:center">Their tests not billed yet'
+      +(un.length>1?' <button class="mini" data-act="invrecall" style="padding:0">Add all '+un.length+'</button>':'')+'</h3>';
+    un.forEach(function(r){
+      h+='<button class="sub" data-act="invrec" data-rec-id="'+esc(r.id)+'"><span style="flex:1"><b>'+esc(r.w.name||"Unnamed")+'</b>'
+        +'<span>'+esc([fmtDate(r.w.date),r.w.position,r.w.process].filter(Boolean).join(" · "))+'</span></span>'+pill(r.status)+'<span class="go" style="font-size:1.3rem">+</span></button>';
+    });
+    h+='</div>';
+  }
+  h+='<div class="card"><h3>Note on the invoice</h3><textarea data-d="notes" placeholder="Optional — anything they should know">'+esc(d.notes||"")+'</textarea>'
+    +(CFG.payTo?'':'<p style="margin:8px 0 0;font-size:.82rem;color:var(--muted)">How to pay you (checks, Venmo, card) prints on every invoice once you set it in <button class="mini" data-act="settings" style="padding:0">Settings</button>.</p>')+'</div>';
+  h+='<div class="card"><h3>Paid?</h3>'+dtiles("status",[{v:"Unpaid"},{v:"Paid"}])
+    +(d.status=="Paid"?'<div class="field" style="margin:12px 0 0"><label>Paid on</label><input type="date" data-d="paidDate" value="'+esc(d.paidDate||today())+'"></div>':'')+'</div>';
+  h+='<p id="saveerr" class="err" style="display:none"></p>';
+  if(d.id) h+='<p class="foot"><button class="mini" data-act="delinv">Delete this invoice</button></p>';
+  return { body:h, bar:'<button class="ghost" data-act="saveinv">Save</button><button class="primary" data-act="previewinv">Preview and email</button>' };
+};
+
 VIEWS.companies = function(){
   var cs=companies();
   var h = nav("Companies");
@@ -1150,7 +1344,8 @@ VIEWS.company = function(){
   var h = nav(c.name);
   h += '<div class="card"><h3>'+esc(c.name)+'</h3><dl class="kv">'
     + (c.contact?'<dt>Contact</dt><dd>'+esc(c.contact)+'</dd>':'')
-    + (c.phone?'<dt>Phone</dt><dd>'+esc(c.phone)+'</dd>':'')
+    + (c.phone?'<dt>Phone</dt><dd>'+esc(prPhone(c.phone))+'</dd>':'')
+    + (c.email?'<dt>Email</dt><dd>'+esc(c.email)+'</dd>':'')
     + '<dt>Tests</dt><dd>'+rs.length+'</dd></dl>'
     + '<p style="margin:12px 0 0"><button class="mini" data-act="editco">Edit</button></p></div>';
   h += '<div class="card"><h3>Welders</h3>';
@@ -1165,6 +1360,11 @@ VIEWS.company = function(){
       + '<span>'+esc([p.title,p.process].filter(Boolean).join(" · "))+'</span></span><span class="go">'+CHEV+'</span></button>');
   });
   h += '<button class="mini" data-act="wpsforco">+ Give them a WPS from your library</button> &nbsp; <button class="mini" data-act="newwpsco">+ Start a blank one</button></div>';
+  var bills=invoices().filter(function(v){ return v.coId==c.id; });
+  h += '<div class="card"><h3>Invoices</h3>';
+  if(!bills.length) h += '<p style="margin:0 0 10px;color:var(--muted);font-size:.9rem">None yet.</p>';
+  bills.forEach(function(v){ h += invRow(v,1); });
+  h += '<button class="mini" data-act="newinvco">+ New invoice for '+esc(c.name)+'</button></div>';
   return { body:h, bar:'<button class="primary" data-act="ticketfor">New ticket for '+esc(c.name)+'</button>' };
 };
 
@@ -1199,6 +1399,8 @@ VIEWS.editco = function(){
   h += '<div class="field"><label>Company name <span class="req">*</span></label><input type="text" data-d="name" value="'+esc(d.name||"")+'"></div>'
     + '<div class="field"><label>Contact</label><input type="text" data-d="contact" value="'+esc(d.contact||"")+'"></div>'
     + '<div class="field"><label>Phone</label><input type="tel" autocomplete="tel" data-d="phone" value="'+esc(prPhone(d.phone))+'" placeholder="801-555-0142"></div>'
+    + '<div class="field"><label>Email — invoices go here</label><input type="email" inputmode="email" autocapitalize="off" data-d="email" value="'+esc(d.email||"")+'" placeholder="billing@company.com"></div>'
+    + addrFields("ba","Mailing address")
     + '<div class="field"><label>Notes</label><textarea data-d="notes">'+esc(d.notes||"")+'</textarea></div>';
   h += '<div class="card"><h3>Their letterhead</h3>'
     + '<p style="margin:0 0 12px;font-size:.86rem;color:var(--muted)">Some clients want their records in their own binder under their own name. Set that up here; the certification block still says who tested.</p>'
@@ -1636,6 +1838,7 @@ VIEWS.pdfview = function(){
   var v=S.pdf||{}, z=v.zoom||1;
   var h=nav(v.title||"Preview");
   if(v.note) h+='<div class="flag" style="margin-bottom:10px"><b>'+esc(v.note)+'</b></div>';
+  if(v.email) h+='<button class="primary" data-act="pdfemail" style="width:100%;margin-bottom:12px">Email it'+(v.email.to?' to '+esc(v.email.to):'')+'</button>';
   h+='<div class="pdfzoom">'+[[1,"Whole page"],[1.6,"Zoom"],[2.4,"Zoom more"]].map(function(o){
       return '<button type="button" data-act="pdfzoom" data-z="'+o[0]+'" aria-pressed="'+(z==o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>';
   h+='<div class="pdfpages" id="pdfpages"><div class="empty" style="color:#dde">Drawing the page…</div></div>';
@@ -1741,9 +1944,9 @@ function drawPdfPages(){
     box.innerHTML='<iframe class="pdfframe" src="'+esc(v.url)+'#view=FitH" title="PDF preview"></iframe>';
   });
 }
-function showPdf(doc,name,title,note){
+function showPdf(doc,name,title,note,extra){
   var url=URL.createObjectURL(doc.output("blob"));
-  go("pdfview",{ pdf:{ doc:doc, name:name, url:url, title:title, note:note, pages:doc.internal.getNumberOfPages() } });
+  go("pdfview",{ pdf:Object.assign({ doc:doc, name:name, url:url, title:title, note:note, pages:doc.internal.getNumberOfPages() }, extra||{}) });
 }
 function needPdf(){
   if(pdfReady()) return true;
@@ -2189,12 +2392,18 @@ VIEWS.settings = function(){
     +'<div class="field"><label>Inspection company</label><input type="text" data-c="shop" value="'+esc(c.shop)+'"></div>'
     +addrFields("a","Address, for the letterhead")
     +'<div class="field"><label>Phone</label><input type="tel" autocomplete="tel" data-c="phone" value="'+esc(c.phone)+'" placeholder="801-555-0142"></div>'
+    +'<div class="field"><label>Email, on your invoices</label><input type="email" inputmode="email" autocapitalize="off" data-c="email" value="'+esc(c.email||"")+'" placeholder="you@yourcompany.com"></div>'
     +'<div class="field"><label>Logo, top-left of the letterhead</label>'
     +(c.logo?'<div style="display:flex;align-items:center;gap:14px;margin-bottom:8px"><img src="'+c.logo+'" alt="" style="height:64px;background:#fff;border-radius:6px;padding:4px"><button class="mini" data-act="clearlogo">Remove</button></div>':'')
     +'<input type="file" id="logofile" accept="image/*" style="font-size:14px"></div>'
     +'<div class="field"><label>Inspector</label><input type="text" data-c="inspector" value="'+esc(c.inspector)+'"></div>'
     +'<div class="field"><label>Certification line on the signature block</label><input type="text" data-c="cert" value="'+esc(c.cert)+'" placeholder="AWS CWI #12345678"></div>'
     +'<div class="field"><label>Code edition — the book you verify against; it sets the clause numbers on the WPQR</label>'+editionSelect('data-c="code"', c.code)+'</div>';
+  h+='<div class="card"><h3>Invoices</h3>'
+    +'<div class="field"><label>Terms on a new invoice</label><select data-c="terms">'+TERMS.map(function(t){ return '<option '+((c.terms||"Net 30")==t.v?"selected":"")+'>'+t.v+'</option>'; }).join("")+'</select></div>'
+    +'<div class="field"><label>How to pay you — prints on every invoice</label><textarea data-c="payTo" placeholder="Make checks payable to '+esc(c.shop||"your company")+'&#10;Venmo @yourname · Zelle '+esc(prPhone(c.phone)||"801-555-0142")+'">'+esc(c.payTo||"")+'</textarea></div>'
+    +'<label style="font-size:.9rem;color:#C6D2DB">Your rates — an invoice line starts here, and the last rate you charge becomes the new one</label>'
+    +'<div class="rates">'+SERVICES.filter(function(x){ return x.k!="other"; }).map(function(x){ return '<label class="lmini">'+esc(x.label)+'<input type="text" inputmode="decimal" data-c="rate_'+x.k+'" value="'+esc(c["rate_"+x.k]||"")+'" placeholder="$"></label>'; }).join("")+'</div></div>';
   h+='<div class="card"><h3>Testing</h3>'
     +'<p style="margin:0 0 12px;font-size:.88rem;color:var(--muted)">Three made-up welders and two companies, so you can walk the record screen without waiting on a real test.</p>'
     +(hasDemo()
@@ -2207,7 +2416,7 @@ VIEWS.settings = function(){
     +'<button class="mini" data-act="export">Export everything</button> &nbsp; <button class="mini" data-act="import">Import a backup</button></div>';
   return { body:h, bar:'<button class="primary" data-act="savecfg">Save settings</button>' };
 };
-function backupData(){ return { app:"weld-sync", saved:new Date().toISOString(), cfg:CFG, keys:keyRing(), companies:companies(), wps:wpsAll(), records:records(), inspections:db.get("inspections",[]) }; }
+function backupData(){ return { app:"weld-sync", saved:new Date().toISOString(), cfg:CFG, keys:keyRing(), companies:companies(), wps:wpsAll(), records:records(), inspections:db.get("inspections",[]), invoices:db.get("invoices",[]) }; }
 VIEWS.exported = function(){
   var blob = enc(backupData());
   var h = nav("Backup");
@@ -2675,6 +2884,107 @@ function inspectionPdf(i){
   return d;
 }
 
+/* ---- the invoice ----
+   Letter, portrait, on the inspection company's letterhead: who it's
+   from top-left, INVOICE and its number/dates top-right, bill-to, the
+   lines, totals, and how to pay. A paid invoice says PAID by the total. */
+function addrTwo(s){
+  var p=parseAddress(s||""); if(!p.Street&&!p.City) return s?[String(s)]:[];
+  return [p.Street, cityStateZip(p.City,p.State,p.Zip)].filter(Boolean);
+}
+function invoicePdf(v){
+  var d=pdfDoc(), b=orgBrand(), L=48, R=PG.w-48, W=R-L, y=50, t=invTotals(v), INK=[40,46,52], SOFT=[110,118,126];
+  var rgb=hexRgb(b.color);
+  // From: logo, name, address, phone, email.
+  var tx=L, logoH=0;
+  if(b.logo){ try{ var pr=d.getImageProperties(b.logo), lh=58, lw=lh*pr.width/pr.height; if(lw>110){ lw=110; lh=lw*pr.height/pr.width; }
+    d.addImage(b.logo,"PNG",L,y-6,lw,lh); tx=L+lw+12; logoH=lh; }catch(e){} }
+  d.setFont("helvetica","bold"); d.setFontSize(14); d.setTextColor(rgb[0],rgb[1],rgb[2]);
+  fitText(d,b.name||CFG.inspector||"",tx,y+8,R-200-tx,14);
+  d.setFont("helvetica","normal"); d.setFontSize(9); d.setTextColor(INK[0],INK[1],INK[2]);
+  var from=addrTwo(CFG.address||CFG.city).concat([prPhone(CFG.phone), CFG.email]).filter(Boolean), fy=y+21;
+  from.forEach(function(s){ d.text(String(s),tx,fy); fy+=11.5; });
+  // INVOICE and its numbers.
+  d.setFont("helvetica","bold"); d.setFontSize(24); d.setTextColor(INK[0],INK[1],INK[2]); d.text("INVOICE",R,y+12,{align:"right"});
+  var meta=[["Invoice No.",v.no],["Date",fmtDate(v.date)],["Terms",v.terms],["Due",v.terms=="Due on receipt"?"On receipt":fmtDate(dueDate(v))]];
+  if(v.project) meta.push(["Job / PO",v.project]);
+  var my=y+30; d.setFontSize(9);
+  meta.forEach(function(m){ if(!m[1]) return; d.setFont("helvetica","normal"); d.setTextColor(SOFT[0],SOFT[1],SOFT[2]); d.text(m[0],R-92,my,{align:"right"});
+    d.setTextColor(INK[0],INK[1],INK[2]); d.setFont("helvetica","bold"); fitText(d,String(m[1]),R,my,84,9,{align:"right"}); my+=12.5; });
+  y=Math.max(fy,my,y-6+logoH)+14;
+  d.setDrawColor(200); d.setLineWidth(.8); d.line(L,y,R,y); y+=20;
+
+  // Bill to.
+  d.setFont("helvetica","bold"); d.setFontSize(8); d.setTextColor(SOFT[0],SOFT[1],SOFT[2]); d.text("BILL TO",L,y);
+  y+=14; d.setTextColor(INK[0],INK[1],INK[2]); d.setFontSize(11.5); fitText(d,v.billName||"",L,y,W*.6,11.5); y+=13;
+  d.setFont("helvetica","normal"); d.setFontSize(9);
+  [v.billContact?"Attn: "+v.billContact:""].concat(addrTwo(v.billAddress),[prPhone(v.billPhone),v.billEmail]).filter(Boolean)
+    .forEach(function(s){ d.text(String(s),L,y); y+=11.5; });
+  y+=14;
+
+  // The lines.
+  var body=(v.lines||[]).map(function(ln){ var q=lineQty(ln); return [String(ln.desc||""), String(+q.toFixed(2)), money(num(ln.rate)), money(lineAmt(ln))]; });
+  d.autoTable({ startY:y, margin:{left:L,right:PG.w-R,top:48,bottom:60}, tableWidth:W, head:[["Description","Qty","Rate","Amount"]], body:body, theme:"plain", rowPageBreak:"avoid", showHead:"everyPage",
+    styles:{ font:"helvetica", fontSize:9.5, textColor:INK, cellPadding:{top:7,bottom:7,left:8,right:8}, overflow:"linebreak", valign:"top" },
+    headStyles:{ fillColor:INK, textColor:255, fontStyle:"bold", fontSize:8.5 },
+    columnStyles:{ 1:{cellWidth:44,halign:"right"}, 2:{cellWidth:78,halign:"right"}, 3:{cellWidth:86,halign:"right"} },
+    didParseCell:function(c){ if(c.section=="head"&&c.column.index>0) c.cell.styles.halign="right"; },
+    didDrawCell:function(c){ if(c.section=="body"){ d.setDrawColor(222); d.setLineWidth(.6); d.line(c.cell.x,c.cell.y+c.cell.height,c.cell.x+c.cell.width,c.cell.y+c.cell.height); } } });
+  y=d.lastAutoTable.finalY+14;
+  var notes=d.splitTextToSize(String(v.notes||""),W*.55), pay=d.splitTextToSize(String(CFG.payTo||""),W*.55);
+  var need=70+Math.max(0,(notes.length+pay.length)*11.5+(notes.length?18:0)+(pay.length?18:0)-50);
+  if(y+need>PG.h-60){ d.addPage(); y=60; }
+
+  // Totals, right.
+  var tx1=R-170, ty=y;
+  function trow(label,val,bold,size){ d.setFont("helvetica",bold?"bold":"normal"); d.setFontSize(size||9.5); d.setTextColor(bold?INK[0]:SOFT[0],bold?INK[1]:SOFT[1],bold?INK[2]:SOFT[2]);
+    d.text(label,tx1,ty); d.setTextColor(INK[0],INK[1],INK[2]); d.text(val,R-8,ty,{align:"right"}); ty+=16; }
+  if(t.tax){ trow("Subtotal",money(t.sub)); trow("Tax ("+v.taxRate+"%)",money(t.tax)); }
+  trow("Total",money(t.total),true);
+  if(v.status=="Paid") trow("Paid"+(v.paidDate?" "+fmtDate(v.paidDate):""),"-"+money(t.total));
+  d.setDrawColor(INK[0],INK[1],INK[2]); d.setLineWidth(1); d.line(tx1,ty-8,R,ty-8); ty+=6;
+  trow("Balance due",money(v.status=="Paid"?0:t.total),true,12);
+  if(v.status=="Paid"){
+    d.setTextColor(30,130,76); d.setDrawColor(30,130,76); d.setLineWidth(2);
+    d.roundedRect(tx1-118,y-14,92,34,4,4,"S"); d.setFont("helvetica","bold"); d.setFontSize(20); d.text("PAID",tx1-72,y+10,{align:"center"});
+  }
+
+  // Note and how to pay, left.
+  var ly=y; d.setTextColor(INK[0],INK[1],INK[2]);
+  function block(title,lines){ if(!lines.length||!lines.join("").trim()) return;
+    d.setFont("helvetica","bold"); d.setFontSize(8); d.setTextColor(SOFT[0],SOFT[1],SOFT[2]); d.text(title,L,ly); ly+=12;
+    d.setFont("helvetica","normal"); d.setFontSize(9); d.setTextColor(INK[0],INK[1],INK[2]); lines.forEach(function(s){ d.text(s,L,ly); ly+=11.5; }); ly+=8; }
+  if(v.status=="Paid") ly=Math.max(ly,y+36);
+  block("HOW TO PAY",pay); block("NOTE",notes);
+
+  // Footer.
+  d.setFont("helvetica","normal"); d.setFontSize(8.5); d.setTextColor(SOFT[0],SOFT[1],SOFT[2]);
+  var foot="Thank you for your business."+(CFG.inspector?"  ·  "+CFG.inspector+(CFG.cert?", "+CFG.cert:""):"");
+  var n=d.internal.getNumberOfPages();
+  for(var i=1;i<=n;i++){ d.setPage(i); d.setDrawColor(222); d.setLineWidth(.6); d.line(L,PG.h-50,R,PG.h-50); d.text(foot,PG.w/2,PG.h-36,{align:"center"}); }
+  d.setTextColor(0);
+  return d;
+}
+/* Email the PDF on screen. A phone has no way to hand Mail an attachment
+   and a To address at once, so the share sheet carries the PDF and the
+   message, and their address is put on the clipboard to paste in To.
+   A computer downloads the PDF and opens a new email to attach it to. */
+function emailPdf(){
+  var v=S.pdf; if(!v||!v.doc||!v.email) return;
+  var m=v.email, blob=v.doc.output("blob"), file=null;
+  try{ file=new File([blob],v.name||"invoice.pdf",{type:"application/pdf"}); }catch(e){}
+  if(m.to) copy(m.to);
+  if(isPhone()&&file&&navigator.canShare&&navigator.canShare({files:[file]})){
+    toast(m.to?"Pick Mail. Their address is copied — paste it in To.":"Pick Mail in the menu.",{sticky:1,action:"OK",run:function(){}});
+    navigator.share({files:[file],title:m.subject,text:m.body}).catch(function(){});
+    return;
+  }
+  var url=URL.createObjectURL(blob), a=document.createElement("a"); a.href=url; a.download=v.name||"invoice.pdf"; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(function(){ URL.revokeObjectURL(url); },120000);
+  setTimeout(function(){ location.href="mailto:"+encodeURIComponent(m.to||"")+"?subject="+encodeURIComponent(m.subject)+"&body="+encodeURIComponent(m.body+"\n\n(Invoice PDF attached.)"); },300);
+  toast("The PDF downloaded — attach it to the email that opens.",{sticky:1,action:"OK",run:function(){}});
+}
+
 /* ---- the PQR: the procedure as run, then what the coupons did ---- */
 function pqrPdf(p){
   var code=p.code||CFG.code, groove=(p.weldType||"CJP groove")!="Fillet";
@@ -2909,6 +3219,7 @@ document.addEventListener("click", function(e){
   if(el.dataset.go){ go(el.dataset.go); return; }
   if(el.dataset.rec){ openRecord(el.dataset.rec); return; }
   if(el.dataset.co){ go("company",{coId:el.dataset.co}); return; }
+  if(el.dataset.inv){ var iv=getRow("invoices",el.dataset.inv); if(iv) go("invedit",{draft:JSON.parse(JSON.stringify(iv))}); return; }
   if(el.dataset.insp){ var ins=inspections().filter(function(x){return x.id==el.dataset.insp})[0]; if(ins) go("inspedit",{draft:JSON.parse(JSON.stringify(ins))}); return; }
   if(el.dataset.wps){ var p=wpsAll().filter(function(x){return x.id==el.dataset.wps})[0]; go("wpsedit",{draft:Object.assign({},p)}); return; }
   if(el.dataset.pick!==undefined){ pick(el.dataset.pick, el.dataset.group); return; }
@@ -2942,6 +3253,17 @@ document.addEventListener("click", function(e){
     putRow("companies", d); back();
   }
   else if(a=="newinsp") go("inspedit",{draft:blankInspection()});
+  else if(a=="newinv") go("invedit",{draft:blankInvoice()});
+  else if(a=="newinvco") go("invedit",{draft:blankInvoice(S.coId)});
+  else if(a=="invadd"){ invAddLine(el.dataset.svc); render({keepScroll:true});
+    var li=app.querySelectorAll(".invline"), last=li[li.length-1]; if(last){ var inp=last.querySelector(el.dataset.svc=="other"?'[data-li$=":desc"]':'[data-li$=":rate"]'); if(inp&&(el.dataset.svc=="other"||!inp.value)) try{ inp.focus({preventScroll:true}); }catch(e){} last.scrollIntoView({block:"nearest"}); } }
+  else if(a=="invrec"){ var rr=getRow("records",el.dataset.recId); if(rr){ (S.draft.lines=S.draft.lines||[]).push(recLine(rr)); render({keepScroll:true}); } }
+  else if(a=="invrecall"){ unbilledRecs(S.draft).forEach(function(r){ S.draft.lines.push(recLine(r)); }); render({keepScroll:true}); }
+  else if(a=="saveinv"){ if(saveInvoice(false)){ toast("Invoice "+S.draft.no+" saved."); back(); } }
+  else if(a=="delinv"){ removeRow("invoices",S.draft.id); back(); }
+  else if(a=="previewinv"){ if(!needPdf()) return; if(!saveInvoice(true)) return; var dv=S.draft;
+    showPdf(invoicePdf(dv), pdfName("Invoice "+dv.no+" "+dv.billName), "Invoice "+dv.no, "", {email:invEmail(dv)}); }
+  else if(a=="pdfemail") emailPdf();
   else if(a=="saveinsp"){
     var di=S.draft;
     if(!di.project&&!di.client){ var se3=document.getElementById("saveerr"); if(se3) se3.style.display="block"; return; }
@@ -3283,8 +3605,8 @@ function onField(e){
   if(t.dataset.ad){ var ap=t.dataset.ad.split(":"); S.draft[ap[0]+ap[1]]=t.value; addrCompose(ap[0]); return; }
   if(t.dataset.k){ coupled(t.dataset.k, t.value); autosave(); if(t.dataset.k=="wfs"||t.dataset.k=="amps") showAmps(); if(S.screen=="intake"&&lastStep()) render({keepScroll:true}); else if(t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
   else if(t.dataset.r){ S.r[t.dataset.r]=(t.type=="checkbox")?t.checked:t.value; autosave(); if(t.type=="checkbox"||t.tagName=="SELECT") render({keepScroll:true}); else refreshBar(); }
-  else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); }
-  else if(t.dataset.li){ var lp=t.dataset.li.split(":"); var arr=S.draft[lp[0]]||(S.draft[lp[0]]=[]); (arr[+lp[1]]||(arr[+lp[1]]={}))[lp[2]]=t.value; }
+  else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); else if(S.screen=="invedit"&&t.dataset.d=="taxRate") invRefresh(); }
+  else if(t.dataset.li){ var lp=t.dataset.li.split(":"); var arr=S.draft[lp[0]]||(S.draft[lp[0]]=[]); (arr[+lp[1]]||(arr[+lp[1]]={}))[lp[2]]=t.value; if(S.screen=="invedit") invRefresh(); }
   else if(t.dataset.c){ S.draft[t.dataset.c]=t.value; }
 }
 /* Safari on iOS fires only "change" for select and checkbox, never "input" */
@@ -3297,10 +3619,12 @@ document.addEventListener("input", function(e){
 document.addEventListener("change", function(e){
   var t=e.target;
   if(t.id=="inspco"){ var ic=getRow("companies",t.value); if(ic){ S.draft.clientCoId=ic.id; S.draft.client=ic.name; if(ic.contact) S.draft.clientContact=ic.contact; if(ic.phone) S.draft.phone=fmtPhone(ic.phone); render({keepScroll:true}); } return; }
+  if(t.id=="invco"){ var vc=getRow("companies",t.value); if(vc) fillBillTo(S.draft,vc); else S.draft.coId=""; render({keepScroll:true}); return; }
   if(t.id=="logofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; render({keepScroll:true}); }); return; }
   if(t.id=="impfile"&&t.files&&t.files[0]){ var fr=new FileReader(); fr.onload=function(){ if(!importBackup(readBackup(fr.result))) document.getElementById("imperr").style.display="block"; }; fr.readAsText(t.files[0]); return; }
   if(t.id=="cologofile"&&t.files&&t.files[0]){ readLogo(t.files[0], function(d){ S.draft.logo=d; logoColor(d).then(function(col){ S.draft.lhLogoColor=col; render({keepScroll:true}); }); }); return; }
   if(t.tagName=="SELECT"||t.type=="checkbox") onField(e);
+  else if(S.screen=="invedit"&&t.dataset.d=="date") render({keepScroll:true});
   else if(S.screen=="inspect"&&t.dataset.k&&/^(amps|volts|wfs|flow|thicknessCustom|pipeOD)$/.test(t.dataset.k)){ var wd2=document.getElementById("wpsdiff"); if(wd2) wd2.innerHTML=wpsDiffCard(); }
   else if(S.screen=="wpsedit"&&t.dataset.d&&/^(amps|volts|wfs|travel|flow|preheat|base|positions|pwhtTemp|filler|fillerDia|gas|angle|rootOpening)$/.test(t.dataset.d)) render({keepScroll:true});
 });

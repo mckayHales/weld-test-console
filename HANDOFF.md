@@ -469,6 +469,31 @@ variables — read off the machine by the inspector while witnessing, on the rec
 
 Everything on the welder's side after the name field is tap-only.
 
+### Invoices
+
+Home → **Invoices** (also on each company's screen). Table `invoices`, in backups like
+the rest. An invoice: `no` (`YYYY-NNN`, next after the year's highest), `date`, `terms`
+(Due on receipt / Net 15/30/45; `dueDate()` is computed, never stored), `status`
+(Unpaid / Paid + `paidDate`), bill-to (`coId`, `billName`, `billContact`, `billEmail`,
+`billPhone`, `billAddress` via address prefix `ba`), `project` (job/PO), `lines`
+(`{svc, desc, qty, rate, recId?}`), `taxRate` (%), `notes`.
+
+- Picking a company runs `fillBillTo()`: contact, email, phone, and the company's mailing
+  address (`billAddress`, new on the company form with `email`), else its letterhead address.
+  Saving an invoice fills a company's missing email/address/contact from it.
+- `SERVICES` are the tap-to-add lines. Each starts at `CFG.rate_<svc>`; saving an invoice
+  stores each line's rate back as that service's rate (Settings → Invoices shows them).
+- "Their tests not billed yet": finished records for the company on no other invoice
+  (`unbilledRecs()`, keyed by `recId` on lines). `recLine()` writes the welder, position,
+  process, date and result into the line and picks the service from the result.
+- `invoicePdf()` is its own layout (not a form copy): shop letterhead from Settings
+  (logo, name, address, phone, `CFG.email`), INVOICE block, bill-to, lines (autotable,
+  rows never split), totals, PAID box when paid, `CFG.payTo` as "How to pay", note, footer.
+- Preview and email saves first. The preview gets an **Email it** button (`emailPdf()`):
+  on a phone the share sheet with the PDF plus subject/body (`invEmail()`), and the client's
+  address is copied to paste in To — iOS can't give Mail a recipient and an attachment at
+  once. On a computer the PDF downloads and a `mailto:` opens.
+
 ---
 
 ## 6. Gotchas, all learned the hard way
