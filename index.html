@@ -18,6 +18,7 @@
   --ink:#16212B; --panel:#1E2B36; --panel2:#263644; --line:#3A4C5C;
   --paper:#E9ECEE; --muted:#93A5B3; --arc:#7FB8FF; --gold:#D8A527;
   --slag:#C0533A; --ok:#57A773; --r:10px;
+  --bar:#5896DC;   /* chart bars: arc blue a step deeper, so it doesn't glare on the dark cards */
   --sans:"Helvetica Neue",Helvetica,Arial,system-ui,sans-serif;
 }
 *{box-sizing:border-box}
@@ -152,6 +153,53 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 .lamt{flex:1.2;text-align:right;font-weight:600;font-variant-numeric:tabular-nums;align-self:flex-end;padding-bottom:9px}
 .rates{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
 .rates input{padding:9px 8px;font-size:15px}
+/* Invoices | Earnings, and the Earnings tab */
+.seg.tabs{margin:0 0 14px}
+.seg.tabs button{flex:1;padding:10px 8px;font-size:.92rem}
+.seg.tabs button[aria-pressed=true]{background:var(--arc);border-color:var(--arc)}
+.seg.per{margin:22px 0 12px}
+.seg.per button{flex:1;padding:8px 4px;font-size:.84rem}
+.seg.per button[aria-pressed=true]{color:var(--arc);border-color:var(--arc);font-weight:600}
+.kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:0 0 14px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;min-width:0}
+.kpi .kl{display:block;font-size:.8rem;color:var(--muted)}
+.kpi b{display:block;font-size:1.45rem;font-weight:650;letter-spacing:-.01em;margin:2px 0}
+.kpi .kd{display:block;font-size:.76rem;color:var(--muted);line-height:1.3}
+.kd .up{color:var(--ok)}.kd .dn{color:var(--slag)}
+.etake{margin:-4px 0 12px;font-size:.9rem;color:#C6D2DB;line-height:1.45}
+.enote{margin:4px 0 0;font-size:.82rem;color:var(--muted);line-height:1.45}
+.elabel{margin:16px 0 8px;font-size:.72rem;letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.sub .eright{flex:none;text-align:right;font-weight:600;font-size:.98rem;color:var(--paper);font-variant-numeric:tabular-nums}
+.sub .eright small{display:block;font-weight:400;font-size:.72rem;color:var(--muted)}
+.elist>.erow:first-child{border-top:0;padding-top:2px}
+.erow{display:block;width:100%;text-align:left;background:none;border:0;border-top:1px solid var(--line);color:var(--paper);font:inherit;padding:12px 0}
+button.erow{cursor:pointer}
+.etop{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.etop b{font-weight:600;font-size:.98rem;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.etop .eamt{flex:none;font-weight:600;font-variant-numeric:tabular-nums}
+.ebar{height:8px;margin:8px 0 6px}
+.ebar i{display:block;height:100%;background:var(--bar);border-radius:0 4px 4px 0;min-width:2px}
+.esub{display:flex;flex-wrap:wrap;justify-content:space-between;column-gap:12px;font-size:.82rem;color:var(--muted)}
+.esub span:last-child{margin-left:auto}
+.hrsbox{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.mplot{position:relative;height:140px;margin:10px 0 0 48px}
+.mgrid{position:absolute;left:0;right:0;height:0;border-top:1px solid var(--line);font-style:normal}
+.mgrid span{position:absolute;right:calc(100% + 6px);top:-.6em;font-size:.7rem;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mcols{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;align-items:flex-end;gap:2px}
+.mcol{flex:1;height:100%;min-width:0;display:flex;align-items:flex-end;justify-content:center;background:none;border:0;padding:0;cursor:pointer}
+.mcol i{display:block;width:min(24px,70%);background:var(--bar);border-radius:4px 4px 0 0}
+.mcol:hover i,.mcol:focus-visible i,.mcol[aria-pressed=true] i{background:var(--arc)}
+.mmax{position:absolute;transform:translate(-50%,-4px);font-style:normal;font-size:.72rem;color:var(--paper);white-space:nowrap;pointer-events:none}
+.mmax.l{transform:translate(-20%,-4px)}.mmax.r{transform:translate(-80%,-4px)}
+.mtip{position:absolute;z-index:2;transform:translate(-50%,-100%);background:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;font-size:.78rem;white-space:nowrap;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.35)}
+.mtip b{display:block;font-size:.95rem;font-weight:650}
+.mtip span{display:block;color:var(--muted)}
+.mx{display:flex;gap:2px;margin:6px 0 4px 48px}
+.mx span{flex:1;min-width:0;text-align:center;font-size:.7rem;color:var(--muted);white-space:nowrap}
+.mtable{width:100%;border-collapse:collapse;font-size:.86rem;margin-top:6px;font-variant-numeric:tabular-nums}
+.mtable th,.mtable td{padding:6px 4px;border-top:1px solid var(--line);text-align:right}
+.mtable th:first-child,.mtable td:first-child{text-align:left}
+.mtable th{color:var(--muted);font-weight:500;border-top:0}
 .pdfframe{width:100%;height:calc(100vh - 230px);height:calc(100dvh - 230px);min-height:420px;border:1px solid var(--line);border-radius:8px;background:#fff}
 /* The PDF preview: every page drawn to the screen's width, whole page in
    view; zoom widens the pages and the box scrolls both ways. */
@@ -188,7 +236,7 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-22.2";
+var VERSION="2026-11-23.1";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -943,6 +991,278 @@ function saveInvoice(strict){
   putRow("invoices",JSON.parse(JSON.stringify(v)));
   return true;
 }
+
+/* ---------- earnings ----------
+   The second tab on Invoices: where the money comes from, to show what's
+   worth the inspector's time. Billed counts an invoice on its date and
+   before tax; collected counts it on the day it was paid. "Waiting on
+   you" is right now and ignores the period: overdue invoices, finished
+   tests on no invoice (only since the first invoice kept here — earlier
+   tests were billed some other way), regulars who've gone quiet, and
+   welders about to lapse. Per hour comes from how long the inspector
+   says one of each job takes (CFG.hrs_<svc>); nothing is timed. */
+/* byQty: a line's quantity counts the things done (3 tests); otherwise
+   each line is one (a visit billed by the hour, a trip billed by the mile). */
+var EARN_GROUPS=[
+  {k:"tests", label:"Welder tests", low:"welder tests", one:"test", many:"tests", byQty:1, svcs:["bendpass","bendfail","visual","retest"]},
+  {k:"onsite", label:"On-site inspection", low:"on-site inspection", one:"visit", many:"visits", svcs:["onsite"]},
+  {k:"wps", label:"WPS", low:"WPSs", one:"WPS", many:"WPSs", byQty:1, svcs:["wps"]},
+  {k:"pqr", label:"PQR", low:"PQRs", one:"PQR", many:"PQRs", byQty:1, svcs:["pqr"]},
+  {k:"travel", label:"Travel", low:"travel", one:"trip", many:"trips", svcs:["travel"]},
+  {k:"other", label:"Other", low:"other work", one:"item", many:"items", svcs:[]}];
+function earnGroup(svc){ for(var i=0;i<EARN_GROUPS.length-1;i++) if(EARN_GROUPS[i].svcs.indexOf(svc)>-1) return EARN_GROUPS[i]; return EARN_GROUPS[EARN_GROUPS.length-1]; }
+var EARN_PERIODS=[{k:"90d",label:"90 days"},{k:"ytd",label:"This year"},{k:"12m",label:"12 months"},{k:"all",label:"All"}];
+var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+function parseYmd(s){ var p=String(s||"").split("-"); return p.length==3 ? new Date(+p[0],+p[1]-1,+p[2]) : null; }
+function daysBetween(a,b){ var A=parseYmd(a), B=parseYmd(b); return A&&B ? Math.round((B-A)/864e5) : NaN; }
+function addDays(s,n){ var d=parseYmd(s); if(!d) return ""; d.setDate(d.getDate()+n); return ymd(d); }
+function median(a){ if(!a.length) return NaN; var s=a.slice().sort(function(x,y){ return x-y; }), m=s.length>>1; return s.length%2 ? s[m] : (s[m-1]+s[m])/2; }
+function money0(n){ return money(Math.round(n)).replace(/\.00$/,""); }
+function pct(a,b){ if(!(b>0)) return ""; var p=Math.round(a/b*100); return p==0&&a>0 ? "<1%" : p+"%"; }
+function fmtShort(s){ var p=String(s||"").split("-"); return p.length==3 ? p[1]+"/"+p[2]+"/"+p[0].slice(2) : String(s||""); }
+function plural(n,one,many){ return n+" "+(n==1?one:many); }
+function howOften(d){ return d<14 ? "every ~"+Math.max(1,Math.round(d))+" days" : d<60 ? "every ~"+Math.round(d/7)+" weeks" : "every ~"+Math.round(d/30)+" months"; }
+function howLong(d){ return d<91 ? Math.round(d/7)+" weeks" : Math.round(d/30)+" months"; }
+function monthName(ym){ return MON[+ym.slice(5,7)-1]+" "+ym.slice(0,4); }
+/* The stretch the numbers cover, and the one before it to compare with. */
+function earnPeriod(k){
+  var t=today(), P={ k:k, from:"", to:t, during:"all time" };
+  if(k=="90d"){ P.from=addDays(t,-89); P.prevTo=addDays(P.from,-1); P.prevFrom=addDays(P.from,-90); P.vs="vs the 90 days before"; P.during="in the last 90 days"; }
+  else if(k=="ytd"){ P.from=t.slice(0,4)+"-01-01"; P.prevFrom=(+t.slice(0,4)-1)+"-01-01"; P.prevTo=addMonths(t,-12); P.vs="vs this time last year"; P.during="this year"; }
+  else if(k=="12m"){ P.from=addMonths(t.slice(0,8)+"01",-11); P.prevFrom=addMonths(P.from,-12); P.prevTo=addMonths(t,-12); P.vs="vs the same months a year before"; P.during="in the last 12 months"; }
+  return P;
+}
+function inPer(d,P){ return !!d && (!P.from||d>=P.from) && d<=P.to; }
+function earnStats(P){
+  var all=invoices(), cos={}, M={ P:P, billed:0, n:0, collected:0, prev:0, first:"", days:[], svc:{}, co:{}, taxed:false };
+  companies().forEach(function(c){ cos[c.id]=c; });
+  all.forEach(function(v){
+    var t=invTotals(v);
+    if(v.date&&(!M.first||v.date<M.first)) M.first=v.date;
+    if(v.status=="Paid"&&inPer(v.paidDate,P)) M.collected+=t.sub;
+    if(P.prevFrom&&v.date>=P.prevFrom&&v.date<=P.prevTo) M.prev+=t.sub;
+    if(!inPer(v.date,P)) return;
+    M.billed+=t.sub; M.n++; if(t.tax) M.taxed=true;
+    (v.lines||[]).forEach(function(ln){
+      var g=earnGroup(ln.svc), o=M.svc[g.k]||(M.svc[g.k]={ g:g, amt:0, qty:0, lines:0, hrs:0, hrsAmt:0 });
+      var a=lineAmt(ln), q=lineQty(ln), hr=num(CFG["hrs_"+ln.svc]);
+      o.amt+=a; o.qty+=q; o.lines++;
+      if(hr>0&&q>0&&g.k!="travel"&&g.k!="other"){ o.hrs+=q*hr; o.hrsAmt+=a; }
+    });
+    var c0=cos[v.coId], key=c0 ? c0.id : "n:"+String(v.billName||"").trim().toLowerCase();
+    var c=M.co[key]||(M.co[key]={ coId:c0?c0.id:"", name:c0?c0.name:(v.billName||"No company"), amt:0, n:0, days:[], last:"" });
+    c.amt+=t.sub; c.n++; if(v.date>c.last) c.last=v.date;
+    if(v.status=="Paid"&&v.paidDate){ var dd=daysBetween(v.date,v.paidDate); if(dd>=0){ M.days.push(dd); c.days.push(dd); } }
+  });
+  function ranked(o){ return Object.keys(o).map(function(k){ return o[k]; }).filter(function(x){ return x.amt>0; }).sort(function(a,b){ return b.amt-a.amt; }); }
+  M.svcList=ranked(M.svc); M.coList=ranked(M.co);
+  M.months=earnMonths(P,all);
+  return M;
+}
+/* Each month in the stretch (the last 24 at most), billed and collected. */
+function earnMonths(P,all){
+  var first=P.from;
+  if(!first){ all.forEach(function(v){ if(v.date&&(!first||v.date<first)) first=v.date; }); first=first||P.to; }
+  var y=+first.slice(0,4), m=+first.slice(5,7), end=P.to.slice(0,7), out=[], by={};
+  for(var i=0;i<1200;i++){ var ym=y+"-"+(m<10?"0":"")+m; out.push(ym); if(ym>=end) break; if(++m>12){ m=1; y++; } }
+  out=out.slice(-24);
+  out.forEach(function(ym){ by[ym]={ ym:ym, billed:0, n:0, collected:0 }; });
+  all.forEach(function(v){
+    var b=inPer(v.date,P)&&by[v.date.slice(0,7)], c=v.status=="Paid"&&inPer(v.paidDate,P)&&by[v.paidDate.slice(0,7)];
+    if(!b&&!c) return;
+    var t=invTotals(v); if(b){ b.billed+=t.sub; b.n++; } if(c) c.collected+=t.sub;
+  });
+  return out.map(function(ym){ return by[ym]; });
+}
+/* Finished tests on no invoice, by company, priced at today's rates. */
+function earnUnbilled(){
+  var from=""; invoices().forEach(function(v){ if(v.date&&(!from||v.date<from)) from=v.date; });
+  var out={ from:from, groups:[], noRate:0 }; if(!from) return out;
+  var billed=billedRecIds(), cos={}, by={}; companies().forEach(function(c){ cos[c.id]=c; });
+  records().forEach(function(r){
+    var cid=r.w.companyId; if(!cid||!cos[cid]||!r.r.result||billed[r.id]||(r.w.date||"")<from) return;
+    var g=by[cid]||(by[cid]={ coId:cid, name:cos[cid].name, recs:[], est:0 });
+    g.recs.push(r); var rate=num(recLine(r).rate); if(rate>0) g.est+=rate; else out.noRate++;
+  });
+  out.groups=Object.keys(by).map(function(k){ return by[k]; }).sort(function(a,b){ return b.est-a.est||b.recs.length-a.recs.length; });
+  return out;
+}
+/* Companies that used to come back regularly and haven't lately. Work is
+   counted by the week (a crew tested over three days is one visit). */
+function earnQuiet(){
+  var t=today(), yr=addMonths(t,-12), by={};
+  companies().forEach(function(c){ by[c.id]={ id:c.id, name:c.name, weeks:{}, last:"", year:0 }; });
+  function hit(id,d){ var c=by[id], p=parseYmd(d); if(!c||!p||isNaN(p)||d>t) return; p.setDate(p.getDate()-(p.getDay()+6)%7); c.weeks[ymd(p)]=1; if(d>c.last) c.last=d; }
+  records().forEach(function(r){ hit(r.w.companyId,r.w.date); });
+  // An invoice for tests is the same visit as the tests; other invoices are the only trace of the work.
+  invoices().forEach(function(v){ if(!(v.lines||[]).some(function(ln){ return ln.recId; })) hit(v.coId,v.date);
+    if(by[v.coId]&&v.date>=yr&&v.date<=t) by[v.coId].year+=invTotals(v).sub; });
+  db.get("inspections",[]).forEach(function(i){ hit(i.clientCoId,i.inspDate||i.date); });
+  return Object.keys(by).map(function(k){ var c=by[k], w=Object.keys(c.weeks).sort();
+    if(w.length<3) return null;
+    var gaps=[]; for(var i=1;i<w.length;i++) gaps.push(daysBetween(w[i-1],w[i]));
+    c.gap=median(gaps); c.since=daysBetween(c.last,t); c.visits=w.length;
+    return daysBetween(w[0],w[w.length-1])>=30&&c.since>=30&&c.since>=2*c.gap ? c : null;
+  }).filter(Boolean).sort(function(a,b){ return b.year-a.year||b.visits-a.visits; });
+}
+/* Welders about to lapse (6.2.3.1), or lapsed in the last two months, by company. */
+function earnLapsing(){
+  var t=today(), soon=addMonths(t,1), lately=addMonths(t,-2), by={};
+  continuity().forEach(function(g){
+    var o=by[g.company]||(by[g.company]={ company:g.company, soon:{}, gone:{}, by:"" });
+    if(!g.lapsed&&g.until&&g.until<=soon){ o.soon[g.name]=1; if(g.until>o.by) o.by=g.until; }
+    else if(g.lapsed&&g.until>=lately) o.gone[g.name]=1;
+  });
+  return Object.keys(by).map(function(k){ var o=by[k]; o.nSoon=Object.keys(o.soon).length; o.nGone=Object.keys(o.gone).length; return o; })
+    .filter(function(o){ return o.nSoon||o.nGone; }).sort(function(a,b){ return (b.nSoon+b.nGone)-(a.nSoon+a.nGone); });
+}
+function invTabs(on){
+  return '<div class="seg tabs">'+[["invoices","Invoices"],["money","Earnings"]].map(function(t){
+    return '<button data-act="invtab" data-tab="'+t[0]+'" aria-pressed="'+(on==t[0])+'">'+t[1]+'</button>'; }).join("")+'</div>';
+}
+function earnWaiting(anyInv){
+  var parts=[], late=invoices().filter(function(v){ return invStatus(v).t=="Overdue"; }).sort(function(a,b){ return dueDate(a).localeCompare(dueDate(b)); });
+  if(late.length){
+    var lh='<p class="elabel">Overdue</p>';
+    late.slice(0,3).forEach(function(v){ var d=daysBetween(dueDate(v),today());
+      lh+='<button class="sub" data-inv="'+esc(v.id)+'"><span style="flex:1;min-width:0"><b>'+esc(v.billName||"No company")+'</b><span>Invoice '+esc(v.no)+' · '+plural(d,"day","days")+' late</span></span>'
+        +'<span class="eright">'+money0(invTotals(v).total)+'</span></button>'; });
+    if(late.length>3) lh+='<button class="mini" data-act="invtab" data-tab="invoices">'+(late.length-3)+' more overdue</button>';
+    parts.push(lh);
+  }
+  var un=earnUnbilled();
+  if(un.groups.length){
+    var uh='<p class="elabel">Finished, not billed</p>';
+    un.groups.slice(0,4).forEach(function(g){
+      uh+='<button class="sub" data-act="moneybill" data-co-id="'+esc(g.coId)+'"><span style="flex:1;min-width:0"><b>'+esc(g.name)+'</b><span>'+plural(g.recs.length,"finished test","finished tests")+' · tap to start the invoice</span></span>'
+        +'<span class="eright">'+(g.est?"~"+money0(g.est):"")+'</span></button>'; });
+    if(un.groups.length>4) uh+='<p class="enote">'+plural(un.groups.length-4,"more company has","more companies have")+' tests to bill.</p>';
+    uh+='<p class="enote">Tests since your first invoice here, '+esc(fmtDate(un.from))+', at your current rates.'
+      +(un.noRate?' '+plural(un.noRate,"test has","tests have")+' no rate set, so '+(un.noRate==1?"it isn't":"they aren't")+' in the estimate.':'')+'</p>';
+    parts.push(uh);
+  }
+  var q=earnQuiet();
+  if(q.length){
+    var qh='<p class="elabel">Regulars gone quiet</p>';
+    q.slice(0,3).forEach(function(c){
+      qh+='<button class="sub" data-co="'+esc(c.id)+'"><span style="flex:1;min-width:0"><b>'+esc(c.name)+'</b><span>Usually '+howOften(c.gap)+' · nothing for '+howLong(c.since)+'</span></span>'
+        +(c.year?'<span class="eright">'+money0(c.year)+'<small>last 12 months</small></span>':'<span class="go">'+CHEV+'</span>')+'</button>'; });
+    parts.push(qh);
+  }
+  var lp=earnLapsing();
+  if(lp.length){
+    var ph='<p class="elabel">Welders lapsing — a reason to call</p>';
+    lp.slice(0,3).forEach(function(o){
+      var what=[o.nSoon?plural(o.nSoon,"welder lapses","welders lapse")+" by "+fmtDate(o.by):"", o.nGone?plural(o.nGone,"welder","welders")+" lapsed lately":""].filter(Boolean).join(" · ");
+      ph+='<button class="sub" data-go="welders"><span style="flex:1;min-width:0"><b>'+esc(o.company||"No company")+'</b><span>'+esc(what)+'</span></span><span class="go">'+CHEV+'</span></button>'; });
+    parts.push(ph);
+  }
+  if(!parts.length&&!anyInv) return "";
+  var o=owed(), lateAmt=late.reduce(function(s,v){ return s+invTotals(v).total; },0);
+  var h='<div class="card"><h3>Waiting on you</h3>'
+    +(o.count?'<p class="etake">'+money0(o.total)+' owed to you on '+plural(o.count,"invoice","invoices")+(lateAmt?', '+money0(lateAmt)+' of it overdue':'')+'.</p>':'');
+  if(!parts.length) return h+'<p class="enote" style="margin:0">Nothing to chase'+(un.from?' — every finished test since '+esc(fmtDate(un.from))+' is on an invoice':'')+'.</p></div>';
+  return h+parts.join("")+'</div>';
+}
+function earnKpis(M){
+  var P=M.P, md=median(M.days), d="";
+  // Only against a stretch the invoices kept here cover in full — not the months before the app was used.
+  if(P.prevFrom&&M.prev>0&&M.first&&M.first<=P.prevFrom){ var ch=Math.round((M.billed-M.prev)/M.prev*100); d='<span class="'+(ch>=0?"up":"dn")+'">'+(ch>=0?"▲ ":"▼ ")+Math.abs(ch)+'%</span> '+esc(P.vs); }
+  function kpi(l,v,sub){ return '<div class="kpi"><span class="kl">'+l+'</span><b>'+esc(v)+'</b><span class="kd">'+sub+'</span></div>'; }
+  return '<div class="kpis">'
+    +kpi("Billed", money0(M.billed), d||(M.n?"on "+plural(M.n,"invoice","invoices"):"no invoices"))
+    +kpi("Collected", money0(M.collected), "paid to you "+esc(P.during))
+    +kpi("Average invoice", M.n?money0(M.billed/M.n):"—", M.n?"across "+plural(M.n,"invoice","invoices"):"")
+    +kpi("Days to get paid", isNaN(md)?"—":String(Math.round(md)), isNaN(md)?"nothing paid yet":"typical, invoice to paid")
+    +'</div>';
+}
+function earnRow(name,amt,top,left,right,attrs,muted){
+  var inner='<div class="etop"><b>'+esc(name)+'</b><span class="eamt">'+money0(amt)+'</span></div>'
+    +'<div class="ebar" aria-hidden="true"><i style="width:'+Math.min(100,Math.max(0,amt/top*100)).toFixed(1)+'%'+(muted?';background:var(--muted)':'')+'"></i></div>'
+    +'<div class="esub"><span>'+esc(left)+'</span><span>'+esc(right||"")+'</span></div>';
+  return attrs ? '<button class="erow" '+attrs+'>'+inner+'</button>' : '<div class="erow">'+inner+'</div>';
+}
+function earnWhatPays(M){
+  var list=M.svcList, h='<div class="card"><h3>What brings it in</h3>';
+  if(!list.length) return h+'<p class="enote" style="margin:0">Nothing billed '+esc(M.P.during)+'.</p></div>';
+  var tk=[list.length>1 ? pct(list[0].amt,M.billed)+" of what you billed "+M.P.during+" came from "+list[0].g.low+"." : "All of it "+M.P.during+" came from "+list[0].g.low+"."];
+  var ph=list.filter(function(o){ return o.hrs>0; }).map(function(o){ return { low:o.g.low, rate:o.hrsAmt/o.hrs }; }).sort(function(a,b){ return b.rate-a.rate; });
+  if(ph.length>1) tk.push("Best pay for your time: "+ph[0].low+", about "+money0(ph[0].rate)+" an hour. Least: "+ph[ph.length-1].low+", about "+money0(ph[ph.length-1].rate)+".");
+  else if(ph.length==1) tk.push("About "+money0(ph[0].rate)+" an hour of your time on "+ph[0].low+".");
+  h+='<p class="etake">'+esc(tk.join(" "))+'</p><div class="elist">';
+  list.forEach(function(o){
+    var byQ=o.g.byQty&&o.qty>0, n=byQ?Math.round(o.qty):o.lines;
+    var left=pct(o.amt,M.billed)+" · "+plural(n,o.g.one,o.g.many)+(n?", "+money0(o.amt/(byQ?o.qty:o.lines))+" each":"");
+    h+=earnRow(o.g.label,o.amt,list[0].amt,left,o.hrs>0?"≈ "+money0(o.hrsAmt/o.hrs)+"/hr":"");
+  });
+  return h+'</div>'+earnHours()+'</div>';
+}
+/* How long one of each job takes: the only way to an hourly figure. */
+function earnHours(){
+  var keys=SERVICES.filter(function(s){ return s.k!="travel"&&s.k!="other"; });
+  var any=keys.some(function(s){ return num(CFG["hrs_"+s.k])>0; });
+  if(!S.hrsOpen) return '<p class="enote" style="margin:12px 0 0">'+(any?'Per hour uses the time you said each job takes. ':'Which pays best for your time? Say how long each kind of job takes you, and the hourly figure shows here. ')
+    +'<button class="mini" data-act="hrsopen" style="padding:0">'+(any?'Change the times':'Set the times')+'</button></p>';
+  return '<div class="hrsbox"><p class="enote" style="margin:0 0 8px">Hours for one, start to finish, paperwork included. Billed by the hour? Put 1.</p>'
+    +'<div class="rates">'+keys.map(function(s){ return '<label class="lmini">'+esc(s.label)+'<input type="text" inputmode="decimal" data-hrs="'+s.k+'" value="'+esc(CFG["hrs_"+s.k]||"")+'" placeholder="Hours"></label>'; }).join("")+'</div>'
+    +'<button class="primary" data-act="hrsdone" style="width:100%;margin-top:12px;padding:12px">Done</button></div>';
+}
+function earnWhoPays(M){
+  var list=M.coList, h='<div class="card"><h3>Who spends the most</h3>';
+  if(!list.length) return h+'<p class="enote" style="margin:0">Nothing billed '+esc(M.P.during)+'.</p></div>';
+  var tk=[], top=list[0];
+  if(list.length==1) tk.push("All of it came from "+top.name+".");
+  else if(top.amt/M.billed>=.5) tk.push(top.name+" alone is "+pct(top.amt,M.billed)+" of what you billed.");
+  else if(list.length>2&&(top.amt+list[1].amt)/M.billed>=.6) tk.push("Two companies are "+pct(top.amt+list[1].amt,M.billed)+" of what you billed: "+top.name+" and "+list[1].name+".");
+  else tk.push("Spread over "+list.length+" companies. The biggest, "+top.name+", is "+pct(top.amt,M.billed)+".");
+  var pay=list.filter(function(c){ return c.days.length; }).map(function(c){ return { name:c.name, d:Math.round(median(c.days)) }; }).sort(function(a,b){ return a.d-b.d; });
+  if(pay.length>1&&pay[pay.length-1].d-pay[0].d>=7) tk.push(pay[0].name+" pays fastest, in about "+plural(pay[0].d,"day","days")+"; "+pay[pay.length-1].name+" takes about "+pay[pay.length-1].d+".");
+  h+='<p class="etake">'+esc(tk.join(" "))+'</p><div class="elist">';
+  list.slice(0,8).forEach(function(c){
+    var left=[pct(c.amt,M.billed), plural(c.n,"invoice","invoices")].concat(c.days.length?["pays in ~"+plural(Math.round(median(c.days)),"day","days")]:[]).join(" · ");
+    h+=earnRow(c.name,c.amt,top.amt,left,"last "+fmtShort(c.last),c.coId?'data-co="'+esc(c.coId)+'"':"");
+  });
+  var rest=list.slice(8);
+  if(rest.length){ var ra=rest.reduce(function(s,c){ return s+c.amt; },0); h+=earnRow(plural(rest.length,"more company","more companies"),ra,top.amt,pct(ra,M.billed),"","",1); }
+  return h+'</div></div>';
+}
+var EARN_SHOWN=[];
+function niceTop(v){ if(v<=0) return 1; var p=Math.pow(10,Math.floor(Math.log(v)/Math.LN10)), f=[1,1.5,2,2.5,3,4,5,6,8,10]; for(var i=0;i<f.length;i++) if(f[i]*p>=v-1e-9) return f[i]*p; return 10*p; }
+function earnTick(v,top){ return top>=10000 ? "$"+(Math.round(v/100)/10)+"K" : money0(v); }
+function earnByMonth(M){
+  var ms=M.months, n=ms.length, h='<div class="card"><h3>Month by month</h3>', hi=0;
+  EARN_SHOWN=ms;
+  ms.forEach(function(m,i){ if(m.billed>ms[hi].billed) hi=i; });
+  if(!n||!ms[hi].billed) return h+'<p class="enote" style="margin:0">Nothing billed '+esc(M.P.during)+'.</p></div>';
+  var top=niceTop(ms[hi].billed), every=n>12?3:1, lx=(hi+.5)/n*100;
+  h+='<p class="etake">What you billed each month'+(M.P.k=="all"&&n==24?' (the last 24)':'')+'. Tap a month for its figures.</p><div class="mplot">';
+  [0,.5,1].forEach(function(f){ h+='<i class="mgrid" style="bottom:'+(f*100)+'%"><span>'+esc(earnTick(top*f,top))+'</span></i>'; });
+  h+='<div class="mcols">'+ms.map(function(m,i){
+    return '<button class="mcol" data-mcol="'+i+'" aria-pressed="false" aria-label="'+esc(monthName(m.ym)+": "+money0(m.billed)+" billed on "+plural(m.n,"invoice","invoices"))+'"><i style="height:'+(m.billed/top*100).toFixed(1)+'%"></i></button>'; }).join("")+'</div>'
+    +'<em class="mmax'+(lx<15?" l":lx>85?" r":"")+'" style="left:'+lx.toFixed(1)+'%;bottom:'+(ms[hi].billed/top*100).toFixed(1)+'%">'+esc(money0(ms[hi].billed))+'</em>'
+    +'<div class="mtip" id="mtip" hidden></div></div>'
+    +'<div class="mx" aria-hidden="true">'+ms.map(function(m,i){ return '<span>'+((n-1-i)%every==0?MON[+m.ym.slice(5,7)-1]:"")+'</span>'; }).join("")+'</div>'
+    +'<button class="mini" data-act="mtable">'+(S.mTable?"Hide the numbers":"Show the numbers")+'</button>';
+  if(S.mTable) h+='<table class="mtable"><thead><tr><th>Month</th><th>Billed</th><th>Collected</th><th>Invoices</th></tr></thead><tbody>'
+    +ms.slice().reverse().map(function(m){ return '<tr><td>'+esc(monthName(m.ym))+'</td><td>'+money0(m.billed)+'</td><td>'+money0(m.collected)+'</td><td>'+m.n+'</td></tr>'; }).join("")+'</tbody></table>';
+  return h+'</div>';
+}
+/* A month's figures over its column — on hover, keyboard focus or a tap.
+   Built with textContent; null clears it. */
+function monthTip(btn){
+  var tip=document.getElementById("mtip"); if(!tip) return;
+  Array.prototype.forEach.call(app.querySelectorAll('.mcol[aria-pressed="true"]'),function(b){ b.setAttribute("aria-pressed","false"); });
+  var m=btn&&EARN_SHOWN[+btn.dataset.mcol]; if(!m){ tip.hidden=true; return; }
+  btn.setAttribute("aria-pressed","true");
+  tip.textContent="";
+  var v=document.createElement("b"); v.textContent=money0(m.billed)+" billed";
+  var l=document.createElement("span"); l.textContent=monthName(m.ym)+" · "+plural(m.n,"invoice","invoices")+(m.collected?" · "+money0(m.collected)+" collected":"");
+  tip.appendChild(v); tip.appendChild(l); tip.hidden=false;
+  var plot=tip.parentNode.getBoundingClientRect(), b=btn.getBoundingClientRect(), bar=btn.querySelector("i"), w=tip.offsetWidth;
+  var y=bar&&bar.offsetHeight ? bar.getBoundingClientRect().top-plot.top : plot.height;
+  tip.style.left=Math.max(w/2-44,Math.min(plot.width-w/2,b.left+b.width/2-plot.left))+"px";
+  tip.style.top=Math.max(0,y-6)+"px";
+}
 /* Table 8.1 has a column for statically and one for cyclically loaded
    nontubular connections; tubulars go to Table 10.14 (8.9). The code's own
    7.23 misprints it 10.15. */
@@ -1467,12 +1787,25 @@ VIEWS.inspedit = function(){
 /* ---------- invoices ---------- */
 VIEWS.invoices = function(){
   var list=invoices(), o=owed();
-  var h=nav("Invoices");
+  var h=nav("Invoices")+invTabs("invoices");
   if(o.count) h+='<div class="card"><dl class="kv"><dt>Owed to you</dt><dd style="font-weight:700">'+money(o.total)+'</dd><dt>Unpaid</dt><dd>'+o.count+' invoice'+(o.count==1?"":"s")+'</dd></dl></div>';
   if(!list.length) h+='<div class="empty">No invoices yet.<br>Pick a company, tap what you did, and email them the PDF.</div>';
   list.forEach(function(v){ h+=invRow(v); });
   if(list.length) h+='<p class="foot">Swipe an invoice left to delete it.</p>';
   return { body:h, bar:'<button class="primary" data-act="newinv">New invoice</button>' };
+};
+/* Earnings: what's waiting on you right now, then — for the stretch you
+   pick — what you billed, what kind of work it came from, who it came
+   from, and month by month. See "earnings" above VIEWS. */
+VIEWS.money = function(){
+  var any=invoices().length, h=nav("Invoices")+invTabs("money")+earnWaiting(any);
+  var bar='<button class="primary" data-act="newinv">New invoice</button>';
+  if(!any) return { body:h+'<div class="empty">Once you\'ve sent a few invoices, this shows what kind of work brings the money in, who spends the most with you, and how each month went.</div>', bar:bar };
+  var P=earnPeriod(S.earnPer||"12m"), M=earnStats(P);
+  h+='<div class="seg per">'+EARN_PERIODS.map(function(p){ return '<button data-act="earnper" data-per="'+p.k+'" aria-pressed="'+(p.k==P.k)+'">'+esc(p.label)+'</button>'; }).join("")+'</div>';
+  h+=earnKpis(M)+earnWhatPays(M)+earnWhoPays(M)+earnByMonth(M);
+  h+='<p class="foot">Billed counts each invoice on its date, before'+(M.taxed?' tax.':' any tax.')+' Collected counts it on the day it was paid.</p>';
+  return { body:h, bar:bar };
 };
 VIEWS.invedit = function(){
   var d=S.draft, cs=companies();
@@ -3755,6 +4088,7 @@ document.addEventListener("click", function(e){
   if(el.dataset.pick!==undefined){ pick(el.dataset.pick, el.dataset.group); return; }
   if(el.dataset.res){ S.r[el.dataset.res]=el.dataset.val; autosave(); render({keepScroll:true}); return; }
   if(el.dataset.result){ S.r.result=el.dataset.result; upsertRecord(); render({keepScroll:true}); return; }
+  if(el.dataset.mcol!==undefined){ monthTip(el); return; }
 
   var a=el.dataset.act;
   if(a=="back") back();
@@ -3794,6 +4128,14 @@ document.addEventListener("click", function(e){
   else if(a=="previewinv"){ if(!needPdf()) return; if(!saveInvoice(true)) return; var dv=S.draft;
     showPdf(invoicePdf(dv), pdfName("Invoice "+dv.no+" "+dv.billName), "Invoice "+dv.no, "", {email:invEmail(dv)}); }
   else if(a=="pdfemail") emailPdf();
+  else if(a=="invtab"){ S.screen=el.dataset.tab; render(); }
+  else if(a=="earnper"){ S.earnPer=el.dataset.per; render({keepScroll:true}); }
+  else if(a=="moneybill"){ var bd=blankInvoice(el.dataset.coId), bg=earnUnbilled().groups.filter(function(g){ return g.coId==el.dataset.coId; })[0];
+    if(bg) bd.lines=bg.recs.slice().sort(function(x,y){ return (x.w.date||"").localeCompare(y.w.date||""); }).map(recLine);
+    go("invedit",{draft:bd}); }
+  else if(a=="hrsopen"){ S.hrsOpen=true; render({keepScroll:true}); }
+  else if(a=="hrsdone"){ S.hrsOpen=false; render({keepScroll:true}); }
+  else if(a=="mtable"){ S.mTable=!S.mTable; render({keepScroll:true}); }
   else if(a=="saveinsp"){
     var di=S.draft, se3=document.getElementById("saveerr");
     if(!di.project&&!di.client){ if(se3){ se3.textContent="Give the report a project or client name first."; se3.style.display="block"; } return; }
@@ -4155,6 +4497,7 @@ function onField(e){
   else if(t.dataset.d){ S.draft[t.dataset.d]=t.value; if(t.tagName=="SELECT") render({keepScroll:true}); else if(S.screen=="invedit"&&t.dataset.d=="taxRate") invRefresh(); }
   else if(t.dataset.li){ var lp=t.dataset.li.split(":"); var arr=S.draft[lp[0]]||(S.draft[lp[0]]=[]); (arr[+lp[1]]||(arr[+lp[1]]={}))[lp[2]]=t.value; if(S.screen=="invedit") invRefresh(); }
   else if(t.dataset.c){ S.draft[t.dataset.c]=t.value; }
+  else if(t.dataset.hrs){ var hv=t.value.trim(); if(hv) CFG["hrs_"+t.dataset.hrs]=hv; else delete CFG["hrs_"+t.dataset.hrs]; saveCfg(); }
 }
 /* Safari on iOS fires only "change" for select and checkbox, never "input" */
 document.addEventListener("input", function(e){
@@ -4188,6 +4531,19 @@ document.addEventListener("change", function(e){
 document.addEventListener("focusin", function(e){
   var t=e.target; if(S.screen!="wpsedit"||!t.dataset||!t.dataset.d) return;
   S.wpsSnap={ k:t.dataset.d, v:S.draft[t.dataset.d], msgs:ruleMsgs(S.draft) };
+});
+/* The Earnings chart answers a mouse on hover and a keyboard on focus; a
+   tap goes through the click handler. */
+document.addEventListener("pointerover", function(e){
+  if(e.pointerType!="mouse"||!e.target.closest) return;
+  var b=e.target.closest("[data-mcol]"); if(b) monthTip(b);
+});
+document.addEventListener("pointerout", function(e){
+  if(e.pointerType!="mouse"||!e.target.closest) return;
+  var p=e.target.closest(".mplot"); if(p&&!(e.relatedTarget&&p.contains(e.relatedTarget))) monthTip(null);
+});
+document.addEventListener("focusin", function(e){
+  var b=e.target.closest&&e.target.closest("[data-mcol]"); if(b) monthTip(b);
 });
 /* Shrink a chosen image to a small PNG data URL for the letterhead. */
 function readLogo(file, done){

@@ -125,6 +125,7 @@ companies  company  editco
 wpslist  wpsedit  wpsview                  WPSs and PQRs together ("Procedures"); a PQR is a
                                            wps row with kind:"PQR"
 pdfview  settings  exported  importer
+invoices  invedit  money                   invoices; money is the Earnings tab beside the list
 ```
 
 First-run and welder screens:
@@ -556,6 +557,35 @@ the rest. An invoice: `no` (`YYYY-NNN`, next after the year's highest), `date`, 
   on a phone the share sheet with the PDF plus subject/body (`invEmail()`), and the client's
   address is copied to paste in To — iOS can't give Mail a recipient and an attachment at
   once. On a computer the PDF downloads and a `mailto:` opens.
+
+### Earnings
+
+Invoices has two tabs (`invTabs()`): the list, and **Earnings** (`VIEWS.money`; the code is
+the `earnings` block after `saveInvoice()`). It is there to show what's worth the
+inspector's time, not to be a ledger.
+
+- **Waiting on you** (`earnWaiting()`) is right now and ignores the period buttons:
+  overdue invoices; finished tests on no invoice, by company, priced at today's rates
+  (`earnUnbilled()`) — counted only from the first invoice kept here, because tests before
+  that were billed some other way — and a tap opens a new invoice with those tests on it;
+  regulars gone quiet (`earnQuiet()`: work counted by the week from tests, inspections,
+  and invoices that aren't for tests; three or more weeks of work spread over 30+ days, then
+  nothing for twice their usual gap and at least 30 days); welders lapsing within a month
+  or lapsed in the last two (`earnLapsing()`, from `continuity()`).
+- Everything under the period buttons (90 days / This year / 12 months / All,
+  `earnPeriod()`) covers that stretch. **Billed** counts an invoice on its date, before
+  tax; **collected** counts it on its paid date. The ▲/▼ against the stretch before shows
+  only when the invoices kept here reach back over all of it (`M.first`), so months before
+  the app was in use never read as growth.
+- **What brings it in** folds `SERVICES` into `EARN_GROUPS` (the four test kinds are one
+  row). **Per hour** comes from `CFG.hrs_<svc>`, how long one of each job takes, typed on
+  that card ("Set the times") — nothing is timed. On-site billed by the hour takes 1.
+- **Who spends the most**: the top 8 companies, the rest folded into one row; days to pay
+  is the median, invoice date to paid date.
+- **Month by month**: a column a month (the last 24 at most), the tallest labelled; tap,
+  hover or focus a column for its figures (`monthTip()`, built with `textContent`);
+  "Show the numbers" gives the table. Bars use `--bar`, arc blue a step deeper so it
+  doesn't glare on the dark cards.
 
 ---
 
