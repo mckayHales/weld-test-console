@@ -202,11 +202,15 @@ button.erow{cursor:pointer}
 .mtable th{color:var(--muted);font-weight:500;border-top:0}
 .pdfframe{width:100%;height:calc(100vh - 230px);height:calc(100dvh - 230px);min-height:420px;border:1px solid var(--line);border-radius:8px;background:#fff}
 /* The PDF preview: every page drawn to the screen's width, whole page in
-   view; zoom widens the pages and the box scrolls both ways. */
+   view. A pinch scales the wrapper (instant, on the GPU) and the sizer
+   holds the scroll room open while the fingers are down; the pages are
+   redrawn at the settled scale so the text ends up sharp. */
 .pdfzoom{display:flex;gap:6px;justify-content:center;margin:0 0 10px}
 .pdfzoom button{background:var(--panel2);border:1px solid var(--line);color:var(--paper);border-radius:6px;padding:7px 14px;font:inherit;font-size:.9rem;cursor:pointer}
 .pdfzoom button[aria-pressed=true]{border-color:var(--arc);color:var(--arc)}
-.pdfpages{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:8px;background:#55606b;padding:8px}
+.pdfpages{overflow:auto;-webkit-overflow-scrolling:touch;border-radius:8px;background:#55606b;padding:8px;touch-action:pan-x pan-y;overscroll-behavior:contain}
+.pdfsizer{width:max-content;min-width:100%}
+.pdfzoomwrap{width:max-content;min-width:100%;transform-origin:0 0}
 .pdfpages canvas{display:block;background:#fff;margin:0 auto 8px;box-shadow:0 2px 10px rgba(0,0,0,.35)}
 .pdfpages canvas:last-child{margin-bottom:0}
 /* Printing: only the page images, one per sheet, edge to edge on letter.
@@ -236,7 +240,7 @@ button.erow{cursor:pointer}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-23.1";
+var VERSION="2026-11-26.1";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -1506,7 +1510,14 @@ function render(o){
   var y = keep ? scroller.scrollTop : 0;
   var v = VIEWS[S.screen] || VIEWS.home;
   var out = v();
-  var focused = document.activeElement, aid = focused && focused.dataset ? (focused.dataset.k||focused.dataset.r||focused.dataset.d||focused.dataset.c) : null;
+  /* Never hand focus back to a <select>. Focusing one re-opens the native
+     picker, so tapping an option looked as though the picker had stayed
+     up and took a second tap -- or a tap outside -- to be rid of. Blur
+     the old box as well, so the picker is dismissed against a node that
+     is still in the document rather than orphaned by the innerHTML. */
+  var focused = document.activeElement, isSel = !!(focused && focused.tagName=="SELECT");
+  var aid = (focused && focused.dataset && !isSel) ? (focused.dataset.k||focused.dataset.r||focused.dataset.d||focused.dataset.c) : null;
+  if(isSel && focused.blur) focused.blur();
   app.innerHTML = out.body;
   bar.innerHTML = out.bar ? '<div class="inner">'+out.bar+'</div>' : "";
   bar.style.display = out.bar ? "block" : "none";
@@ -2635,11 +2646,11 @@ VIEWS.pdfview = function(){
   var h=nav(v.title||"Preview");
   if(v.note) h+='<div class="flag" style="margin-bottom:10px"><b>'+esc(v.note)+'</b></div>';
   if(v.email) h+='<button class="primary" data-act="pdfemail" style="width:100%;margin-bottom:12px">Email it'+(v.email.to?' to '+esc(v.email.to):'')+'</button>';
-  h+='<div class="pdfzoom">'+[[1,"Whole page"],[1.6,"Zoom"],[2.4,"Zoom more"]].map(function(o){
-      return '<button type="button" data-act="pdfzoom" data-z="'+o[0]+'" aria-pressed="'+(z==o[0])+'">'+o[1]+'</button>'; }).join("")+'</div>';
+  h+='<div class="pdfzoom">'+[[1,"Whole page"],[2,"2\u00d7"],[4,"4\u00d7"]].map(function(o){
+      return '<button type="button" data-act="pdfzoom" data-z="'+o[0]+'" aria-pressed="'+(Math.abs(z-o[0])<.01)+'">'+o[1]+'</button>'; }).join("")+'</div>';
   h+='<div class="pdfpages" id="pdfpages"><div class="empty" style="color:#dde">Drawing the page…</div></div>';
-  h+='<p class="foot">'+(v.pages>1?v.pages+' pages. ':'')+'Pinch to zoom in on any part, too.</p>';
-  setTimeout(drawPdfPages,0);
+  h+='<p class="foot">'+(v.pages>1?v.pages+' pages. ':'')+'Pinch or double tap to zoom in on any part.</p>';
+  setTimeout(function(){ drawPdfPages(); },0);
   return { body:h, bar:'<button class="ghost" data-act="back">Back</button><button class="ghost" data-act="pdfprint">Print</button><button class="primary" data-act="pdfsave">Save / Share</button>' };
 };
 /* Pages are drawn with pdf.js, fetched the first time a preview opens.
@@ -2716,28 +2727,132 @@ function printImages(btn){
 }
 window.addEventListener("afterprint",function(){ var b=document.getElementById("printpages"); if(b) b.innerHTML=""; });
 
-function drawPdfPages(){
-  var box=document.getElementById("pdfpages"), v=S.pdf; if(!box||!v) return;
+/* ---------- the preview, and zooming it ----------
+   iOS draws an iframe'd PDF at full size and clips it, so the pages are
+   drawn with pdf.js onto canvases instead -- which means the browser's
+   own PDF zoom isn't there to use and this has to supply it.
+
+   Two scales, kept apart. The *display* scale is a CSS transform on
+   .pdfzoomwrap: it follows the fingers with no redraw, so a pinch is as
+   smooth as the native viewer. A transform doesn't change layout, so
+   .pdfsizer is grown to the scaled size at the same time, otherwise
+   there is nothing to scroll into and the right-hand side of the page
+   can't be reached. The *raster* scale is what pdf.js draws at, and it
+   is re-run once the gesture settles, so what you end up looking at is
+   sharp text rather than a stretched bitmap. The buttons and a double
+   tap go through the same path.
+
+   Every change anchors the point under the fingers (or under the tap,
+   or the middle of the box for a button): scroll to cx*r - ax, where cx
+   is that point in content coordinates and r is how much the scale
+   changed. Without it, zooming walks off the part being looked at. */
+var PZ={ min:1, max:6, live:0, d0:0, s:1, mx:0, my:0, sl:0, st:0, natW:0, natH:0, tap:0, tapX:0, tapY:0 };
+function pzBox(){ return document.getElementById("pdfpages"); }
+function pzDist(t){ return Math.hypot(t[0].clientX-t[1].clientX, t[0].clientY-t[1].clientY); }
+function pzMark(z){
+  var row=document.querySelector(".pdfzoom"); if(!row) return;
+  [].forEach.call(row.children, function(b){ b.setAttribute("aria-pressed", String(Math.abs((+b.dataset.z)-z)<.01)); });
+}
+/* ax/ay: the point to hold still, from the box's top-left. sl/st: the
+   scroll it was measured against (the pre-gesture one, mid-pinch). */
+function pzApply(z,ax,ay,sl,st){
+  var v=S.pdf; if(!v) return;
+  var old=v.zoom||1;
+  z=Math.max(PZ.min,Math.min(PZ.max,z));
+  if(Math.abs(z-old)<.01){ pzMark(old); return; }
+  var r=z/old, cx=sl+ax, cy=st+ay;
+  v.zoom=z; pzMark(z);
+  drawPdfPages(function(){
+    var b=pzBox(); if(!b) return;
+    b.scrollLeft=Math.max(0,cx*r-ax); b.scrollTop=Math.max(0,cy*r-ay);
+  });
+}
+function pzTo(z){
+  var box=pzBox(); if(!box) return;
+  pzApply(z, box.clientWidth/2, box.clientHeight/2, box.scrollLeft, box.scrollTop);
+}
+document.addEventListener("touchstart", function(e){
+  var box=pzBox(); if(!box||!box.contains(e.target)||e.touches.length!=2) return;
+  var w=document.getElementById("pdfzoomwrap"); if(!w) return;
+  PZ.live=1; PZ.s=1; PZ.d0=pzDist(e.touches)||1;
+  var r=box.getBoundingClientRect();
+  PZ.mx=(e.touches[0].clientX+e.touches[1].clientX)/2-r.left;
+  PZ.my=(e.touches[0].clientY+e.touches[1].clientY)/2-r.top;
+  PZ.sl=box.scrollLeft; PZ.st=box.scrollTop;
+  PZ.natW=w.offsetWidth; PZ.natH=w.offsetHeight;
+  box.style.touchAction="none";
+  e.preventDefault();
+}, {passive:false});
+document.addEventListener("touchmove", function(e){
+  if(!PZ.live||e.touches.length!=2) return;
+  var box=pzBox(), w=document.getElementById("pdfzoomwrap"), sz=document.getElementById("pdfsizer");
+  if(!box||!w||!sz) return;
+  var z=(S.pdf&&S.pdf.zoom)||1;
+  var s=Math.max(PZ.min/z, Math.min(PZ.max/z, pzDist(e.touches)/PZ.d0));
+  PZ.s=s;
+  w.style.transform="scale("+s+")";
+  sz.style.width=Math.round(PZ.natW*s)+"px";
+  sz.style.height=Math.round(PZ.natH*s)+"px";
+  box.scrollLeft=Math.max(0,(PZ.sl+PZ.mx)*s-PZ.mx);
+  box.scrollTop=Math.max(0,(PZ.st+PZ.my)*s-PZ.my);
+  e.preventDefault();
+}, {passive:false});
+document.addEventListener("touchend", function(e){
+  var box=pzBox(); if(!box) return;
+  if(PZ.live){
+    if(e.touches.length>=2) return;
+    PZ.live=0; box.style.touchAction="";
+    var w=document.getElementById("pdfzoomwrap"), sz=document.getElementById("pdfsizer");
+    if(!w||!sz||!S.pdf) return;
+    var s=PZ.s;
+    w.style.transform=""; sz.style.width=""; sz.style.height="";
+    pzApply((S.pdf.zoom||1)*s, PZ.mx, PZ.my, PZ.sl, PZ.st);
+    return;
+  }
+  /* Double tap, the other way everyone zooms a document. */
+  if(!box.contains(e.target)||!e.changedTouches||e.changedTouches.length!=1||e.touches.length) return;
+  var t=e.changedTouches[0], now=Date.now();
+  if(now-PZ.tap<300&&Math.abs(t.clientX-PZ.tapX)<30&&Math.abs(t.clientY-PZ.tapY)<30){
+    PZ.tap=0;
+    var r=box.getBoundingClientRect();
+    pzApply(((S.pdf&&S.pdf.zoom)||1)>1.01?1:2.5, t.clientX-r.left, t.clientY-r.top, box.scrollLeft, box.scrollTop);
+    e.preventDefault(); return;
+  }
+  PZ.tap=now; PZ.tapX=t.clientX; PZ.tapY=t.clientY;
+}, {passive:false});
+
+/* Drawn into a detached sizer and swapped in whole, so changing the zoom
+   never blanks the box in the meantime. */
+function drawPdfPages(done){
+  var box=pzBox(), v=S.pdf; if(!box||!v) return;
   var z=v.zoom||1, token=v.drawn=(v.drawn||0)+1;
+  var cssW=((box.clientWidth-16)||320)*z, dpr=Math.min(window.devicePixelRatio||1,3);
+  if(cssW*dpr>2800) dpr=Math.max(1,2800/cssW);   /* a phone can't hold a 5x letter page at dpr 3 */
   loadPdfJs().then(function(lib){
     if(!v.bytes) v.bytes=new Uint8Array(v.doc.output("arraybuffer"));
     return lib.getDocument({data:v.bytes.slice()}).promise;
   }).then(function(pdf){
-    if(v.drawn!=token||!document.getElementById("pdfpages")) return;
-    box.innerHTML="";
-    var cssW=(box.clientWidth-16)*z, dpr=Math.min(window.devicePixelRatio||1,3);
+    if(v.drawn!=token||!pzBox()) return;
+    var sizer=document.createElement("div"); sizer.id="pdfsizer"; sizer.className="pdfsizer";
+    var wrap=document.createElement("div"); wrap.id="pdfzoomwrap"; wrap.className="pdfzoomwrap";
+    sizer.appendChild(wrap);
     var chain=Promise.resolve();
     for(var n=1;n<=pdf.numPages;n++) (function(n){ chain=chain.then(function(){ return pdf.getPage(n); }).then(function(pg){
+      if(v.drawn!=token) return;
       var base=pg.getViewport({scale:1}), sc=cssW/base.width, vp=pg.getViewport({scale:sc*dpr});
       var c=document.createElement("canvas"); c.width=Math.floor(vp.width); c.height=Math.floor(vp.height);
       c.style.width=Math.floor(cssW)+"px"; c.style.height=Math.floor(base.height*sc)+"px";
-      box.appendChild(c);
+      wrap.appendChild(c);
       return pg.render({canvasContext:c.getContext("2d"),viewport:vp}).promise;
     }); })(n);
-    return chain;
+    return chain.then(function(){
+      var b=pzBox(); if(v.drawn!=token||!b) return;
+      b.innerHTML=""; b.appendChild(sizer);
+      if(done) done();
+    });
   }).catch(function(){
-    if(!document.getElementById("pdfpages")) return;
-    box.innerHTML='<iframe class="pdfframe" src="'+esc(v.url)+'#view=FitH" title="PDF preview"></iframe>';
+    var b=pzBox(); if(!b||v.drawn!=token) return;
+    b.innerHTML='<iframe class="pdfframe" src="'+esc(v.url)+'#view=FitH" title="PDF preview"></iframe>';
   });
 }
 function showPdf(doc,name,title,note,extra){
@@ -4247,7 +4362,7 @@ document.addEventListener("click", function(e){
   }
   else if(a=="pdfsave"){ if(S.pdf&&S.pdf.doc) deliverPdf(S.pdf.doc, S.pdf.name); }
   else if(a=="pdfprint"){ printPdf(el); }
-  else if(a=="pdfzoom"){ S.pdf.zoom=+el.dataset.z; render({keepScroll:true}); }
+  else if(a=="pdfzoom"){ pzTo(+el.dataset.z); }
   else if(a=="samplewpqr"){
     if(!needPdf()) return;
     var dd=demoData(); var doc=withRecord(dd.recs[1], function(){ return wpqrPdf(false); });

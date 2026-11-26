@@ -268,9 +268,25 @@ edition and the contract documents only (8.7).
 **Previewing.** `pdfview` no longer shows the PDF in an iframe — iOS draws an iframe'd
 PDF at full size and clips it. `drawPdfPages()` renders each page with pdf.js
 (jsDelivr, fetched the first time a preview opens) onto canvases the width of the
-screen, so the whole page shows; Whole page / Zoom / Zoom more widen them and the box
-scrolls both ways, and pinch zoom works on top. No signal → falls back to the iframe.
-Every document is US letter portrait.
+screen, so the whole page shows. No signal → falls back to the iframe. Every document
+is US letter portrait.
+
+Drawing the pages ourselves means the browser's own PDF zoom isn't there to use, so
+`PZ` supplies it, and keeps **two scales apart**. The *display* scale is a CSS
+transform on `.pdfzoomwrap`, which follows the fingers with no redraw — that is what
+makes a pinch as smooth as the native viewer. A transform doesn't change layout, so
+`.pdfsizer` is grown to the scaled size at the same time; without it there is nothing
+to scroll into and the right-hand side of the page can't be reached mid-pinch. The
+*raster* scale is what pdf.js draws at, re-run once the gesture settles, so what you
+end up looking at is sharp text and not a stretched bitmap. Whole page / 2× / 4× and
+a double tap go through the same `pzApply()`.
+
+Every change **anchors the point under the fingers** (or under the tap, or the middle
+of the box for a button): scroll to `cx*r - ax`, where `cx` is that point in content
+coordinates and `r` is how much the scale changed. Without it, zooming walks off
+whatever is being looked at. Zoom is clamped 1–6×, and the backing store is capped at
+2800 px wide — a phone can't hold a 6× letter page at dpr 3. Pages are drawn into a
+detached sizer and swapped in whole, so changing the zoom never blanks the box.
 
 **Printing.** The preview's **Print** button (`printPdf()`) prints the PDF itself. A web
 page printed on an iPhone gets the site address and page numbers stamped at the bottom,
@@ -593,6 +609,16 @@ inspector's time, not to be a ledger.
 
 **iOS fires only `change` on `<select>`, never `input`.** Handled by wiring `onField` to
 both events and de-duplicating. Don't collapse them back into one.
+
+**Never hand focus back to a `<select>`.** `render({keepScroll:true})` restores focus to
+the field that had it, by `data-k`/`data-r`/`data-d`/`data-c`. Selects carry those too,
+so picking an option re-rendered the screen and then focused the replacement box — and
+focusing a select re-opens the native picker. It read as the picker *staying up* after a
+tap and needing a second tap, or a tap outside, to be rid of. `render()` now skips the
+restore for a SELECT and blurs the outgoing one first, so the picker is dismissed against
+a node still in the document instead of being orphaned by the `innerHTML`. Only the
+selects that re-render were affected (`data-k`, `data-r`, `data-d`); Settings' own
+(`data-c`) never did.
 
 **`render()` scrolls to top unless you pass `{keepScroll:true}`.** Right for navigation,
 wrong for tapping a tile. This was a real bug once.
