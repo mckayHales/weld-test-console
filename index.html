@@ -133,9 +133,17 @@ button.primary:disabled{opacity:.45;cursor:not-allowed}
 #toast button{background:none;border:0;color:var(--arc);font:inherit;font-weight:650;padding:4px 2px;cursor:pointer}
 /* Swipe a row left for Delete, the way Messages and Mail do it. */
 .sw{position:relative;overflow:hidden;border-radius:8px;margin-bottom:8px}
-.sw>.sub{margin:0;position:relative;z-index:1;touch-action:pan-y;transition:transform .22s ease;will-change:transform}
-.sw.drag>.sub{transition:none}
-.sw-act{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;justify-content:flex-end;background:var(--slag);border-radius:8px}
+.sw>.sub{margin:0;position:relative;z-index:1;touch-action:pan-y;transition:transform .22s ease}
+/* Promoted only while it is actually moving. Left on, every row in every
+   list sits on its own compositing layer, and a fast scroll can present
+   the red underneath a frame before the row lands on top of it. */
+.sw.drag>.sub{transition:none;will-change:transform}
+/* The red is only ever meant to be seen behind a row that has moved. It
+   used to be painted under every row at rest and relied on being covered
+   exactly -- which it isn't, at a fractional device pixel, so a hairline
+   of it showed along the bottom edge of whichever row landed badly. */
+.sw-act{position:absolute;top:0;right:0;bottom:0;left:0;display:flex;justify-content:flex-end;background:var(--slag);border-radius:8px;opacity:0;pointer-events:none}
+.sw.drag>.sw-act,.sw.on>.sw-act{opacity:1;pointer-events:auto}
 .sw-act button{width:88px;background:none;border:0;color:#fff;font:inherit;font-weight:650;font-size:.95rem;cursor:pointer}
 .wps-card{border-color:#3C6789;background:linear-gradient(180deg,#22405A,#1E3448)}
 .wps-card h3{display:flex;align-items:center;gap:8px}
@@ -240,7 +248,7 @@ button.erow{cursor:pointer}
    it; the welder's answers come back as a link the same way.
    ========================================================= */
 
-var VERSION="2026-11-26.1";
+var VERSION="2026-11-26.2";
 
 /* ---------- storage ----------
    Everything is in localStorage on this device. Export a backup from
@@ -4706,7 +4714,10 @@ document.addEventListener("visibilitychange",function(){ if(document.visibilityS
    Delete button showing. Vertical drags scroll as normal (touch-action:
    pan-y hands only sideways moves to us). A drag never counts as a tap. */
 var SWIPE={ el:null, open:null, x0:0, y0:0, dx:0, axis:null, base:0, moved:false };
-function swClose(except){ if(SWIPE.open&&SWIPE.open!==except){ SWIPE.open.firstElementChild.nextElementSibling.style.transform=""; SWIPE.open=null; } }
+/* The row slides back over .22s, so the red has to stay until it has
+   landed -- but not if the row was grabbed again in the meantime. */
+function swRest(sw){ setTimeout(function(){ if(sw&&!sw.classList.contains("drag")&&SWIPE.open!==sw) sw.classList.remove("on"); },260); }
+function swClose(except){ if(SWIPE.open&&SWIPE.open!==except){ var o=SWIPE.open; o.firstElementChild.nextElementSibling.style.transform=""; SWIPE.open=null; swRest(o); } }
 document.addEventListener("pointerdown", function(e){
   var sw=e.target.closest(".sw");
   if(!sw||e.target.closest(".sw-act")){ if(!sw) swClose(null); return; }
@@ -4724,14 +4735,14 @@ document.addEventListener("pointermove", function(e){
 });
 function swEnd(){
   var sw=SWIPE.el; SWIPE.el=null; if(!sw||SWIPE.axis!="x") return;
-  sw.classList.remove("drag");
+  sw.classList.remove("drag"); sw.classList.add("on");
   var row=sw.querySelector(".sub"), w=sw.offsetWidth;
   if(SWIPE.dx < -w*.5){
     row.style.transform="translateX(-100%)"; SWIPE.open=null;
     var k=sw.dataset.sw.split(":");
     setTimeout(function(){ removeRow(k[0],k.slice(1).join(":")); render({keepScroll:true}); },180);
   } else if(SWIPE.dx < -40){ row.style.transform="translateX(-88px)"; SWIPE.open=sw; }
-  else { row.style.transform=""; if(SWIPE.open===sw) SWIPE.open=null; }
+  else { row.style.transform=""; if(SWIPE.open===sw) SWIPE.open=null; swRest(sw); }
 }
 document.addEventListener("pointerup", swEnd);
 document.addEventListener("pointercancel", swEnd);

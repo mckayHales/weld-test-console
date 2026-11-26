@@ -148,6 +148,11 @@ the Delete button, as in Messages. The gesture code is the `SWIPE` block above
 `refreshBar()`; `touch-action: pan-y` on the row keeps vertical scrolling native, and a
 capture-phase click listener swallows the click that ends a drag.
 
+The red `.sw-act` behind a row is only painted while that row has moved: `.drag` while
+a finger is on it, `.on` from the end of the gesture until it has slid back (`swRest()`,
+260 ms, and not if it was grabbed again). At rest it is `opacity:0` and
+`pointer-events:none`. See §6 for what it did before.
+
 **Navigation.** `go(screen, opts)` pushes a frame holding every field in `FRAME`
 (screen, ids, step, `draft`, `viewWps`, `pdf`), and `back()` restores it, so a half-filled
 form survives a detour (New ticket → Add company → back). Each screen that edits a copy
@@ -619,6 +624,22 @@ restore for a SELECT and blurs the outgoing one first, so the picker is dismisse
 a node still in the document instead of being orphaned by the `innerHTML`. Only the
 selects that re-render were affected (`data-k`, `data-r`, `data-d`); Settings' own
 (`data-c`) never did.
+
+**Don't leave an opaque colour painted under something that is meant to cover it.**
+The red delete layer (`.sw-act`) sat behind every swipeable row at full size, all the
+time, relied on being hidden by the row on top. Two ways it showed:
+
+- *A red square flashing past on a fast scroll.* `.sw>.sub` carried `will-change:
+  transform`, so every row in every list sat on its own compositing layer; on a flick
+  the red underneath could be presented a frame before the row landed on it. The
+  promotion is now only on `.sw.drag>.sub` — while a finger is actually moving the row.
+- *A red hairline under one row.* Row heights are fractional (91.49 px at this width),
+  so the two boxes' bottom edges round to different device pixels depending on where
+  the row happens to land. Only the badly-placed row showed it, which is why it looked
+  like one record had something wrong with it.
+
+Both went away by not painting the red until the row moves. If you add another layered
+control, do the same — don't trust exact cover.
 
 **`render()` scrolls to top unless you pass `{keepScroll:true}`.** Right for navigation,
 wrong for tapping a tile. This was a real bug once.
